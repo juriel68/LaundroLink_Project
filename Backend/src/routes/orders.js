@@ -10,45 +10,41 @@ router.get("/shop/:shopId", async (req, res) => {
     const [rows] = await db.query(
       `
       WITH LatestOrderStatus AS (
-          -- This CTE (Common Table Expression) finds the most recent status for each order.
-          -- It works by assigning a row number to each status update for an order, starting
-          -- with 1 for the newest update.
-          SELECT
-              OrderID,
-              OrderStatus,
-              OrderUpdatedAt,
-              ROW_NUMBER() OVER (PARTITION BY OrderID ORDER BY OrderUpdatedAt DESC) as rn
-          FROM Order_Status
+        SELECT
+            OrderID,
+            OrderStatus,
+            OrderUpdatedAt,
+            ROW_NUMBER() OVER (PARTITION BY OrderID ORDER BY OrderUpdatedAt DESC) as rn
+        FROM Order_Status
       )
       SELECT 
-          o.OrderID AS orderId,
-          o.CustID AS customerId,
-          o.ShopID AS shopId,
-          o.SvcID AS serviceId,
-          o.LndryDtlID AS laundryDetailId,
-          o.DlvryID AS deliveryId,
-          o.OrderCreatedAt AS createdAt,
-          los.OrderStatus AS status, -- <-- Get the status from our CTE
-          los.OrderUpdatedAt AS updatedAt, -- <-- Get the timestamp from our CTE
-          c.CustName AS customerName,
-          rej.RejectionReason as reason,
-          rej.RejectionNote as note,
-          (
-              -- This subquery gets the latest processing sub-status.
-              SELECT op.OrderProcStatus 
-              FROM Order_Processing op 
-              WHERE op.OrderID = o.OrderID 
-              ORDER BY op.OrderProcUpdatedAt DESC 
-              LIMIT 1
-          ) AS latestProcessStatus
+        o.OrderID AS orderId,
+        o.CustID AS customerId,
+        o.ShopID AS shopId,
+        o.SvcID AS serviceId,
+        o.LndryDtlID AS laundryDetailId,
+        o.DlvryID AS deliveryId,
+        o.OrderCreatedAt AS createdAt,
+        los.OrderStatus AS status,
+        los.OrderUpdatedAt AS updatedAt,
+        c.CustName AS customerName,
+        rej.RejectionReason as reason,
+        rej.RejectionNote as note,
+        -- This subquery gets the latest invoice status
+        (SELECT s.InvoiceStatus FROM Invoice inv JOIN Invoice_Status s ON inv.InvoiceID = s.InvoiceID WHERE inv.OrderID = o.OrderID ORDER BY s.StatUpdateAt DESC LIMIT 1) as invoiceStatus,
+        (
+            SELECT op.OrderProcStatus 
+            FROM Order_Processing op 
+            WHERE op.OrderID = o.OrderID 
+            ORDER BY op.OrderProcUpdatedAt DESC 
+            LIMIT 1
+        ) AS latestProcessStatus
       FROM Orders o
       JOIN Customer c ON o.CustID = c.CustID
-      -- Join with our CTE to get only the latest status.
       JOIN LatestOrderStatus los ON o.OrderID = los.OrderID
       LEFT JOIN Rejected_Order rej ON o.OrderID = rej.OrderID
-      -- Filter for the specific shop AND only the most recent status (rn = 1).
       WHERE o.ShopID = ? AND los.rn = 1
-      ORDER BY o.OrderCreatedAt DESC; -- Added ordering for consistency
+      ORDER BY o.OrderCreatedAt DESC;
       `,
       [shopId]
     );
@@ -234,19 +230,23 @@ router.post("/summary", async (req, res) => {
     await db.query("SET SESSION group_concat_max_len = 1000000;");
 
     const query = `
-      WITH FilteredOrders AS (
+      WITH LatestInvoiceDetails AS (
+        SELECT
+          i.OrderID,
+          i.PayAmount,
+          (SELECT s.InvoiceStatus FROM Invoice_Status s WHERE s.InvoiceID = i.InvoiceID ORDER BY s.StatUpdateAt DESC LIMIT 1) as InvoiceStatus
+        FROM Invoice i
+      ),
+      FilteredOrders AS (
         SELECT 
-          o.*,
-          os.OrderStatus AS status,
-          inv.PayAmount,
-          inv_s.Status AS paymentStatus
+          o.OrderID,
+          o.CustID,
+          o.OrderCreatedAt,
+          (SELECT os.OrderStatus FROM Order_Status os WHERE os.OrderID = o.OrderID ORDER BY os.OrderUpdatedAt DESC LIMIT 1) as status,
+          lid.PayAmount,
+          lid.InvoiceStatus
         FROM Orders o
-        LEFT JOIN (
-          SELECT OrderID, OrderStatus FROM Order_Status WHERE (OrderID, OrderUpdatedAt) IN 
-          (SELECT OrderID, MAX(OrderUpdatedAt) FROM Order_Status GROUP BY OrderID)
-        ) AS os ON o.OrderID = os.OrderID
-        LEFT JOIN Invoice inv ON o.OrderID = inv.OrderID
-        LEFT JOIN Invoice_Status inv_s ON inv.InvoiceID = inv_s.InvoiceID
+        LEFT JOIN LatestInvoiceDetails lid ON o.OrderID = lid.OrderID
         WHERE o.ShopID = ? AND ${getDateCondition("o")}
       ),
       ChartData AS (
@@ -254,34 +254,34 @@ router.post("/summary", async (req, res) => {
           DATE_FORMAT(OrderCreatedAt, '%a') AS label,
           SUM(PayAmount) AS revenue
         FROM FilteredOrders
-        WHERE paymentStatus = 'Paid'
+        WHERE InvoiceStatus = 'Paid'
         GROUP BY label
+        ORDER BY FIELD(label, 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat')
       ),
       RecentOrders AS (
         SELECT
           OrderID AS id,
           (SELECT CustName FROM Customer WHERE CustID = FilteredOrders.CustID) AS customer,
           status,
-          PayAmount AS amount
+          PayAmount AS amount,
+          InvoiceStatus
         FROM FilteredOrders
         ORDER BY OrderCreatedAt DESC
         LIMIT 10
       )
       SELECT
         (SELECT COUNT(*) FROM FilteredOrders) AS totalOrders,
-        (SELECT SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END) FROM FilteredOrders) AS completedOrders,
-        (SELECT SUM(CASE WHEN status NOT IN ('Completed', 'Rejected', 'Cancelled') THEN 1 ELSE 0 END) FROM FilteredOrders) AS pendingOrders,
-        (SELECT SUM(CASE WHEN paymentStatus = 'Paid' THEN PayAmount ELSE 0 END) FROM FilteredOrders) AS totalRevenue,
+        (SELECT COUNT(*) FROM FilteredOrders WHERE status = 'Completed') AS completedOrders,
+        (SELECT COUNT(*) FROM FilteredOrders WHERE status NOT IN ('Completed', 'Rejected', 'Cancelled')) AS pendingOrders,
+        (SELECT SUM(CASE WHEN InvoiceStatus = 'Paid' THEN PayAmount ELSE 0 END) FROM FilteredOrders) AS totalRevenue,
         (SELECT CONCAT('[', GROUP_CONCAT(JSON_OBJECT('label', label, 'revenue', revenue)), ']') FROM ChartData) AS chartData,
-        (SELECT CONCAT('[', GROUP_CONCAT(JSON_OBJECT('id', id, 'customer', customer, 'status', status, 'amount', amount)), ']') FROM RecentOrders) AS recentOrders;
+        (SELECT CONCAT('[', GROUP_CONCAT(JSON_OBJECT('id', id, 'customer', customer, 'status', status, 'amount', amount, 'invoiceStatus', InvoiceStatus)), ']') FROM RecentOrders) AS recentOrders;
     `;
 
     const [[results]] = await db.query(query, [shopId]);
     
     results.chartData = results.chartData ? JSON.parse(results.chartData) : [];
-    results.recentOrders = results.recentOrders
-      ? JSON.parse(results.recentOrders)
-      : [];
+    results.recentOrders = results.recentOrders ? JSON.parse(results.recentOrders) : [];
 
     res.json(results);
   } catch (error) {
@@ -289,5 +289,6 @@ router.post("/summary", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch summary" });
   }
 });
+
 
 export default router;

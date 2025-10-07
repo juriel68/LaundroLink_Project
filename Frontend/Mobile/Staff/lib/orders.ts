@@ -14,6 +14,7 @@ export interface Order {
   status: string;
   updatedAt: string;
   customerName: string;
+  invoiceStatus?: string;
   latestProcessStatus?: string | null;
   reason?: string | null; 
   note?: string | null;  
@@ -131,26 +132,32 @@ export const updateProcessStatus = async (orderId: string, status: string): Prom
 
 // ✅ ADD THIS NEW INTERFACE for the summary data
 export interface OrderSummaryData {
-  totalOrders: number;
-  completedOrders: number;
-  pendingOrders: number;
-  totalRevenue: number;
-  chartData: { label: string; revenue: number }[];
-  recentOrders: { id: string; customer: string; status: string; amount: number | null }[];
+  totalOrders: number;
+  completedOrders: number;
+  pendingOrders: number;
+  totalRevenue: number;
+  chartData: { label: string; revenue: number }[];
+  // The type for recentOrders now includes the invoiceStatus
+  recentOrders: { 
+    id: string; 
+    customer: string; 
+    status: string; 
+    amount: number | null;
+    invoiceStatus: string | null; // <<< THIS FIELD IS NEW
+  }[];
 }
 
-// ✅ ADD THIS NEW FUNCTION to fetch the summary
 export const fetchOrderSummary = async (shopId: string, dateRange: string): Promise<OrderSummaryData | null> => {
-  try {
-    const response = await fetch(`${API_URL}/orders/summary`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ shopId, dateRange }),
-    });
-    if (!response.ok) throw new Error("Failed to fetch order summary");
-    return await response.json();
-  } catch (error) {
-    console.error("Error in fetchOrderSummary:", error);
-    return null;
-  }
+  try {
+    const response = await fetch(`${API_URL}/orders/summary`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shopId, dateRange }),
+    });
+    if (!response.ok) throw new Error("Failed to fetch order summary");
+    return await response.json();
+  } catch (error) {
+    console.error("Error in fetchOrderSummary:", error);
+    return null;
+  }
 };

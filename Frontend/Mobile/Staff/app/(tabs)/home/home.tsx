@@ -52,31 +52,27 @@ export default function HomeScreen() {
     }, [loadOrders])
   );
 
-  const handleStatusUpdate = async (orderId: string, newStatus: string) => {
-    // --- Optimistic UI Update ---
-    // 1. Keep a copy of the original orders, in case we need to revert.
-    const originalOrders = [...orders];
+  // THIS IS THE MODIFIED FUNCTION
+  const handleAcceptOrder = async (order: Order) => {
+    // First, check if the invoice status is 'Paid'.
+    if (order.invoiceStatus !== 'Paid') {
+      // If not paid, show a simple alert with only an "Okay" button and then stop.
+      Alert.alert("Unpaid Order", "This order has not been paid yet.");
+      return; // This stops the function from proceeding.
+    }
 
-    // 2. Update the state immediately.
+    // If the code reaches this point, the order is paid. Proceed directly.
+    // Optimistically remove the order from the UI for a fast response.
     setOrders((currentOrders) =>
-      currentOrders.map((order) =>
-        order.orderId === orderId ? { ...order, status: newStatus } : order
-      )
+      currentOrders.filter((o) => o.orderId !== order.orderId)
     );
+    
+    const success = await updateOrderStatus(order.orderId, "Processing");
 
-    // 3. Send the update to the server.
-    try {
-      const success = await updateOrderStatus(orderId, newStatus);
-      if (!success) {
-        // 4. If the server update fails, revert the UI and show an error.
-        setOrders(originalOrders);
-        Alert.alert("Error", "Failed to update order status. Please try again.");
-      }
-    } catch (error) {
-      // Also revert if there's a network error or other exception.
-      setOrders(originalOrders);
-      Alert.alert("Error", "An unexpected error occurred.");
-      console.error("Error updating status:", error);
+    if (!success) {
+      // If the API call fails, show an error and reload the original data.
+      Alert.alert("Error", "Failed to update order status. Please try again.");
+      loadOrders(); 
     }
   };
 
@@ -102,7 +98,13 @@ export default function HomeScreen() {
           </TouchableOpacity>
         }
       />
-      <View style={styles.summaryContainer}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContainer}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={loadOrders} />
+        }
+      >
         <Text style={styles.sectionTitle}>Order Summary</Text>
         <View style={styles.statusGrid}>
           <StatusCardLink
@@ -142,21 +144,14 @@ export default function HomeScreen() {
             }
           />
         </View>
-      </View>
-      <Text style={styles.sectionTitle}>New Laundry Orders</Text>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContainer}
-        refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={loadOrders} />
-        }
-      >
+
+        <Text style={styles.sectionTitle}>New Laundry Orders</Text>
         {freshOrders.length > 0 ? (
           freshOrders.map((order) => (
             <OrderCard
               key={order.orderId}
               order={order}
-              onUpdateStatus={handleStatusUpdate}
+              onAcceptOrder={handleAcceptOrder}
               shopId={shopId as string}
             />
           ))
@@ -171,7 +166,7 @@ export default function HomeScreen() {
   );
 }
 
-// --- Helper Components with Tap Animations ---
+// --- Helper Components (StatusCardLink and OrderCard) ---
 
 const StatusCardLink = ({
   icon,
@@ -180,7 +175,7 @@ const StatusCardLink = ({
   colors,
   onPress,
 }: {
-  icon: keyof typeof Ionicons.glyphMap; // More specific type for icons
+  icon: keyof typeof Ionicons.glyphMap;
   label: string;
   count: number;
   colors: [string, string];
@@ -213,11 +208,11 @@ const StatusCardLink = ({
 
 function OrderCard({
   order,
-  onUpdateStatus,
+  onAcceptOrder,
   shopId,
 }: {
   order: Order;
-  onUpdateStatus: (orderId: string, status: string) => void;
+  onAcceptOrder: (order: Order) => void;
   shopId: string;
 }) {
   const router = useRouter();
@@ -246,7 +241,7 @@ function OrderCard({
       <View style={styles.buttonRow}>
         <TouchableOpacity
           style={[styles.button, styles.acceptBtn]}
-          onPress={() => onUpdateStatus(order.orderId, "Processing")}
+          onPress={() => onAcceptOrder(order)}
         >
           <Ionicons name="checkmark-outline" size={20} color="#fff" />
           <Text style={styles.buttonText}>Accept</Text>
@@ -277,10 +272,20 @@ function OrderCard({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F8F9FA" },
   logoutButton: { padding: 8 },
-  summaryContainer: { paddingHorizontal: 16, paddingTop: 16 },
-  scrollContainer: { padding: 16, paddingBottom: 32 },
-  statusGrid: { flexDirection: "row", flexWrap: "wrap", marginHorizontal: -8 },
-  statusCardWrapper: { width: "50%", padding: 8 },
+  scrollContainer: { 
+    paddingHorizontal: 16, 
+    paddingTop: 16, 
+    paddingBottom: 32 
+  },
+  statusGrid: { 
+    flexDirection: "row", 
+    flexWrap: "wrap", 
+    marginHorizontal: -8
+  },
+  statusCardWrapper: { 
+    width: "50%", 
+    padding: 8 
+  },
   statusCard: {
     borderRadius: 16,
     padding: 16,
@@ -314,8 +319,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#2c3e50",
     marginTop: 16,
-    marginBottom: 5,
-    paddingHorizontal: 8,
+    marginBottom: 12,
   },
   orderCard: {
     backgroundColor: "#fff",
