@@ -290,5 +290,82 @@ router.post("/summary", async (req, res) => {
   }
 });
 
+// In Backend/src/routes/orders.js
+
+// POST /api/orders/dashboard-summary -- THIS IS THE CORRECTED ROUTE
+router.post("/dashboard-summary", async (req, res) => {
+  const { shopId, period } = req.body; 
+
+  if (!shopId || !period) {
+    return res.status(400).json({ error: "Shop ID and period are required" });
+  }
+
+  // This section uses the 'period' variable to build SQL conditions
+  let groupBy, dateFormat, dateCondition;
+  switch (period) {
+    case 'Monthly':
+      groupBy = `DATE_FORMAT(o.OrderCreatedAt, '%Y-%m')`;
+      dateFormat = `'%b'`; // e.g., 'Oct'
+      dateCondition = `YEAR(o.OrderCreatedAt) = YEAR(CURDATE())`;
+      break;
+    case 'Yearly':
+      groupBy = `YEAR(o.OrderCreatedAt)`;
+      dateFormat = `'%Y'`; // e.g., '2025'
+      dateCondition = `1=1`; // No date filter for yearly
+      break;
+    case 'Weekly':
+    default:
+      groupBy = `DAYOFWEEK(o.OrderCreatedAt)`;
+      dateFormat = `'%a'`; // e.g., 'Thu'
+      dateCondition = `YEARWEEK(o.OrderCreatedAt, 1) = YEARWEEK(CURDATE(), 1)`;
+  }
+
+  try {
+    await db.query("SET SESSION group_concat_max_len = 1000000;");
+
+    // The query has been simplified and corrected
+    const query = `
+      SELECT
+        -- Calculate Total Orders for the period
+        (SELECT COUNT(*) FROM Orders o WHERE o.ShopID = ? AND ${dateCondition}) AS totalOrders,
+        
+        -- Calculate Total Revenue for the period
+        (SELECT SUM(i.PayAmount) 
+         FROM Orders o 
+         JOIN Invoice i ON o.OrderID = i.OrderID
+         WHERE o.ShopID = ? AND ${dateCondition} AND (SELECT s.InvoiceStatus FROM Invoice_Status s WHERE s.InvoiceID = i.InvoiceID ORDER BY s.StatUpdateAt DESC LIMIT 1) = 'Paid'
+        ) AS totalRevenue,
+
+        -- Aggregate chart data into a JSON string
+        (
+          SELECT CONCAT('[', GROUP_CONCAT(JSON_OBJECT('label', label, 'value', revenue)), ']')
+          FROM (
+            SELECT
+              DATE_FORMAT(o.OrderCreatedAt, ${dateFormat}) AS label,
+              SUM(i.PayAmount) AS revenue
+            FROM Orders o
+            JOIN Invoice i ON o.OrderID = i.OrderID
+            WHERE o.ShopID = ? AND ${dateCondition} AND (SELECT s.InvoiceStatus FROM Invoice_Status s WHERE s.InvoiceID = i.InvoiceID ORDER BY s.StatUpdateAt DESC LIMIT 1) = 'Paid'
+            GROUP BY ${groupBy}, label
+            ORDER BY o.OrderCreatedAt
+          ) AS ChartData
+        ) AS chartData;
+    `;
+    
+    const [[results]] = await db.query(query, [shopId, shopId, shopId]);
+    
+    const chartDataArray = results.chartData ? JSON.parse(results.chartData) : [];
+
+    res.json({
+        totalOrders: results.totalOrders || 0,
+        totalRevenue: results.totalRevenue || 0,
+        chartData: chartDataArray,
+    });
+
+  } catch (error) {
+    console.error("Error fetching dashboard summary:", error);
+    res.status(500).json({ error: "Failed to fetch dashboard summary" });
+  }
+});
 
 export default router;

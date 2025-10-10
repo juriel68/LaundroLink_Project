@@ -7,104 +7,38 @@
         body {
             margin: 0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #f0f8ff;
-            color: #333;
+            background-color: #f8f9fa;
+            display: flex;
         }
-
         .sidebar {
-            width: 230px;
-            height: 100vh;
+            width: 250px;
             background: linear-gradient(180deg, #0077b6, #0096c7);
+            height: 100vh;
             color: white;
+            padding-top: 20px;
             position: fixed;
-            top: 0;
-            left: 0;
-            padding-top: 30px;
-            box-shadow: 3px 0 10px rgba(0,0,0,0.1);
             display: flex;
             flex-direction: column;
         }
-
-        .sidebar h2 {
-            text-align: center;
-            margin-bottom: 40px;
-            font-size: 22px;
-            letter-spacing: 1px;
-        }
-
-        .sidebar-nav {
-            flex-grow: 1; /* Allows the nav to take up available space */
-        }
-        
-        .sidebar-nav a, .logout-link a {
-            display: block;
-            color: white;
-            padding: 14px 20px;
-            margin: 8px 15px;
-            text-decoration: none;
-            border-radius: 8px;
-            font-weight: 500;
-            transition: background 0.3s ease;
-            cursor: pointer;
-        }
-
-        .sidebar-nav a:hover, .sidebar-nav a.active, .logout-link a:hover {
-            background: rgba(255, 255, 255, 0.2);
-        }
-
-        .main-content {
-            margin-left: 230px;
-            padding: 30px;
-            min-height: 100vh;
-            background: #f9fbfd;
-            box-sizing: border-box;
-        }
-
-        .main-content h2 {
-            margin-top: 0;
-            font-size: 26px;
-            color: #0077b6;
-        }
-
-        .dashboard-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: white;
-            padding: 15px 25px;
-            border-radius: 10px;
-            margin-bottom: 25px;
-            box-shadow: 0px 4px 12px rgba(0,0,0,0.05);
-        }
-
-        .dashboard-header h1 {
-            margin: 0;
-            font-size: 22px;
-            color: #0077b6;
-        }
-
-        .bubble {
-            position: absolute;
-            border-radius: 50%;
-            background: rgba(0, 183, 255, 0.15);
-            animation: float 6s infinite ease-in-out;
-        }
-
-        .bubble.small {
-            width: 40px; height: 40px;
-            bottom: 20px; right: 30px;
-        }
-
-        .bubble.large {
-            width: 80px; height: 80px;
-            bottom: 100px; right: 100px;
-        }
-
-        @keyframes float {
-            0% { transform: translateY(0); opacity: 1; }
-            50% { transform: translateY(-20px); opacity: 0.7; }
-            100% { transform: translateY(0); opacity: 1; }
-        }
+        .sidebar h1 { font-size: 24px; text-align: center; margin-bottom: 30px; font-weight: 600; }
+        .sidebar-nav { flex-grow: 1; display: flex; flex-direction: column;}
+        .sidebar-nav a { display: block; color: #e0f2fe; text-decoration: none; padding: 15px 25px; margin: 5px 15px; border-radius: 8px; transition: background-color 0.3s; cursor: pointer; }
+        .sidebar-nav a:hover, .sidebar-nav a.active { background-color: rgba(255, 255, 255, 0.15); color: white; font-weight: 600; }
+        .logout-link { margin-top: auto; }
+        .main-content { margin-left: 250px; flex-grow: 1; padding: 40px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .header h2 { font-size: 32px; font-weight: 700; color: #1e3a8a; margin: 0; }
+        .time-filter { display: flex; background-color: #e9ecef; border-radius: 8px; padding: 5px; }
+        .time-filter button { padding: 8px 16px; border: none; background-color: transparent; border-radius: 6px; font-size: 14px; font-weight: 600; color: #495057; cursor: pointer; transition: background-color 0.3s, color 0.3s; }
+        .time-filter button.active { background-color: #fff; color: #007bff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 25px; margin-bottom: 40px; }
+        .kpi-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); border-left: 5px solid; }
+        .kpi-card h3 { margin: 0 0 5px 0; font-size: 16px; color: #6c757d; font-weight: 500; }
+        .kpi-card p { margin: 0; font-size: 36px; font-weight: 700; color: #343a40; }
+        .chart-container { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); }
+        .container-title { font-size: 20px; font-weight: 600; color: #343a40; margin: 0 0 30px 0; }
+        .chart-area { position: relative; width: 100%; height: 350px; }
+        .chart-svg { width: 100%; height: 100%; }
     </style>
 
     <script>
@@ -121,117 +55,199 @@
 </head>
 <body>
     <div class="sidebar">
-        <div>
-            <h2>🧺 LaundroLink</h2>
-            <nav class="sidebar-nav">
-                <a data-page="manage_shop">Manage Shop Details</a>
-                <a data-page="view_orders">View Orders</a>
-                <a data-page="manage_employees">Manage Employees</a>
-                <a data-page="view_sales">View Sales</a>
-                <a data-page="reports">Generate Reports</a>
-                <a data-page="reviews">View Customer Reviews</a>
-            </nav>
-        </div>
-        <div class="logout-link">
-            <a id="logoutButton">Logout</a>
-        </div>
-    </div>
-
-    <div class="main-content">
-        <div class="dashboard-header">
-            <h1 id="welcomeMessage"></h1>
-        </div>
-        <div class="content" id="content-area">
+        <h1>🧺 LaundroLink</h1>
+        <nav class="sidebar-nav">
+            <div>
+                <a href="#" class="active" data-page="dashboard">Dashboard</a>
+                <a href="#" data-page="data_analytics">Data Analytics</a> <!-- NEW LINK -->
+                <a href="#" data-page="manage_shop">Manage Shop Details</a>
+                <a href="#" data-page="view_orders">View Orders</a>
+                <a href="#" data-page="manage_employees">Manage Employees</a>
+                <a href="#" data-page="view_sales">View Sales</a>
+                <a href="#" data-page="reports">Generate Reports</a>
+                <a href="#" data-page="reviews">View Customer Reviews</a>
             </div>
+            <div class="logout-link">
+                 <a id="logoutButton">Logout</a>
+            </div>
+        </nav>
     </div>
 
-    <div class="bubble small"></div>
-    <div class="bubble large"></div>
+    <div class="main-content" id="content-area">
+        <!-- Content will be loaded here -->
+    </div>
 
     <script type="module">
         import { API_BASE_URL } from './api.js';
-
-        const contentArea = document.getElementById('content-area');
-        const welcomeMessage = document.getElementById('welcomeMessage');
-        const navLinks = document.querySelectorAll('.sidebar-nav a');
-        const logoutButton = document.getElementById('logoutButton');
         
+        const contentArea = document.getElementById('content-area');
+        const navLinks = document.querySelectorAll('.sidebar-nav a');
         const loggedInUser = JSON.parse(localStorage.getItem('laundroUser'));
 
-        welcomeMessage.textContent = `Welcome, ${loggedInUser.ShopName || 'Owner'}!`;
+        function drawDashboard() {
+            // UPDATED: Removed the segments container from this HTML
+            const dashboardHtml = `
+                <div class="header">
+                    <h2 id="shopNameHeader">Welcome, ${loggedInUser.ShopName || 'Owner'}!</h2>
+                    <div class="time-filter">
+                        <button id="weeklyBtn" class="active">Weekly</button>
+                        <button id="monthlyBtn">Monthly</button>
+                        <button id="yearlyBtn">Yearly</button>
+                    </div>
+                </div>
+                <div class="kpi-grid">
+                    <div class="kpi-card" style="border-color: #17a2b8;">
+                        <h3>Total Revenue</h3>
+                        <p id="totalRevenue">₱0.00</p>
+                    </div>
+                    <div class="kpi-card" style="border-color: #007bff;">
+                        <h3>Total Orders</h3>
+                        <p id="totalOrders">0</p>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <h3 class="container-title">Revenue Statistics</h3>
+                    <div class="chart-area">
+                        <svg class="chart-svg" id="chartSvg"></svg>
+                    </div>
+                </div>
+            `;
+            contentArea.innerHTML = dashboardHtml;
+            attachDashboardListeners();
+            fetchDashboardData('Weekly');
+        }
+
+        function attachDashboardListeners() {
+            // This function is unchanged
+            const weeklyBtn = document.getElementById('weeklyBtn');
+            const monthlyBtn = document.getElementById('monthlyBtn');
+            const yearlyBtn = document.getElementById('yearlyBtn');
+            const buttons = [weeklyBtn, monthlyBtn, yearlyBtn];
+
+            buttons.forEach(button => {
+                button.addEventListener('click', () => {
+                    buttons.forEach(btn => btn.classList.remove('active'));
+                    button.classList.add('active');
+                    let period = 'Weekly';
+                    if (button.id === 'monthlyBtn') period = 'Monthly';
+                    if (button.id === 'yearlyBtn') period = 'Yearly';
+                    fetchDashboardData(period);
+                });
+            });
+        }
         
+        async function fetchDashboardData(period) {
+            // This function is unchanged
+            if (!loggedInUser || !loggedInUser.ShopID) return;
+            const chartSvg = document.getElementById('chartSvg');
+            chartSvg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#adb5bd" font-family="Segoe UI">Loading data...</text>`;
+            try {
+                const response = await fetch(`${API_BASE_URL}/orders/dashboard-summary`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ shopId: loggedInUser.ShopID, period: period })
+                });
+                if (!response.ok) throw new Error('Failed to fetch dashboard data');
+                const data = await response.json();
+                document.getElementById('totalRevenue').textContent = `₱${parseFloat(data.totalRevenue || 0).toFixed(2)}`;
+                document.getElementById('totalOrders').textContent = data.totalOrders || 0;
+                drawChart(data.chartData);
+            } catch (error) {
+                console.error("Dashboard fetch error:", error);
+                chartSvg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#dc3545" font-family="Segoe UI">Error loading data.</text>`;
+            }
+        }
+        
+        function drawChart(chartData) {
+            // This function is unchanged
+            const chartSvg = document.getElementById('chartSvg');
+            if(!chartSvg) return;
+            chartSvg.innerHTML = '';
+            if (!chartData || chartData.length === 0) {
+                 chartSvg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#adb5bd" font-family="Segoe UI">No revenue data for this period.</text>`;
+                 return;
+            }
+            const values = chartData.map(d => d.value);
+            const labels = chartData.map(d => d.label);
+            const maxProfit = Math.ceil(Math.max(...values, 1) / 1000) * 1000 || 1000;
+            const svgNS = "http://www.w3.org/2000/svg";
+            const padding = { top: 20, right: 20, bottom: 40, left: 60 };
+            const svgWidth = chartSvg.clientWidth;
+            const svgHeight = chartSvg.clientHeight;
+            const chartWidth = svgWidth - padding.left - padding.right;
+            const chartHeight = svgHeight - padding.top - padding.bottom;
+            for (let i = 0; i <= 5; i++) {
+                const y = padding.top + (chartHeight / 5) * i;
+                const value = maxProfit - (maxProfit / 5) * i;
+                const gridLine = document.createElementNS(svgNS, 'line'); gridLine.setAttribute('x1', padding.left); gridLine.setAttribute('y1', y); gridLine.setAttribute('x2', svgWidth - padding.right); gridLine.setAttribute('y2', y); gridLine.setAttribute('stroke', '#e9ecef'); gridLine.setAttribute('stroke-dasharray', '3 3'); chartSvg.appendChild(gridLine);
+                const yLabel = document.createElementNS(svgNS, 'text'); yLabel.setAttribute('x', padding.left - 10); yLabel.setAttribute('y', y + 4); yLabel.setAttribute('text-anchor', 'end'); yLabel.setAttribute('fill', '#6c757d'); yLabel.setAttribute('font-size', '12'); yLabel.textContent = (value >= 1000) ? `₱${(value/1000)}k` : `₱${value}`; chartSvg.appendChild(yLabel);
+            }
+            const defs = document.createElementNS(svgNS, 'defs'); const gradient = document.createElementNS(svgNS, 'linearGradient'); gradient.id = 'areaGradient'; gradient.innerHTML = `<stop offset="0%" style="stop-color:#007bff; stop-opacity:0.4"/><stop offset="100%" style="stop-color:#007bff; stop-opacity:0"/>`; defs.appendChild(gradient); chartSvg.appendChild(defs);
+            if (values.length === 1) {
+                const value = values[0]; const x = padding.left + chartWidth / 2; const y = padding.top + chartHeight - (value / maxProfit) * chartHeight;
+                const startX = padding.left; const endX = svgWidth - padding.right; const bottomY = svgHeight - padding.bottom; const controlX1 = x - chartWidth * 0.25; const controlX2 = x + chartWidth * 0.25; const lineD = `M ${startX},${bottomY} C ${controlX1},${bottomY} ${controlX1},${y} ${x},${y} S ${controlX2},${bottomY} ${endX},${bottomY}`;
+                const areaPath = document.createElementNS(svgNS, 'path'); areaPath.setAttribute('d', lineD + ` Z`); areaPath.setAttribute('fill', 'url(#areaGradient)');
+                const linePath = document.createElementNS(svgNS, 'path'); linePath.setAttribute('d', lineD); linePath.setAttribute('fill', 'none'); linePath.setAttribute('stroke', '#007bff'); linePath.setAttribute('stroke-width', '3');
+                chartSvg.appendChild(areaPath); chartSvg.appendChild(linePath);
+                const circle = document.createElementNS(svgNS, 'circle'); circle.setAttribute('cx', x); circle.setAttribute('cy', y); circle.setAttribute('r', '5'); circle.setAttribute('fill', '#007bff'); circle.setAttribute('stroke', 'white'); circle.setAttribute('stroke-width', '2'); chartSvg.appendChild(circle);
+                const xLabel = document.createElementNS(svgNS, 'text'); xLabel.setAttribute('x', x); xLabel.setAttribute('y', svgHeight - padding.bottom + 20); xLabel.setAttribute('text-anchor', 'middle'); xLabel.setAttribute('fill', '#495057'); xLabel.setAttribute('font-size', '12'); xLabel.textContent = labels[0]; chartSvg.appendChild(xLabel);
+            } else {
+                const points = values.map((value, index) => ({ x: padding.left + (index / (labels.length - 1)) * chartWidth, y: padding.top + chartHeight - (value / maxProfit) * chartHeight }));
+                const line = (points) => { let d = `M ${points[0].x} ${points[0].y}`; for (let i = 0; i < points.length - 1; i++) { const x_mid = (points[i].x + points[i+1].x) / 2; const cp_x1 = (x_mid + points[i].x) / 2; d += ` C ${cp_x1},${points[i].y} ${cp_x1},${points[i+1].y} ${points[i+1].x},${points[i+1].y}`; } return d; };
+                const areaPath = document.createElementNS(svgNS, 'path'); areaPath.setAttribute('d', line(points) + ` L ${svgWidth - padding.right} ${svgHeight - padding.bottom} L ${padding.left} ${svgHeight - padding.bottom} Z`); areaPath.setAttribute('fill', 'url(#areaGradient)');
+                const linePath = document.createElementNS(svgNS, 'path'); linePath.setAttribute('d', line(points)); linePath.setAttribute('fill', 'none'); linePath.setAttribute('stroke', '#007bff'); linePath.setAttribute('stroke-width', '3');
+                chartSvg.appendChild(areaPath); chartSvg.appendChild(linePath);
+                points.forEach((point, index) => {
+                    const circle = document.createElementNS(svgNS, 'circle'); circle.setAttribute('cx', point.x); circle.setAttribute('cy', point.y); circle.setAttribute('r', '5'); circle.setAttribute('fill', '#007bff'); circle.setAttribute('stroke', 'white'); circle.setAttribute('stroke-width', '2'); chartSvg.appendChild(circle);
+                    const xLabel = document.createElementNS(svgNS, 'text'); xLabel.setAttribute('x', point.x); xLabel.setAttribute('y', svgHeight - padding.bottom + 20); xLabel.setAttribute('text-anchor', 'middle'); xLabel.setAttribute('fill', '#495057'); xLabel.setAttribute('font-size', '12'); xLabel.textContent = labels[index]; chartSvg.appendChild(xLabel);
+                });
+            }
+        }
+
+        // UPDATED: This function now handles loading the correct page
         async function loadContent(page) {
-            navLinks.forEach(link => link.classList.remove('active'));
+            navLinks.forEach(link => {
+                if (link.id !== 'logoutButton') link.classList.remove('active');
+            });
             const activeLink = document.querySelector(`[data-page="${page}"]`);
             if (activeLink) activeLink.classList.add('active');
             
-            contentArea.innerHTML = '<h2>Loading...</h2>';
-
-            try {
-                let htmlContent = '';
-                switch (page) {
-                    case 'manage_shop':
-                        htmlContent = `<h2>Manage Shop Details</h2><p>Content for managing shop details goes here.</p>`;
-                        break;
-                    case 'view_orders':
-                        const response = await fetch(`${API_BASE_URL}/orders/shop/${loggedInUser.ShopID}`);
-                        if (!response.ok) throw new Error('Failed to fetch orders');
-                        const orders = await response.json();
-                        
-                        let orderRows = orders.map(order => `
-                            <tr>
-                                <td>${order.OrderID || ''}</td>
-                                <td>${order.CustomerName || 'N/A'}</td>
-                                <td>${order.TotalAmount || '0.00'}</td>
-                                <td>${order.Status || 'Unknown'}</td>
-                            </tr>
-                        `).join('');
-
-                        htmlContent = `
-                            <h2>Shop Orders</h2>
-                            <table border="1" style="width:100%; border-collapse: collapse;">
-                                <thead><tr><th>ID</th><th>Customer</th><th>Amount</th><th>Status</th></tr></thead>
-                                <tbody>${orderRows}</tbody>
-                            </table>`;
-                        break;
-                    case 'manage_employees':
-                        htmlContent = `<h2>Manage Employees</h2><p>Employee management features will be displayed here.</p>`;
-                        break;
-                    case 'view_sales':
-                        htmlContent = `<h2>View Sales</h2><p>Sales data and analytics will be displayed here.</p>`;
-                        break;
-                    case 'reports':
-                        htmlContent = `<h2>Generate Reports</h2><p>Reporting features will be displayed here.</p>`;
-                        break;
-                    case 'reviews':
-                        htmlContent = `<h2>Customer Reviews</h2><p>Customer reviews and ratings will be displayed here.</p>`;
-                        break;
-                    default:
-                        htmlContent = `<h2>Welcome to the Owner Dashboard</h2><p>Select an option from the sidebar.</p>`;
-                }
-                contentArea.innerHTML = htmlContent;
-            } catch (error) {
-                console.error('Failed to load content:', error);
-                contentArea.innerHTML = '<h2>Error</h2><p>Could not load content from the server.</p>';
+            if (page === 'dashboard') {
+                drawDashboard();
+                return;
             }
+
+            // Load the new analytics page in an iframe
+            if (page === 'data_analytics') {
+                contentArea.innerHTML = `<iframe src="owner_pages/data_analytics.php" style="width: 100%; height: 90vh; border: none;"></iframe>`;
+                return;
+            }
+
+            // Handle all other pages as placeholders
+            contentArea.innerHTML = `<h2>Loading ${page.replace(/_/g, ' ')}...</h2>`;
+            setTimeout(() => {
+                 contentArea.innerHTML = `<h2>${page.replace(/_/g, ' ')}</h2><p>Content for this section is not yet implemented.</p>`;
+            }, 500);
         }
 
         navLinks.forEach(link => {
             link.addEventListener('click', (event) => {
                 event.preventDefault();
+                
+                if (link.id === 'logoutButton') {
+                    if (confirm('Are you sure you want to logout?')) {
+                        localStorage.removeItem('laundroUser');
+                        window.location.href = 'index.php';
+                    }
+                    return;
+                }
+                
                 const page = link.getAttribute('data-page');
                 loadContent(page);
             });
         });
-
-        logoutButton.addEventListener('click', (event) => {
-            event.preventDefault();
-            localStorage.removeItem('laundroUser');
-            window.location.href = 'index.php';
-        });
         
-        // Load initial welcome content
-        loadContent('welcome');
+        loadContent('dashboard');
     </script>
 </body>
 </html>

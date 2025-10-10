@@ -6,19 +6,27 @@ import dotenv from "dotenv";
 import userRoutes from "./routes/users.js";
 import orderRoutes from "./routes/orders.js";
 import messagesRouter from './routes/messages.js';
+// 1. IMPORT THE NEW ANALYTICS ROUTE
+import analyticsRoutes from "./routes/analytics.js";
 
 dotenv.config();
 
 const app = express();
 
 // ✅ Middlewares
-app.use(cors());
+// This CORS configuration is correct for your setup
+app.use(cors({
+  origin: 'http://localhost'
+}));
 app.use(express.json());
 
 // ✅ API Routes
 app.use("/api/users", userRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/messages", messagesRouter);
+// 2. USE THE NEW ANALYTICS ROUTE
+app.use("/api/analytics", analyticsRoutes);
+
 
 // ✅ Health check route (for quick testing in browser)
 app.get("/", (req, res) => {
