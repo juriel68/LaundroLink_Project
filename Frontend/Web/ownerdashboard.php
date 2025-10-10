@@ -55,13 +55,13 @@
 </head>
 <body>
     <div class="sidebar">
-        <h1>🧺 LaundroLink</h1>
+        <h1>LaundroLink</h1>
         <nav class="sidebar-nav">
             <div>
                 <a href="#" class="active" data-page="dashboard">Dashboard</a>
-                <a href="#" data-page="data_analytics">Data Analytics</a> <!-- NEW LINK -->
-                <a href="#" data-page="manage_shop">Manage Shop Details</a>
-                <a href="#" data-page="view_orders">View Orders</a>
+                <a href="#" data-page="view_orders">Order</a> <!-- NEW LINK -->
+                <a href="#" data-page="manage_employees">Employee</a>
+                <a href="#" data-page="manage_shop">Shop Details</a>
                 <a href="#" data-page="manage_employees">Manage Employees</a>
                 <a href="#" data-page="view_sales">View Sales</a>
                 <a href="#" data-page="reports">Generate Reports</a>
