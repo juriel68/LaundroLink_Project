@@ -30,11 +30,12 @@
     /* ==== LOGIN BOX ==== */
     .login-box {
       background: #89CFF0;
-      padding: 45px;
+      padding: 45px ;
       border-radius: 25px;
       box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
       width: 345px;
       text-align: center;
+      gap: 18px;
     }
 
     /* ==== AVATAR ==== */
