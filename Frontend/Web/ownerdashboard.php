@@ -7,12 +7,12 @@
         body {
             margin: 0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f8f9fa;
+            background-color: #89CFF0;
             display: flex;
         }
         .sidebar {
             width: 250px;
-            background: linear-gradient(180deg, #0077b6, #0096c7);
+            background: #0D47A1;
             height: 100vh;
             color: white;
             padding-top: 20px;
@@ -20,9 +20,30 @@
             display: flex;
             flex-direction: column;
         }
-        .sidebar h1 { font-size: 24px; text-align: center; margin-bottom: 30px; font-weight: 600; }
-        .sidebar-nav { flex-grow: 1; display: flex; flex-direction: column;}
-        .sidebar-nav a { display: block; color: #e0f2fe; text-decoration: none; padding: 15px 25px; margin: 5px 15px; border-radius: 8px; transition: background-color 0.3s; cursor: pointer; }
+        .sidebar h1 { 
+            font-size: 24px; 
+            text-align: center; 
+            margin-bottom: 30px; 
+            font-weight: 600; 
+        }
+
+        .sidebar-nav { 
+            flex-grow: 1; 
+            display: flex; 
+            flex-direction: column;
+        }
+
+        .sidebar-nav a { 
+            display: block; 
+            color: #e0f2fe; 
+            text-decoration: none; 
+            padding: 15px 25px; 
+            margin: 5px 15px; 
+            border-radius: 8px; 
+            transition: background-color 0.3s; 
+            cursor: pointer; 
+        }
+
         .sidebar-nav a:hover, .sidebar-nav a.active { background-color: rgba(255, 255, 255, 0.15); color: white; font-weight: 600; }
         .logout-link { margin-top: auto; }
         .main-content { margin-left: 250px; flex-grow: 1; padding: 40px; }
@@ -55,17 +76,16 @@
 </head>
 <body>
     <div class="sidebar">
-        <h1>🧺 LaundroLink</h1>
+        <h1>LaundroLink</h1>
         <nav class="sidebar-nav">
             <div>
                 <a href="#" class="active" data-page="dashboard">Dashboard</a>
-                <a href="#" data-page="data_analytics">Data Analytics</a> <!-- NEW LINK -->
-                <a href="#" data-page="manage_shop">Manage Shop Details</a>
-                <a href="#" data-page="view_orders">View Orders</a>
-                <a href="#" data-page="manage_employees">Manage Employees</a>
-                <a href="#" data-page="view_sales">View Sales</a>
-                <a href="#" data-page="reports">Generate Reports</a>
-                <a href="#" data-page="reviews">View Customer Reviews</a>
+                <a href="#" data-page="view_orders">Order</a> <!-- NEW LINK -->
+                <a href="#" data-page="manage_employees">Employee</a>
+                <a href="#" data-page="manage_shop">Shop Details</a>
+                <a href="#" data-page="view_sales">Sales</a>
+                <a href="#" data-page="data_analytics">Data Analytics</a>
+                <a href="#" data-page="reports">Reports</a>
             </div>
             <div class="logout-link">
                  <a id="logoutButton">Logout</a>
