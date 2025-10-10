@@ -5,16 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LaundroLink Login</title>
     <style>
-        /* Your existing CSS styles go here... */
+        
         body { 
             margin: 0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #74ebd5 0%, #ACB6E5 100%);
+            background: #0D47A1;
             height: 100vh; 
             display: flex; 
             justify-content: center; 
             align-items: center; 
         }
+
         .login-box {
             background: #fff; 
             padding: 40px; 
@@ -25,6 +26,7 @@
             position: relative;
             overflow: hidden;
         }
+
         .login-box::before, .login-box::after {
             content: "";
             position: absolute;
@@ -33,35 +35,78 @@
             border-radius: 50%;
             z-index: 0;
         }
+
         .login-box::before {
             top: -80px; right: -80px;
             background: rgba(0, 183, 255, 0.2);
         }
+
         .login-box::after {
             bottom: -80px; left: -80px;
             background: rgba(173, 216, 230, 0.3);
         }
+
         .login-box h2 {
-            margin-bottom: 20px; color: #0077b6; font-size: 28px; position: relative; z-index: 1;
+            margin-bottom: 20px; 
+            color: #0077b6; 
+            font-size: 28px; 
+            position: relative; 
+            z-index: 1;
         }
+
         .login-box p {
-            margin-bottom: 20px; color: #555; font-size: 14px; position: relative; z-index: 1;
+            margin-bottom: 20px; 
+            color: #555; 
+            font-size: 14px; 
+            position: relative; 
+            z-index: 1;
         }
+
         input {
-            width: 100%; padding: 12px; margin: 12px 0; border: 1px solid #ccc; border-radius: 8px; font-size: 14px; position: relative; z-index: 1; box-sizing: border-box;
+            width: 100%; 
+            padding: 12px; 
+            margin: 12px 0; 
+            border: 1px solid #ccc; 
+            border-radius: 8px; 
+            font-size: 14px; 
+            position: relative; 
+            z-index: 1; 
+            box-sizing: border-box;
         }
+
         button {
-            width: 100%; padding: 12px; margin-top: 10px; background: #00b4d8; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; position: relative; z-index: 1; transition: background 0.3s ease;
+            width: 100%; 
+            padding: 12px; 
+            margin-top: 10px; 
+            background: #00b4d8; 
+            color: white; 
+            border: none; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-size: 16px; 
+            font-weight: bold; 
+            position: relative; 
+            z-index: 1; 
+            transition: background 0.3s ease;
         }
-        button:hover { background: #0096c7; }
+
+        button:hover { 
+            background: #0096c7; 
+        }
+
         .error {
-            color: red; font-size: 0.9em; margin-bottom: 10px; position: relative; z-index: 1; display: none; /* Hidden by default */
+            color: red; 
+            font-size: 0.9em; 
+            margin-bottom: 10px; 
+            position: relative; 
+            z-index: 1; 
+            display: none; /* Hidden by default */
         }
     </style>
 </head>
 <body>
     <div class="login-box">
-        <h2>🧺 LaundroLink</h2>
+        <h2>LaundroLink</h2>
         <p>Login</p>
 
         <p id="errorMessage" class="error"></p>
