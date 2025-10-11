@@ -184,8 +184,8 @@
             for (let i = 0; i <= numGridLines; i++) {
                 const y = padding.top + (chartHeight / numGridLines) * i;
                 const value = maxProfit - (maxProfit / numGridLines) * i;
-                const gridLine = document.createElementNS(svgNS, 'line'); gridLine.setAttribute('x1', padding.left); gridLine.setAttribute('y1', y); gridLine.setAttribute('x2', svgWidth - padding.right); gridLine.setAttribute('y2', y); gridLine.setAttribute('stroke', '#e9ecef'); gridLine.setAttribute('stroke-dasharray', '3 3'); chartSvg.appendChild(gridLine);
-                const yLabel = document.createElementNS(svgNS, 'text'); yLabel.setAttribute('x', padding.left - 10); yLabel.setAttribute('y', y + 4); yLabel.setAttribute('text-anchor', 'end'); yLabel.setAttribute('fill', '#6c757d'); yLabel.setAttribute('font-size', '12'); yLabel.textContent = (value >= 1000) ? `₱${(value/1000)}k` : `₱${value}`; chartSvg.appendChild(yLabel);
+                const gridLine = document.createElementNS(svgNS, 'line'); gridLine.setAttribute('x1', padding.left); gridLine.setAttribute('y1', y); gridLine.setAttribute('x2', svgWidth - padding.right); gridLine.setAttribute('y2', y); gridLine.setAttribute('stroke', '#5b5e61ff'); gridLine.setAttribute('stroke-dasharray', '3 3'); chartSvg.appendChild(gridLine);
+                const yLabel = document.createElementNS(svgNS, 'text'); yLabel.setAttribute('x', padding.left - 10); yLabel.setAttribute('y', y + 4); yLabel.setAttribute('text-anchor', 'end'); yLabel.setAttribute('fill', '#1a1b1cff'); yLabel.setAttribute('font-size', '12'); yLabel.textContent = (value >= 1000) ? `₱${(value/1000)}k` : `₱${value}`; chartSvg.appendChild(yLabel);
             }
 
             // --- ADD AXIS TITLES ---
@@ -200,7 +200,7 @@
             yTitle.setAttribute('x', -(svgHeight / 2));
             yTitle.setAttribute('y', 20); // Position from the left edge
             yTitle.setAttribute('text-anchor', 'middle');
-            yTitle.setAttribute('fill', '#6c757d');
+            yTitle.setAttribute('fill', '#000000ff');
             yTitle.setAttribute('font-size', '14');
             yTitle.setAttribute('font-weight', '600');
             yTitle.textContent = 'Profit Amount';
@@ -211,7 +211,7 @@
             xTitle.setAttribute('x', padding.left + chartWidth / 2);
             xTitle.setAttribute('y', svgHeight - 10); // Position from the bottom edge
             xTitle.setAttribute('text-anchor', 'middle');
-            xTitle.setAttribute('fill', '#6c757d');
+            xTitle.setAttribute('fill', '#000000ff');
             xTitle.setAttribute('font-size', '14');
             xTitle.setAttribute('font-weight', '600');
             xTitle.textContent = xAxisTitleText;
@@ -226,7 +226,7 @@
                 const linePath = document.createElementNS(svgNS, 'path'); linePath.setAttribute('d', lineD); linePath.setAttribute('fill', 'none'); linePath.setAttribute('stroke', '#007bff'); linePath.setAttribute('stroke-width', '3');
                 chartSvg.appendChild(areaPath); chartSvg.appendChild(linePath);
                 const circle = document.createElementNS(svgNS, 'circle'); circle.setAttribute('cx', x); circle.setAttribute('cy', y); circle.setAttribute('r', '5'); circle.setAttribute('fill', '#007bff'); circle.setAttribute('stroke', 'white'); circle.setAttribute('stroke-width', '2'); chartSvg.appendChild(circle);
-                const xLabel = document.createElementNS(svgNS, 'text'); xLabel.setAttribute('x', x); xLabel.setAttribute('y', svgHeight - padding.bottom + 20); xLabel.setAttribute('text-anchor', 'middle'); xLabel.setAttribute('fill', '#495057'); xLabel.setAttribute('font-size', '12'); xLabel.textContent = labels[0]; chartSvg.appendChild(xLabel);
+                const xLabel = document.createElementNS(svgNS, 'text'); xLabel.setAttribute('x', x); xLabel.setAttribute('y', svgHeight - padding.bottom + 20); xLabel.setAttribute('text-anchor', 'middle'); xLabel.setAttribute('fill', '#000000ff'); xLabel.setAttribute('font-size', '12'); xLabel.textContent = labels[0]; chartSvg.appendChild(xLabel);
             } else {
                 const points = values.map((value, index) => ({ x: padding.left + (index / (labels.length - 1)) * chartWidth, y: padding.top + chartHeight - (value / maxProfit) * chartHeight }));
                 const line = (points) => { let d = `M ${points[0].x} ${points[0].y}`; for (let i = 0; i < points.length - 1; i++) { const x_mid = (points[i].x + points[i+1].x) / 2; const cp_x1 = (x_mid + points[i].x) / 2; d += ` C ${cp_x1},${points[i].y} ${cp_x1},${points[i+1].y} ${points[i+1].x},${points[i+1].y}`; } return d; };
@@ -235,7 +235,7 @@
                 chartSvg.appendChild(areaPath); chartSvg.appendChild(linePath);
                 points.forEach((point, index) => {
                     const circle = document.createElementNS(svgNS, 'circle'); circle.setAttribute('cx', point.x); circle.setAttribute('cy', point.y); circle.setAttribute('r', '5'); circle.setAttribute('fill', '#007bff'); circle.setAttribute('stroke', 'white'); circle.setAttribute('stroke-width', '2'); chartSvg.appendChild(circle);
-                    const xLabel = document.createElementNS(svgNS, 'text'); xLabel.setAttribute('x', point.x); xLabel.setAttribute('y', svgHeight - padding.bottom + 20); xLabel.setAttribute('text-anchor', 'middle'); xLabel.setAttribute('fill', '#495057'); xLabel.setAttribute('font-size', '12'); xLabel.textContent = labels[index]; chartSvg.appendChild(xLabel);
+                    const xLabel = document.createElementNS(svgNS, 'text'); xLabel.setAttribute('x', point.x); xLabel.setAttribute('y', svgHeight - padding.bottom + 20); xLabel.setAttribute('text-anchor', 'middle'); xLabel.setAttribute('fill', '#000000ff'); xLabel.setAttribute('font-size', '12'); xLabel.textContent = labels[index]; chartSvg.appendChild(xLabel);
                 });
             }
         }

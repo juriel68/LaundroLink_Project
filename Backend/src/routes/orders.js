@@ -290,9 +290,8 @@ router.post("/summary", async (req, res) => {
   }
 });
 
-// In Backend/src/routes/orders.js
 
-// POST /api/orders/dashboard-summary -- THIS IS THE CORRECTED ROUTE
+// POST /api/orders/dashboard-summary -- UPDATED ROUTE
 router.post("/dashboard-summary", async (req, res) => {
   const { shopId, period } = req.body; 
 
@@ -306,12 +305,12 @@ router.post("/dashboard-summary", async (req, res) => {
     case 'Monthly':
       groupBy = `DATE_FORMAT(o.OrderCreatedAt, '%Y-%m')`;
       dateFormat = `'%b'`; // e.g., 'Oct'
-      dateCondition = `YEAR(o.OrderCreatedAt) = YEAR(CURDATE())`;
+      dateCondition = `YEAR(o.OrderCreatedAt) = YEAR(CURDATE()) AND MONTH(o.OrderCreatedAt) = MONTH(CURDATE())`;
       break;
     case 'Yearly':
       groupBy = `YEAR(o.OrderCreatedAt)`;
       dateFormat = `'%Y'`; // e.g., '2025'
-      dateCondition = `1=1`; // No date filter for yearly
+      dateCondition = `YEAR(o.OrderCreatedAt) = YEAR(CURDATE())`;
       break;
     case 'Weekly':
     default:
@@ -323,7 +322,7 @@ router.post("/dashboard-summary", async (req, res) => {
   try {
     await db.query("SET SESSION group_concat_max_len = 1000000;");
 
-    // The query has been simplified and corrected
+    // The query now includes the logic for 'newCustomers'
     const query = `
       SELECT
         -- Calculate Total Orders for the period
@@ -335,6 +334,20 @@ router.post("/dashboard-summary", async (req, res) => {
          JOIN Invoice i ON o.OrderID = i.OrderID
          WHERE o.ShopID = ? AND ${dateCondition} AND (SELECT s.InvoiceStatus FROM Invoice_Status s WHERE s.InvoiceID = i.InvoiceID ORDER BY s.StatUpdateAt DESC LIMIT 1) = 'Paid'
         ) AS totalRevenue,
+
+        -- ✅ NEW: Calculate New Customers for the period
+        (
+            SELECT COUNT(CustID)
+            FROM (
+                -- First, find the date of the very first order for each customer
+                SELECT CustID, MIN(OrderCreatedAt) as first_order_date
+                FROM Orders
+                WHERE ShopID = ?
+                GROUP BY CustID
+            ) AS customer_first_orders
+            -- Then, count how many of those first orders happened in the current period
+            WHERE YEARWEEK(first_order_date, 1) = YEARWEEK(CURDATE(), 1) -- This condition needs to match the period
+        ) AS newCustomers,
 
         -- Aggregate chart data into a JSON string
         (
@@ -352,19 +365,80 @@ router.post("/dashboard-summary", async (req, res) => {
         ) AS chartData;
     `;
     
-    const [[results]] = await db.query(query, [shopId, shopId, shopId]);
+    // Note: We've added more placeholders `?`, so we must add `shopId` for each one.
+    const [[results]] = await db.query(query, [shopId, shopId, shopId, shopId]);
     
     const chartDataArray = results.chartData ? JSON.parse(results.chartData) : [];
 
     res.json({
         totalOrders: results.totalOrders || 0,
         totalRevenue: results.totalRevenue || 0,
+        newCustomers: results.newCustomers || 0, // Add newCustomers to the response
         chartData: chartDataArray,
     });
 
   } catch (error) {
     console.error("Error fetching dashboard summary:", error);
     res.status(500).json({ error: "Failed to fetch dashboard summary" });
+  }
+});
+
+
+// ✅ NEW ROUTE for Order Type Breakdown
+router.post("/report/order-types", async (req, res) => {
+  const { shopId, period } = req.body; // Assuming you'll filter by period later
+
+  if (!shopId) {
+    return res.status(400).json({ error: "Shop ID is required" });
+  }
+
+  try {
+    const query = `
+      SELECT 
+        s.SvcName AS label,
+        COUNT(o.OrderID) AS count
+      FROM Orders o
+      JOIN Service s ON o.SvcID = s.SvcID
+      WHERE o.ShopID = ?
+      GROUP BY s.SvcName
+      ORDER BY count DESC;
+    `;
+    const [rows] = await db.query(query, [shopId]);
+    res.json(rows);
+  } catch (error) {
+    console.error("Error fetching order type breakdown:", error);
+    res.status(500).json({ error: "Failed to fetch order type breakdown" });
+  }
+});
+
+// ✅ NEW ROUTE for Top 5 Employees by Revenue
+router.post("/report/top-employees", async (req, res) => {
+  const { shopId, period } = req.body; // Assuming you'll filter by period later
+
+  if (!shopId) {
+    return res.status(400).json({ error: "Shop ID is required" });
+  }
+  
+  try {
+    // Note: This query assumes you have an 'employees' table and a way to link an order/invoice to an employee.
+    // This is a hypothetical structure. You MUST adapt the JOIN condition to your actual database schema.
+    const query = `
+      SELECT
+        s.StaffName as name,
+        SUM(i.PayAmount) AS revenue
+      FROM Invoice i
+      JOIN Orders o ON i.OrderID = o.OrderID
+      JOIN Staff s ON o.StaffID = s.StaffID 
+      WHERE o.ShopID = ? AND (SELECT s.InvoiceStatus FROM Invoice_Status s WHERE s.InvoiceID = i.InvoiceID ORDER BY s.StatUpdateAt DESC LIMIT 1) = 'Paid'
+      GROUP BY s.StaffID, s.StaffName
+      ORDER BY revenue DESC
+      LIMIT 5;
+    `;
+    const [rows] = await db.query(query, [shopId]);
+    res.json(rows);
+  } catch (error) {
+    console.error("Error fetching top employees:", error);
+    res.status(500).json({ error: "Failed to fetch top employees" });
   }
 });
 
