@@ -4,11 +4,10 @@
     <meta charset="UTF-8">
     <title>LaundroLink Owner Dashboard</title>
     <style>
-
         body {
             margin: 0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #89CFF0;
+            background-color: #f8f9fa;
             display: flex;
         }
         .sidebar {
@@ -21,136 +20,24 @@
             display: flex;
             flex-direction: column;
         }
-        .sidebar h1 { 
-            font-size: 24px; 
-            text-align: center; 
-            margin-bottom: 30px; 
-            font-weight: 600; 
-        }
-
-        .sidebar-nav { 
-            flex-grow: 1; 
-            display: flex; 
-            flex-direction: column;
-        }
-
-        .sidebar-nav a { 
-            display: block; 
-            color: #e0f2fe; 
-            text-decoration: none; 
-            padding: 15px 25px; 
-            margin: 5px 15px; 
-            border-radius: 8px; 
-            transition: background-color 0.3s; 
-            cursor: pointer; 
-        }
-
-        .sidebar-nav a:hover, 
-        .sidebar-nav a.active { 
-            background-color: rgba(255, 255, 255, 0.15); 
-            color: white; 
-            font-weight: 600; 
-        }
-
-        .main-content { 
-            margin-left: 250px; 
-            flex-grow: 1; 
-            padding: 40px; 
-        }
-
-        .header { 
-            display: flex; j
-            ustify-content: space-between; 
-            align-items: center; 
-            margin-bottom: 30px; 
-        }
-
-        .header h2 { 
-            font-size: 32px; 
-            font-weight: 700; 
-            color: #1e3a8a; 
-            margin: 0; 
-        }
-
-        .time-filter { 
-            display: flex; 
-            background-color: #e9ecef; 
-            border-radius: 8px; 
-            padding: 5px; 
-        }
-
-        .time-filter button { 
-            padding: 8px 16px; 
-            border: none; 
-            background-color: transparent; 
-            border-radius: 6px; 
-            font-size: 14px; 
-            font-weight: 600; 
-            color: #495057; 
-            cursor: pointer; 
-            transition: background-color 0.3s, color 0.3s; 
-        }
-
-        .time-filter button.active { 
-            background-color: #fff; 
-            color: #007bff; 
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
-        }
-
-        .kpi-grid { 
-            display: grid; 
-            grid-template-columns: 1fr 1fr; 
-            gap: 25px; 
-            margin-bottom: 40px; 
-        }
-
-        .kpi-card { 
-            background: white; 
-            padding: 25px; 
-            border-radius: 12px; 
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); 
-            border-left: 5px solid; 
-        }
-
-        .kpi-card h3 { 
-            margin: 0 0 5px 0; 
-            font-size: 16px; 
-            color: #6c757d; 
-            font-weight: 500; 
-        }
-
-        .kpi-card p { 
-            margin: 0; 
-            font-size: 36px; 
-            font-weight: 700; 
-            color: #343a40; 
-        }
-
-        .chart-container { 
-            background: white; 
-            padding: 25px; 
-            border-radius: 12px; 
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); 
-        }
-
-        .container-title { 
-            font-size: 20px; 
-            font-weight: 600; 
-            color: #343a40; 
-            margin: 0 0 30px 0; 
-        }
-
-        .chart-area { 
-            position: relative; 
-            width: 100%; 
-            height: 350px; 
-        }
-
-        .chart-svg { 
-            width: 100%; 
-            height: 100%; 
-        }
-
+        .sidebar h1 { font-size: 24px; text-align: center; margin-bottom: 30px; font-weight: 600; }
+        .sidebar-nav { flex-grow: 1; display: flex; flex-direction: column;}
+        .sidebar-nav a { display: block; color: #e0f2fe; text-decoration: none; padding: 15px 25px; margin: 5px 15px; border-radius: 8px; transition: background-color 0.3s; cursor: pointer; }
+        .sidebar-nav a:hover, .sidebar-nav a.active { background-color: rgba(255, 255, 255, 0.15); color: white; font-weight: 600; }
+        .main-content { margin-left: 250px; flex-grow: 1; padding: 40px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .header h2 { font-size: 32px; font-weight: 700; color: #1e3a8a; margin: 0; }
+        .time-filter { display: flex; background-color: #e9ecef; border-radius: 8px; padding: 5px; }
+        .time-filter button { padding: 8px 16px; border: none; background-color: transparent; border-radius: 6px; font-size: 14px; font-weight: 600; color: #495057; cursor: pointer; transition: background-color 0.3s, color 0.3s; }
+        .time-filter button.active { background-color: #fff; color: #007bff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 25px; margin-bottom: 40px; }
+        .kpi-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); border-left: 5px solid; }
+        .kpi-card h3 { margin: 0 0 5px 0; font-size: 16px; color: #6c757d; font-weight: 500; }
+        .kpi-card p { margin: 0; font-size: 36px; font-weight: 700; color: #343a40; }
+        .chart-container { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); }
+        .container-title { font-size: 20px; font-weight: 600; color: #343a40; margin: 0 0 30px 0; }
+        .chart-area { position: relative; width: 100%; height: 350px; }
+        .chart-svg { width: 100%; height: 100%; }
     </style>
 
     <script>
@@ -196,7 +83,6 @@
         const loggedInUser = JSON.parse(localStorage.getItem('laundroUser'));
 
         function drawDashboard() {
-            // UPDATED: Removed the segments container from this HTML
             const dashboardHtml = `
                 <div class="header">
                     <h2 id="shopNameHeader">Welcome, ${loggedInUser.ShopName || 'Owner'}!</h2>
@@ -229,7 +115,6 @@
         }
 
         function attachDashboardListeners() {
-            // This function is unchanged
             const weeklyBtn = document.getElementById('weeklyBtn');
             const monthlyBtn = document.getElementById('monthlyBtn');
             const yearlyBtn = document.getElementById('yearlyBtn');
@@ -248,10 +133,13 @@
         }
         
         async function fetchDashboardData(period) {
-            // This function is unchanged
             if (!loggedInUser || !loggedInUser.ShopID) return;
+            
             const chartSvg = document.getElementById('chartSvg');
-            chartSvg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#adb5bd" font-family="Segoe UI">Loading data...</text>`;
+            if (chartSvg) {
+                chartSvg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#adb5bd" font-family="Segoe UI">Loading data...</text>`;
+            }
+
             try {
                 const response = await fetch(`${API_BASE_URL}/orders/dashboard-summary`, {
                     method: 'POST',
@@ -259,20 +147,23 @@
                     body: JSON.stringify({ shopId: loggedInUser.ShopID, period: period })
                 });
                 if (!response.ok) throw new Error('Failed to fetch dashboard data');
+                
                 const data = await response.json();
+                
                 document.getElementById('totalRevenue').textContent = `₱${parseFloat(data.totalRevenue || 0).toFixed(2)}`;
                 document.getElementById('totalOrders').textContent = data.totalOrders || 0;
-                drawChart(data.chartData);
+                drawChart(data.chartData, period); // Pass period to drawChart
+
             } catch (error) {
                 console.error("Dashboard fetch error:", error);
-                chartSvg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#dc3545" font-family="Segoe UI">Error loading data.</text>`;
+                if (chartSvg) {
+                    chartSvg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#dc3545" font-family="Segoe UI">Error loading data.</text>`;
+                }
             }
         }
         
-        function drawChart(chartData) {
-            // This function is unchanged
+        function drawChart(chartData, period) {
             const chartSvg = document.getElementById('chartSvg');
-            if(!chartSvg) return;
             chartSvg.innerHTML = '';
             if (!chartData || chartData.length === 0) {
                  chartSvg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#adb5bd" font-family="Segoe UI">No revenue data for this period.</text>`;
@@ -282,17 +173,51 @@
             const labels = chartData.map(d => d.label);
             const maxProfit = Math.ceil(Math.max(...values, 1) / 1000) * 1000 || 1000;
             const svgNS = "http://www.w3.org/2000/svg";
-            const padding = { top: 20, right: 20, bottom: 40, left: 60 };
+            const padding = { top: 20, right: 20, bottom: 60, left: 70 }; // Adjusted padding for titles
             const svgWidth = chartSvg.clientWidth;
             const svgHeight = chartSvg.clientHeight;
             const chartWidth = svgWidth - padding.left - padding.right;
             const chartHeight = svgHeight - padding.top - padding.bottom;
-            for (let i = 0; i <= 5; i++) {
-                const y = padding.top + (chartHeight / 5) * i;
-                const value = maxProfit - (maxProfit / 5) * i;
+
+            // Draw grid lines and Y-axis labels
+            const numGridLines = 5;
+            for (let i = 0; i <= numGridLines; i++) {
+                const y = padding.top + (chartHeight / numGridLines) * i;
+                const value = maxProfit - (maxProfit / numGridLines) * i;
                 const gridLine = document.createElementNS(svgNS, 'line'); gridLine.setAttribute('x1', padding.left); gridLine.setAttribute('y1', y); gridLine.setAttribute('x2', svgWidth - padding.right); gridLine.setAttribute('y2', y); gridLine.setAttribute('stroke', '#e9ecef'); gridLine.setAttribute('stroke-dasharray', '3 3'); chartSvg.appendChild(gridLine);
                 const yLabel = document.createElementNS(svgNS, 'text'); yLabel.setAttribute('x', padding.left - 10); yLabel.setAttribute('y', y + 4); yLabel.setAttribute('text-anchor', 'end'); yLabel.setAttribute('fill', '#6c757d'); yLabel.setAttribute('font-size', '12'); yLabel.textContent = (value >= 1000) ? `₱${(value/1000)}k` : `₱${value}`; chartSvg.appendChild(yLabel);
             }
+
+            // --- ADD AXIS TITLES ---
+            let xAxisTitleText = 'Period';
+            if (period === 'Weekly') xAxisTitleText = 'Days of the Week';
+            if (period === 'Monthly') xAxisTitleText = 'Months';
+            if (period === 'Yearly') xAxisTitleText = 'Years';
+            
+            // Y-Axis Title
+            const yTitle = document.createElementNS(svgNS, 'text');
+            yTitle.setAttribute('transform', `rotate(-90)`);
+            yTitle.setAttribute('x', -(svgHeight / 2));
+            yTitle.setAttribute('y', 20); // Position from the left edge
+            yTitle.setAttribute('text-anchor', 'middle');
+            yTitle.setAttribute('fill', '#6c757d');
+            yTitle.setAttribute('font-size', '14');
+            yTitle.setAttribute('font-weight', '600');
+            yTitle.textContent = 'Profit Amount';
+            chartSvg.appendChild(yTitle);
+
+            // X-Axis Title
+            const xTitle = document.createElementNS(svgNS, 'text');
+            xTitle.setAttribute('x', padding.left + chartWidth / 2);
+            xTitle.setAttribute('y', svgHeight - 10); // Position from the bottom edge
+            xTitle.setAttribute('text-anchor', 'middle');
+            xTitle.setAttribute('fill', '#6c757d');
+            xTitle.setAttribute('font-size', '14');
+            xTitle.setAttribute('font-weight', '600');
+            xTitle.textContent = xAxisTitleText;
+            chartSvg.appendChild(xTitle);
+            
+            // --- The rest of the chart drawing logic is unchanged ---
             const defs = document.createElementNS(svgNS, 'defs'); const gradient = document.createElementNS(svgNS, 'linearGradient'); gradient.id = 'areaGradient'; gradient.innerHTML = `<stop offset="0%" style="stop-color:#007bff; stop-opacity:0.4"/><stop offset="100%" style="stop-color:#007bff; stop-opacity:0"/>`; defs.appendChild(gradient); chartSvg.appendChild(defs);
             if (values.length === 1) {
                 const value = values[0]; const x = padding.left + chartWidth / 2; const y = padding.top + chartHeight - (value / maxProfit) * chartHeight;
@@ -315,7 +240,6 @@
             }
         }
 
-        // UPDATED: This function now handles loading the correct page
         async function loadContent(page) {
             navLinks.forEach(link => {
                 if (link.id !== 'logoutButton') link.classList.remove('active');
@@ -327,26 +251,19 @@
                 drawDashboard();
                 return;
             }
+            
+            const iframePages = ['data_analytics', 'view_orders', 'manage_employees', 'manage_shop', 'view_sales', 'reports'];
+            if(iframePages.includes(page)) {
+                contentArea.innerHTML = `<iframe src="owner_pages/${page}.php" style="width: 100%; height: 90vh; border: none;"></iframe>`;
+                return;
+            }
 
-            // Load the new analytics page in an iframe
-           const iframePages = ['data_analytics', 'view_orders', 'manage_shop', 'manage_employees', 'view_sales', 'reports'];
-            if (iframePages.includes(page)) {
-             contentArea.innerHTML = `<iframe src="owner_pages/${page}.php" style="width: 100%; height: 90vh; border: none;"></iframe>`;
-         return;
-}
-
-
-            // Handle all other pages as placeholders
-            contentArea.innerHTML = `<h2>Loading ${page.replace(/_/g, ' ')}...</h2>`;
-            setTimeout(() => {
-                 contentArea.innerHTML = `<h2>${page.replace(/_/g, ' ')}</h2><p>Content for this section is not yet implemented.</p>`;
-            }, 500);
+            contentArea.innerHTML = `<h2>${page.replace(/_/g, ' ')}</h2><p>Content for this section is not yet implemented.</p>`;
         }
 
         navLinks.forEach(link => {
             link.addEventListener('click', (event) => {
                 event.preventDefault();
-                
                 if (link.id === 'logoutButton') {
                     if (confirm('Are you sure you want to logout?')) {
                         localStorage.removeItem('laundroUser');
@@ -354,7 +271,6 @@
                     }
                     return;
                 }
-                
                 const page = link.getAttribute('data-page');
                 loadContent(page);
             });
