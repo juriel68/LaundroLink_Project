@@ -20,15 +20,16 @@
             box-shadow: 0 4px 10px rgba(0,0,0,0.1);
         }
 
-    .table-box {
-      background: white;
-      border-radius: 10px;
-      padding: 30px 40px;
-      max-width: 900px;
-      margin: 0 auto 80px;
-      margin-top: 50px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-    }
+    table {
+    width: 90%;
+    margin: 30px auto;
+    margin-top: 50px;
+    border-collapse: collapse;
+    background: white;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+    border-radius: 10px;
+    overflow: hidden;
+  }
 
     h1 {
       color: #004aad;
@@ -40,25 +41,20 @@
       margin: 0;
     }
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      text-align: center;
-      margin-top: 10px;
-    }
-
     th, td {
-      border: 1px solid #ccc;
-      padding: 10px;
-    }
+    padding: 12px 15px;
+    text-align: left;
+  }
 
-    th {
-      background-color: #f2f2f2;
-    }
+  th {
+    background-color: #004aad;
+    color: white;
+    font-weight: 600;
+    font-size: 15px;
+  }
 
-    tr:nth-child(even) {
-      background-color: #f9f9f9;
-    }
+  tr:nth-child(even) { background-color: #f9f9f9; }
+  tr:hover { background-color: #eef3ff; }
 
     /* Optional: summary at the bottom */
     .summary {
@@ -76,7 +72,7 @@
     <p>View shop sales</p>
   </div>
 
-  <div class="table-box">
+  <div class="table">
     <table>
       <thead>
         <tr>
