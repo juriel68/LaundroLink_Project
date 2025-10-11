@@ -23,15 +23,17 @@
 
 
     /* Table section */
-    .table-section {
-      background: white;
-      border-radius: 10px;
-      padding: 30px 40px;
-      max-width: 900px;
-      margin: 0 auto 80px;
-      margin-top: 50px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-    }
+    table {
+    width: 90%;
+    margin: 30px auto;
+    margin-top: 50px;
+    border-collapse: collapse;
+    background: white;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
 
     h1 {
       color: #004aad;
@@ -43,24 +45,20 @@
       margin-bottom: 0px;
     }
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      text-align: center;
-    }
+     th, td {
+    padding: 12px 15px;
+    text-align: left;
+  }
 
-    th, td {
-      border: 1px solid #ccc;
-      padding: 10px;
-    }
+  th {
+    background-color: #004aad;
+    color: white;
+    font-weight: 600;
+    font-size: 15px;
+  }
 
-    th {
-      background-color: #f2f2f2;
-    }
-
-    tr:nth-child(even) {
-      background-color: #f9f9f9;
-    }
+  tr:nth-child(even) { background-color: #f9f9f9; }
+  tr:hover { background-color: #eef3ff; }
 
     .status-delivered {
       color: green;
