@@ -5,39 +5,62 @@
     <title>Data Analytics</title>
     <style>
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f8f9fa;
-            padding: 20px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      height: 100vh;
+      overflow: hidden; 
+    }
+        /* Top box styling */
+    .section {
+      background: white;
+            border-radius: 10px;
+            max-width: 1100px;
+            margin: 30px auto 40px;
+            padding: 25px 40px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+
+        .section h1 {
+            color: #004aad;
+            margin-bottom: 8px;
+        }
+
+        .section p {
+            color: #333;
             margin: 0;
         }
-        .container-title {
-            font-size: 28px;
-            font-weight: 700;
-            color: #1e3a8a;
-            margin-bottom: 30px;
-        }
+
+        /* 🔹 Grid container for analytics cards */
         .analytics-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 30px;
+            max-width: 1000px;
+            margin: 40px auto 0 auto;
+            margin-top: 50px;
         }
+
         .card {
             background: white;
             padding: 25px;
             border-radius: 12px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
         }
+
         .card h3 {
             font-size: 20px;
             font-weight: 600;
             color: #343a40;
             margin: 0 0 20px 0;
         }
+
         .segment {
             display: flex;
             align-items: flex-start;
             margin-bottom: 25px;
         }
+
         .segment-icon {
             font-size: 24px;
             padding: 12px;
@@ -45,30 +68,35 @@
             margin-right: 20px;
             color: white;
             background-color: #007bff;
-            width: 24px; /* Fixed width */
+            width: 24px;
             text-align: center;
         }
+
         .segment-info h4 {
             margin: 0 0 5px 0;
             font-size: 16px;
             color: #495057;
         }
+
         .segment-info p {
             margin: 0;
             font-size: 14px;
             color: #6c757d;
         }
+
         .suggestion {
             font-style: italic;
             color: #007bff;
             font-size: 13px;
             margin-top: 8px;
         }
+
         .chart-bar-container {
             display: flex;
             align-items: center;
             margin-bottom: 15px;
         }
+
         .chart-label {
             width: 150px;
             font-size: 14px;
@@ -76,15 +104,16 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            flex-shrink: 0; /* Prevent label from shrinking */
-            margin-right: 15px; /* Add space between label and bar */
+            flex-shrink: 0;
+            margin-right: 15px;
         }
-        /* NEW WRAPPER FOR THE BAR */
+
         .bar-wrapper {
-            flex-grow: 1; /* This will fill the remaining horizontal space */
-            background-color: #e9ecef; /* Optional: adds a track for the bar */
+            flex-grow: 1;
+            background-color: #e9ecef;
             border-radius: 4px;
         }
+
         .chart-bar {
             background: linear-gradient(90deg, #00c6ff, #007bff);
             height: 25px;
@@ -102,7 +131,13 @@
 </head>
 <body>
 
-    <h2 class="container-title">🔍 Data Analytics & Insights</h2>
+    <!-- 🔹 Top section box -->
+    <div class="section">
+        <h1>Data Analytics & Insights</h1>
+        <p>Analyze customer behavior and identify popular services to improve business performance.</p>
+    </div>
+
+    <!-- 🔹 Analytics cards -->
     <div class="analytics-grid">
         <div class="card">
             <h3>Customer Segments</h3>
@@ -115,13 +150,11 @@
     </div>
 
     <script type="module">
-        // The path must go up one directory from 'owner_pages' to find 'api.js'
         import { API_BASE_URL } from '../api.js'; 
         
         const loggedInUser = JSON.parse(window.parent.localStorage.getItem('laundroUser'));
 
         async function fetchAndDisplaySegments() {
-            // ... (This function is correct and remains the same)
             const container = document.getElementById('segments-container');
             if (!loggedInUser?.ShopID) {
                 container.innerHTML = '<p>Could not identify shop.</p>';
@@ -162,7 +195,7 @@
 
         async function fetchAndDisplayServices() {
             const container = document.getElementById('services-chart-container');
-             if (!loggedInUser?.ShopID) {
+            if (!loggedInUser?.ShopID) {
                 container.innerHTML = '<p>Could not identify shop.</p>';
                 return;
             }
@@ -179,7 +212,6 @@
 
                 const maxOrders = Math.max(...services.map(s => s.orderCount), 1);
                 
-                // UPDATED HTML STRUCTURE FOR THE BAR CHART
                 container.innerHTML = services.map(service => `
                     <div class="chart-bar-container">
                         <div class="chart-label">${service.SvcName}</div>
