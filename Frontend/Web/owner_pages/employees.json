@@ -1,0 +1,18 @@
+[
+    {
+        "id": 222,
+        "name": "Jasper Bulac",
+        "age": 37,
+        "address": "Mandaue",
+        "contact": "09563874512",
+        "salary": "\u20b1645"
+    },
+    {
+        "id": 333,
+        "name": "Juriel Gulane",
+        "age": 45,
+        "address": "Lapu-Lapu City",
+        "contact": "09875463614",
+        "salary": "\u20b1645"
+    }
+]

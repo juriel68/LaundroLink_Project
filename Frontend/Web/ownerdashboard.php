@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>LaundroLink Owner Dashboard</title>
     <style>
+
         body {
             margin: 0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -44,22 +45,112 @@
             cursor: pointer; 
         }
 
-        .sidebar-nav a:hover, .sidebar-nav a.active { background-color: rgba(255, 255, 255, 0.15); color: white; font-weight: 600; }
-        .logout-link { margin-top: auto; }
-        .main-content { margin-left: 250px; flex-grow: 1; padding: 40px; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
-        .header h2 { font-size: 32px; font-weight: 700; color: #1e3a8a; margin: 0; }
-        .time-filter { display: flex; background-color: #e9ecef; border-radius: 8px; padding: 5px; }
-        .time-filter button { padding: 8px 16px; border: none; background-color: transparent; border-radius: 6px; font-size: 14px; font-weight: 600; color: #495057; cursor: pointer; transition: background-color 0.3s, color 0.3s; }
-        .time-filter button.active { background-color: #fff; color: #007bff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 25px; margin-bottom: 40px; }
-        .kpi-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); border-left: 5px solid; }
-        .kpi-card h3 { margin: 0 0 5px 0; font-size: 16px; color: #6c757d; font-weight: 500; }
-        .kpi-card p { margin: 0; font-size: 36px; font-weight: 700; color: #343a40; }
-        .chart-container { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); }
-        .container-title { font-size: 20px; font-weight: 600; color: #343a40; margin: 0 0 30px 0; }
-        .chart-area { position: relative; width: 100%; height: 350px; }
-        .chart-svg { width: 100%; height: 100%; }
+        .sidebar-nav a:hover, 
+        .sidebar-nav a.active { 
+            background-color: rgba(255, 255, 255, 0.15); 
+            color: white; 
+            font-weight: 600; 
+        }
+
+        .main-content { 
+            margin-left: 250px; 
+            flex-grow: 1; 
+            padding: 40px; 
+        }
+
+        .header { 
+            display: flex; j
+            ustify-content: space-between; 
+            align-items: center; 
+            margin-bottom: 30px; 
+        }
+
+        .header h2 { 
+            font-size: 32px; 
+            font-weight: 700; 
+            color: #1e3a8a; 
+            margin: 0; 
+        }
+
+        .time-filter { 
+            display: flex; 
+            background-color: #e9ecef; 
+            border-radius: 8px; 
+            padding: 5px; 
+        }
+
+        .time-filter button { 
+            padding: 8px 16px; 
+            border: none; 
+            background-color: transparent; 
+            border-radius: 6px; 
+            font-size: 14px; 
+            font-weight: 600; 
+            color: #495057; 
+            cursor: pointer; 
+            transition: background-color 0.3s, color 0.3s; 
+        }
+
+        .time-filter button.active { 
+            background-color: #fff; 
+            color: #007bff; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
+        }
+
+        .kpi-grid { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr; 
+            gap: 25px; 
+            margin-bottom: 40px; 
+        }
+
+        .kpi-card { 
+            background: white; 
+            padding: 25px; 
+            border-radius: 12px; 
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); 
+            border-left: 5px solid; 
+        }
+
+        .kpi-card h3 { 
+            margin: 0 0 5px 0; 
+            font-size: 16px; 
+            color: #6c757d; 
+            font-weight: 500; 
+        }
+
+        .kpi-card p { 
+            margin: 0; 
+            font-size: 36px; 
+            font-weight: 700; 
+            color: #343a40; 
+        }
+
+        .chart-container { 
+            background: white; 
+            padding: 25px; 
+            border-radius: 12px; 
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); 
+        }
+
+        .container-title { 
+            font-size: 20px; 
+            font-weight: 600; 
+            color: #343a40; 
+            margin: 0 0 30px 0; 
+        }
+
+        .chart-area { 
+            position: relative; 
+            width: 100%; 
+            height: 350px; 
+        }
+
+        .chart-svg { 
+            width: 100%; 
+            height: 100%; 
+        }
+
     </style>
 
     <script>
@@ -80,7 +171,7 @@
         <nav class="sidebar-nav">
             <div>
                 <a href="#" class="active" data-page="dashboard">Dashboard</a>
-                <a href="#" data-page="view_orders">Order</a> <!-- NEW LINK -->
+                <a href="#" data-page="view_orders">Order</a>
                 <a href="#" data-page="manage_employees">Employee</a>
                 <a href="#" data-page="manage_shop">Shop Details</a>
                 <a href="#" data-page="view_sales">Sales</a>
@@ -238,10 +329,12 @@
             }
 
             // Load the new analytics page in an iframe
-            if (page === 'data_analytics') {
-                contentArea.innerHTML = `<iframe src="owner_pages/data_analytics.php" style="width: 100%; height: 90vh; border: none;"></iframe>`;
-                return;
-            }
+           const iframePages = ['data_analytics', 'view_orders', 'manage_shop', 'manage_employees', 'view_sales', 'reports'];
+            if (iframePages.includes(page)) {
+             contentArea.innerHTML = `<iframe src="owner_pages/${page}.php" style="width: 100%; height: 90vh; border: none;"></iframe>`;
+         return;
+}
+
 
             // Handle all other pages as placeholders
             contentArea.innerHTML = `<h2>Loading ${page.replace(/_/g, ' ')}...</h2>`;

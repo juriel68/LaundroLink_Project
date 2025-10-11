@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LaundroLink Login</title>
   <style>
+    
     /* ==== BACKGROUND ==== */
     body {
       margin: 0;
@@ -24,18 +25,19 @@
       font-weight: 600;
       color: #caf0f8;
       letter-spacing: 2px;
-      margin-bottom: 20px;
+      margin-bottom: 65px;
     }
 
     /* ==== LOGIN BOX ==== */
     .login-box {
       background: #89CFF0;
-      padding: 45px ;
+      padding: 50px ;
       border-radius: 25px;
       box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
-      width: 345px;
+      width: 350px;
       text-align: center;
       gap: 18px;
+      margin-top: -63px;
     }
 
     /* ==== AVATAR ==== */
@@ -83,23 +85,25 @@
     input:focus {
      outline: none;
      box-shadow: 0 0 0 2px #0077b6, inset 0 2px 4px rgba(0, 0, 0, 0.1);
-     background-color: #f9fcff; /* subtle focus highlight */
+     background-color: #f9fcff; 
     }
 
     /* ==== BUTTON ==== */
     button {
      width: 100%;
-     padding: 12px 14px;          /* Slightly more horizontal space */
-     margin-top: 16px;            /* More breathing room above button */
+     padding: 12px 14px;          
+     margin-top: 16px;            
      background: #004aad;
      color: #fff;
      border: none;
-     border-radius: 8px;          /* Matches input field curvature */
+     border-radius: 8px;          
      cursor: pointer;
      font-size: 15px;
      font-weight: 600;
      transition: background 0.3s ease, transform 0.2s ease;
+     margin-bottom: 15px;
     }
+
     button:hover {
       background: #003c8a;
     }
@@ -113,6 +117,7 @@
     }
   </style>
 </head>
+
 <body>
   <h1 class="brand-title">LaundroLink</h1>
 
