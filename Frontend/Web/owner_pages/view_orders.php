@@ -14,12 +14,13 @@
     /* Top section (title + description) */
     .section {
       background: white;
-      border-radius: 10px;
-      padding: 25px 40px;
-      max-width: 1000px;
-      margin: 40px auto 20px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-    }
+            border-radius: 10px;
+            max-width: 1100px;
+            margin: 30px auto 40px;
+            padding: 25px 40px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
 
     /* Table section */
     .table-section {
@@ -28,6 +29,7 @@
       padding: 30px 40px;
       max-width: 900px;
       margin: 0 auto 80px;
+      margin-top: 50px;
       box-shadow: 0 4px 10px rgba(0,0,0,0.1);
     }
 
