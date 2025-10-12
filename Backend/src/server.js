@@ -6,8 +6,8 @@ import dotenv from "dotenv";
 import userRoutes from "./routes/users.js";
 import orderRoutes from "./routes/orders.js";
 import messagesRouter from './routes/messages.js';
-// 1. IMPORT THE NEW ANALYTICS ROUTE
-import analyticsRoutes from "./routes/analytics.js";
+import analyticsRouter from "./routes/analytics.js";
+import shopRouter from "./routes/shops.js";
 
 dotenv.config();
 
@@ -24,8 +24,8 @@ app.use(express.json());
 app.use("/api/users", userRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/messages", messagesRouter);
-// 2. USE THE NEW ANALYTICS ROUTE
-app.use("/api/analytics", analyticsRoutes);
+app.use("/api/analytics", analyticsRouter);
+app.use("/api/shops", shopRouter);
 
 
 // ✅ Health check route (for quick testing in browser)

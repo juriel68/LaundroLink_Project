@@ -442,4 +442,200 @@ router.post("/report/top-employees", async (req, res) => {
   }
 });
 
+
+// ✅ UPDATED ROUTE: GET /api/orders/list/:shopId with sorting functionality
+router.get("/list/:shopId", async (req, res) => {
+    const { shopId } = req.params;
+    const { sortBy = 'OrderCreatedAt', sortOrder = 'DESC' } = req.query; // Defaults to newest first
+
+    // Whitelist allowed columns for sorting to prevent SQL injection
+    const allowedSortColumns = {
+        SvcName: 's.SvcName',
+        OrderStatus: 'OrderStatus',
+        OrderCreatedAt: 'o.OrderCreatedAt'
+    };
+    const sortColumn = allowedSortColumns[sortBy] || 'o.OrderCreatedAt'; // Default if invalid column is passed
+
+    // Whitelist allowed sort orders
+    const sortDirection = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+    try {
+        const [orders] = await db.query(
+            `SELECT 
+                o.OrderID,
+                o.CustID,
+                s.SvcName,
+                i.PayAmount,
+                (
+                    SELECT os.OrderStatus 
+                    FROM Order_Status os 
+                    WHERE os.OrderID = o.OrderID 
+                    ORDER BY os.OrderUpdatedAt DESC 
+                    LIMIT 1
+                ) AS OrderStatus,
+                o.OrderCreatedAt
+            FROM Orders o
+            LEFT JOIN Service s ON o.SvcID = s.SvcID
+            LEFT JOIN Invoice i ON o.OrderID = i.OrderID
+            WHERE o.ShopID = ?
+            ORDER BY ${sortColumn} ${sortDirection}`, // Dynamic sorting
+            [shopId]
+        );
+        res.json(orders);
+    } catch (error) {
+        console.error("Error fetching simple order list:", error);
+        res.status(500).json({ error: "Server error while fetching orders." });
+    }
+});
+
+router.get("/sales/:shopId", async (req, res) => {
+    const { shopId } = req.params;
+    const { period = 'Weekly' } = req.query; // Default to weekly
+
+    let dateCondition = `YEARWEEK(o.OrderCreatedAt, 1) = YEARWEEK(CURDATE(), 1)`; // Default for Weekly
+    if (period === 'Monthly') {
+        dateCondition = `YEAR(o.OrderCreatedAt) = YEAR(CURDATE()) AND MONTH(o.OrderCreatedAt) = MONTH(CURDATE())`;
+    } else if (period === 'Yearly') {
+        dateCondition = `YEAR(o.OrderCreatedAt) = YEAR(CURDATE())`;
+    }
+    
+    try {
+        const query = `
+            -- This CTE gets the list of paid transactions for the period
+            WITH PaidTransactions AS (
+                SELECT 
+                    o.OrderID,
+                    o.OrderCreatedAt,
+                    i.PayAmount
+                FROM Orders o
+                JOIN Invoice i ON o.OrderID = i.OrderID
+                WHERE 
+                    o.ShopID = ? 
+                    AND ${dateCondition} 
+                    AND (SELECT s.InvoiceStatus FROM Invoice_Status s WHERE s.InvoiceID = i.InvoiceID ORDER BY s.StatUpdateAt DESC LIMIT 1) = 'Paid'
+            )
+            -- Main query to get both summary and the list
+            SELECT
+                -- Summary Metrics
+                (SELECT COUNT(*) FROM PaidTransactions) AS totalOrders,
+                (SELECT SUM(PayAmount) FROM PaidTransactions) AS totalSales,
+                
+                -- Transaction List (as a JSON array string)
+                (SELECT CONCAT('[', GROUP_CONCAT(
+                    JSON_OBJECT(
+                        'OrderID', OrderID,
+                        'OrderCreatedAt', OrderCreatedAt,
+                        'PayAmount', PayAmount
+                    ) ORDER BY OrderCreatedAt DESC
+                ), ']') FROM PaidTransactions) AS transactions;
+        `;
+
+        const [[results]] = await db.query(query, [shopId]);
+        
+        // Parse the JSON string into an actual array
+        const transactionsArray = results.transactions ? JSON.parse(results.transactions) : [];
+
+        res.json({
+            summary: {
+                totalSales: results.totalSales || 0,
+                totalOrders: results.totalOrders || 0,
+            },
+            transactions: transactionsArray
+        });
+
+    } catch (error) {
+        console.error("Error fetching sales data:", error);
+        res.status(500).json({ error: "Server error while fetching sales data." });
+    }
+});
+
+
+// ✅ UPDATED ROUTE: GET /api/orders/overview/:shopId
+// Now includes date filtering based on a 'period' query parameter.
+router.get("/overview/:shopId", async (req, res) => {
+    const { shopId } = req.params;
+    const { 
+        sortBy = 'OrderCreatedAt', 
+        sortOrder = 'DESC', 
+        period = 'Today', // Default to 'Today'
+        startDate, 
+        endDate 
+    } = req.query;
+
+    // --- Date Filtering Logic ---
+    let dateCondition = `DATE(o.OrderCreatedAt) = CURDATE()`; // Default for 'Today'
+    if (startDate && endDate) {
+        // Use custom range if provided
+        dateCondition = `DATE(o.OrderCreatedAt) BETWEEN ? AND ?`;
+    } else {
+        switch (period) {
+            case 'Weekly':
+                dateCondition = `YEARWEEK(o.OrderCreatedAt, 1) = YEARWEEK(CURDATE(), 1)`;
+                break;
+            case 'Monthly':
+                dateCondition = `YEAR(o.OrderCreatedAt) = YEAR(CURDATE()) AND MONTH(o.OrderCreatedAt) = MONTH(CURDATE())`;
+                break;
+            case 'Yearly':
+                dateCondition = `YEAR(o.OrderCreatedAt) = YEAR(CURDATE())`;
+                break;
+        }
+    }
+    
+    const dateParams = (startDate && endDate) ? [startDate, endDate] : [];
+
+    // --- Sorting Logic ---
+    const allowedSortColumns = { SvcName: 's.SvcName', OrderStatus: 'OrderStatus', OrderCreatedAt: 'o.OrderCreatedAt' };
+    const sortColumn = allowedSortColumns[sortBy] || 'o.OrderCreatedAt';
+    const sortDirection = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+    const connection = await db.getConnection();
+    try {
+        // Query 1: Get the summary counts with the date filter
+        const [summaryRows] = await connection.query(
+            `WITH LatestOrderStatus AS (
+                SELECT 
+                    o.OrderID,
+                    (SELECT os.OrderStatus FROM Order_Status os WHERE os.OrderID = o.OrderID ORDER BY os.OrderUpdatedAt DESC LIMIT 1) AS LatestStatus
+                FROM Orders o
+                WHERE o.ShopID = ? AND ${dateCondition}
+            )
+            SELECT LatestStatus, COUNT(OrderID) as count 
+            FROM LatestOrderStatus 
+            GROUP BY LatestStatus;`,
+            [shopId, ...dateParams]
+        );
+
+        const summary = { pending: 0, processing: 0, forDelivery: 0, completed: 0, rejected: 0 };
+        summaryRows.forEach(row => {
+            if (row.LatestStatus === 'Pending') summary.pending = row.count;
+            else if (row.LatestStatus === 'Processing') summary.processing = row.count;
+            else if (row.LatestStatus === 'For Delivery') summary.forDelivery = row.count;
+            else if (row.LatestStatus === 'Completed') summary.completed = row.count;
+            else if (row.LatestStatus === 'Rejected') summary.rejected = row.count;
+        });
+
+        // Query 2: Get the detailed list of orders with the date filter
+        const [orders] = await connection.query(
+            `SELECT 
+                o.OrderID, o.CustID, s.SvcName, i.PayAmount,
+                (SELECT os.OrderStatus FROM Order_Status os WHERE os.OrderID = o.OrderID ORDER BY os.OrderUpdatedAt DESC LIMIT 1) AS OrderStatus,
+                o.OrderCreatedAt
+            FROM Orders o
+            LEFT JOIN Service s ON o.SvcID = s.SvcID
+            LEFT JOIN Invoice i ON o.OrderID = i.OrderID
+            WHERE o.ShopID = ? AND ${dateCondition}
+            ORDER BY ${sortColumn} ${sortDirection}`,
+            [shopId, ...dateParams]
+        );
+
+        res.json({ summary, orders });
+
+    } catch (error) {
+        console.error("Error fetching order overview:", error);
+        res.status(500).json({ error: "Server error while fetching order overview." });
+    } finally {
+        connection.release();
+    }
+});
+
 export default router;

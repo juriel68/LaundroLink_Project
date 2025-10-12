@@ -1,117 +1,229 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Sales</title>
-  <style>
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      margin: 0;
-      height: 100vh;
-      overflow: hidden; 
-    }
-
-    .top-box {
-      background: white;
-            border-radius: 10px;
-            max-width: 1100px;
-            margin: 30px auto 40px;
-            padding: 25px 40px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    <meta charset="UTF-8">
+    <title>Sales</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            background-color: #f8f9fa;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
         }
-
-    table {
-    width: 90%;
-    margin: 30px auto;
-    margin-top: 50px;
-    border-collapse: collapse;
-    background: white;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
-    border-radius: 10px;
-    overflow: hidden;
-  }
-
-    h1 {
-      color: #004aad;
-      margin-bottom: 8px;
-    }
-
-    p {
-      color: #333;
-      margin: 0;
-    }
-
-    th, td {
-    padding: 12px 15px;
-    text-align: left;
-  }
-
-  th {
-    background-color: #004aad;
-    color: white;
-    font-weight: 600;
-    font-size: 15px;
-  }
-
-  tr:nth-child(even) { background-color: #f9f9f9; }
-  tr:hover { background-color: #eef3ff; }
-
-    /* Optional: summary at the bottom */
-    .summary {
-      margin-top: 20px;
-      text-align: right;
-      font-weight: bold;
-      color: #004aad;
-    }
-  </style>
+        .header-container {
+            width: 90%;
+            max-width: 1100px;
+            margin: 30px auto 20px auto;
+            flex-shrink: 0;
+        }
+        .top-box {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            padding: 25px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        h1 { color: #004aad; margin: 0; }
+        p { color: #555; margin: 0; }
+        .date-filters button {
+            padding: 8px 15px;
+            margin-left: 5px;
+            border: 1px solid #ccc;
+            background-color: white;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: 0.2s;
+            font-weight: 600;
+        }
+        .date-filters button.active {
+            background-color: #004aad;
+            color: white;
+            border-color: #004aad;
+        }
+        .kpi-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .kpi-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+            border-top: 4px solid #004aad;
+        }
+        .kpi-card h4 {
+            margin: 0 0 5px 0;
+            font-size: 14px;
+            color: #6c757d;
+            font-weight: 600;
+        }
+        .kpi-card .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #343a40;
+        }
+        .table-container {
+            width: 90%;
+            max-width: 1100px;
+            margin: 0 auto 30px auto;
+            flex-grow: 1;
+            overflow-y: auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            background-color: #004aad;
+            color: white;
+            font-weight: 600;
+            font-size: 15px;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        tbody tr:last-child td { border-bottom: none; }
+    </style>
 </head>
 <body>
 
-  <div class="top-box">
-    <h1>Sales</h1>
-    <p>View shop sales</p>
-  </div>
-
-  <div class="table">
-    <table>
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Order ID</th>
-          <th>Price</th>
-          <th>Expenses</th>
-          <th>Total Revenue</th>
-        </tr>
-      </thead>
-      <tbody>
-        <?php
-          // Mock data (replace later with DB query)
-          $sales = [
-            ['date' => '2025-02-01', 'order_id' => 100, 'price' => 350, 'expenses' => 100],
-            ['date' => '2025-02-01', 'order_id' => 200, 'price' => 470, 'expenses' => 200],
-            ['date' => '2025-02-01', 'order_id' => 300, 'price' => 250, 'expenses' => 50],
-          ];
-
-          $totalRevenue = 0;
-          foreach ($sales as $sale) {
-            $revenue = $sale['price'] - $sale['expenses'];
-            $totalRevenue += $revenue;
-            echo "<tr>
-                    <td>{$sale['date']}</td>
-                    <td>{$sale['order_id']}</td>
-                    <td>₱{$sale['price']}</td>
-                    <td>₱{$sale['expenses']}</td>
-                    <td>₱{$revenue}</td>
-                  </tr>";
-          }
-        ?>
-      </tbody>
-    </table>
-
-    <div class="summary">
-      <?php echo "Total Revenue: ₱" . number_format($totalRevenue, 2); ?>
+    <div class="header-container">
+        <div class="top-box">
+            <div>
+                <h1>Sales</h1>
+                <p>View sales performance and transaction history.</p>
+            </div>
+            <div class="date-filters">
+                <button class="active" data-period="Weekly">This Week</button>
+                <button data-period="Monthly">This Month</button>
+                <button data-period="Yearly">This Year</button>
+            </div>
+        </div>
+        <div class="kpi-row">
+            <div class="kpi-card">
+                <h4>Total Sales</h4>
+                <div class="value" id="total-sales">₱0.00</div>
+            </div>
+            <div class="kpi-card">
+                <h4>Number of Sales</h4>
+                <div class="value" id="num-sales">0</div>
+            </div>
+            <div class="kpi-card">
+                <h4>Average Sale Value</h4>
+                <div class="value" id="avg-sale">₱0.00</div>
+            </div>
+        </div>
     </div>
-  </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Order ID</th>
+                    <th>Amount</th>
+                </tr>
+            </thead>
+            <tbody id="sales-table-body">
+                </tbody>
+        </table>
+    </div>
+
+    <script type="module">
+        import { API_BASE_URL } from '/Web/api.js';
+
+        const tableBody = document.getElementById('sales-table-body');
+        const loggedInUser = JSON.parse(localStorage.getItem('laundroUser'));
+        
+        const totalSalesEl = document.getElementById('total-sales');
+        const numSalesEl = document.getElementById('num-sales');
+        const avgSaleEl = document.getElementById('avg-sale');
+
+        const formatCurrency = (amount) => `₱${parseFloat(amount || 0).toFixed(2)}`;
+
+        const updateKpiCards = (summary) => {
+            const totalSales = summary.totalSales || 0;
+            const totalOrders = summary.totalOrders || 0;
+            const avgSale = totalOrders > 0 ? (totalSales / totalOrders) : 0;
+
+            totalSalesEl.textContent = formatCurrency(totalSales);
+            numSalesEl.textContent = totalOrders.toLocaleString();
+            avgSaleEl.textContent = formatCurrency(avgSale);
+        };
+
+        const renderTable = (transactions) => {
+            tableBody.innerHTML = '';
+            if (!transactions || transactions.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center;">No sales found for this period.</td></tr>';
+                return;
+            }
+            transactions.forEach(sale => {
+                const formattedDate = new Date(sale.OrderCreatedAt).toLocaleDateString('en-US', {
+                    year: 'numeric', month: 'short', day: 'numeric'
+                });
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${formattedDate}</td>
+                    <td>${sale.OrderID}</td>
+                    <td>${formatCurrency(sale.PayAmount)}</td>
+                `;
+                tableBody.appendChild(row);
+            });
+        };
+
+        const fetchSalesData = async (period = 'Weekly') => {
+            if (!loggedInUser || !loggedInUser.ShopID) {
+                tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center;">Error: Shop ID not found.</td></tr>';
+                return;
+            }
+            
+            // Show loading state
+            tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center;">Loading...</td></tr>';
+            updateKpiCards({}); // Reset KPIs
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/orders/sales/${loggedInUser.ShopID}?period=${period}`);
+                if (!response.ok) throw new Error('Failed to fetch sales data.');
+                
+                const data = await response.json();
+                updateKpiCards(data.summary);
+                renderTable(data.transactions);
+
+            } catch (error) {
+                console.error('Fetch error:', error);
+                tableBody.innerHTML = `<tr><td colspan="3" style="text-align:center;">Error loading sales data.</td></tr>`;
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const filterButtons = document.querySelectorAll('.date-filters button');
+            filterButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    filterButtons.forEach(btn => btn.classList.remove('active'));
+                    button.classList.add('active');
+                    fetchSalesData(button.dataset.period);
+                });
+            });
+
+            // Initial load
+            fetchSalesData('Weekly');
+        });
+    </script>
 
 </body>
 </html>
