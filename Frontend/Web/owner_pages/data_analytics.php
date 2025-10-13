@@ -11,32 +11,64 @@
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       background-color: #f8f9fa;
-      padding: 20px;
       margin: 0;
     }
+
+    .title-box {
+        background: white;
+        border-radius: 10px;
+        max-width: 1100px;
+        margin: 30px auto 40px;
+        padding: 25px 40px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+
+    .title-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+    }
+
+    h1 {
+      color: #004aad;
+      margin-bottom: 8px;
+    }
+
+    p {
+      color: #555;
+      margin: 0;
+    }
+
     .container-title {
       font-size: 28px;
       font-weight: 700;
       color: #1e3a8a;
       margin-bottom: 30px;
     }
+
     .analytics-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 30px;
       align-items: start;
+      max-width: 1100px;
+      margin: 0 auto;
     }
+
     .right-column {
       display: flex;
       flex-direction: column;
       gap: 30px;
     }
+
     .card {
       background: white;
       padding: 25px;
       border-radius: 12px;
       box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
     }
+    
     .card h3 {
       font-size: 20px;
       font-weight: 600;
@@ -46,14 +78,12 @@
       border-bottom: 1px solid #f1f3f5;
     }
 
-    /* --- SEGMENTS CONTAINER --- */
     #segments-container {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
       gap: 18px;
     }
 
-    /* --- SEGMENT CARD --- */
     .segment {
       background: #fff;
       border-radius: 15px;
@@ -87,29 +117,25 @@
       margin-right: 14px;
     }
 
-    /* --- ICON GRADIENT THEMES (Darker & Modernized) --- */
-/* --- ICON GRADIENT THEMES (Darker, Modern & Vivid) --- */
-.icon-high-value {
-  background: linear-gradient(90deg, #fbb034, #ff6600); /* Deep gold to orange */
-}
+    .icon-high-value {
+      background: linear-gradient(90deg, #fbb034, #ff6600);
+    }
 
-.icon-loyal {
-  background: linear-gradient(90deg, #0072ff, #0046ad); /* Bold royal blue */
-}
+    .icon-loyal {
+      background: linear-gradient(90deg, #0072ff, #0046ad);
+    }
 
-.icon-risk {
-  background: linear-gradient(90deg, #ff416c, #ff4b2b); /* Dark coral red */
-}
+    .icon-risk {
+      background: linear-gradient(90deg, #ff416c, #ff4b2b);
+    }
 
-.icon-new {
-  background: linear-gradient(90deg, #00c6ff, #0072ff); /* Cool electric blue */
-}
+    .icon-new {
+      background: linear-gradient(90deg, #00c6ff, #0072ff);
+    }
 
-.icon-default {
-  background: linear-gradient(90deg, #757575, #444444); /* Charcoal gray */
-}
-
-
+    .icon-default {
+      background: linear-gradient(90deg, #757575, #444444);
+    }
 
     .segment-title h4 {
       margin: 0;
@@ -161,12 +187,12 @@
       }
     }
 
-    /* --- CHART STYLES --- */
     .chart-bar-container {
       display: flex;
       align-items: center;
       margin-bottom: 15px;
     }
+
     .chart-label {
       width: 150px;
       font-size: 14px;
@@ -177,11 +203,13 @@
       flex-shrink: 0;
       margin-right: 15px;
     }
+
     .bar-wrapper {
       flex-grow: 1;
       background-color: #e9ecef;
       border-radius: 4px;
     }
+
     .chart-bar {
       height: 25px;
       border-radius: 4px;
@@ -194,10 +222,22 @@
       padding-right: 10px;
       transition: width 0.5s ease-out;
     }
+    
   </style>
 </head>
 <body>
-  <h2 class="container-title">🔍 Data Analytics & Insights</h2>
+
+  <!-- 🔹 TITLE BOX SECTION -->
+  <div class="title-box">
+    <div class="title-row">
+      <div>
+        <h1>Data Analytics & Insights</h1>
+        <p>Gain deeper insights into customer behavior, service trends, and shop performance.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🔹 MAIN CONTENT -->
   <div class="analytics-grid">
     <div class="card">
       <h3>Customer Segments</h3>
@@ -212,7 +252,9 @@
 
       <div class="card">
         <h3>Busiest Times of Day</h3>
-        <p style="font-size: 14px; color: #6c757d; margin-top: -15px; margin-bottom: 25px;">Understand when your shop is busiest to optimize staff scheduling.</p>
+        <p style="font-size: 14px; color: #6c757d; margin-top: -15px; margin-bottom: 25px;">
+          Understand when your shop is busiest to optimize staff scheduling.
+        </p>
         <div id="busiest-times-chart-container">Loading chart...</div>
       </div>
     </div>
@@ -319,7 +361,7 @@
         function getSegmentColor(className) {
           switch (className) {
             case "icon-high-value":
-              return "#f7714cff";
+              return "#f7714c";
             case "icon-loyal":
               return "#00c6ff";
             case "icon-risk":

@@ -13,6 +13,7 @@
             background-color: #f8f9fa;
             color: #333;
         }
+
         .section {
             background: white;
             border-radius: 10px;
@@ -21,20 +22,24 @@
             padding: 25px 40px;
             box-shadow: 0 4px 10px rgba(0,0,0,0.05);
         }
+
         .section h1 {
             color: #004aad;
             margin-bottom: 8px;
         }
+
         .section p {
             color: #555;
             margin: 0;
             font-size: 15px;
         }
+
         .content-area {
             max-width: 1100px;
             margin: 0 auto;
             padding-bottom: 50px;
         }
+
         .dashboard-header {
             display: flex;
             justify-content: space-between;
@@ -43,6 +48,7 @@
             margin-bottom: 25px;
             gap: 10px;
         }
+
         .date-filters button {
             padding: 8px 15px;
             margin-right: 5px;
@@ -53,11 +59,13 @@
             transition: 0.2s;
             font-weight: 600;
         }
+
         .date-filters button.active {
             background-color: #004aad;
             color: white;
             border-color: #004aad;
         }
+
         .btn-primary {
             padding: 10px 15px;
             border: none;
@@ -68,15 +76,18 @@
             background-color: #004aad; 
             color: white;
         }
+
         .btn-primary:hover { 
             background-color: #003c8a; 
         }
+
         .kpi-row {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
         }
+
         .kpi-card {
             background-color: white;
             padding: 20px;
@@ -84,43 +95,52 @@
             box-shadow: 0 4px 10px rgba(0,0,0,0.05);
             transition: transform 0.2s ease;
         }
+
         .kpi-card:hover { 
             transform: translateY(-3px); 
         }
+
         .kpi-card h4 {
             margin-top: 0;
             color: #6c757d;
             font-size: 14px;
             font-weight: 600;
         }
+
         .kpi-card .value {
             font-size: 2rem;
             font-weight: 700;
             color: #343a40;
             margin-bottom: 6px;
         }
+
         .kpi-card .change {
             font-size: 0.9rem;
             font-weight: 500;
             color: #6c757d;
         }
+
         .charts-row, .bottom-row {
             display: grid;
             gap: 20px;
             margin-bottom: 20px;
         }
+
         .charts-row { 
             grid-template-columns: 2fr 1fr; 
         }
+
         .bottom-row { 
             grid-template-columns: 1fr; 
         }
+
         .chart-card {
             background-color: white;
             padding: 25px;
             border-radius: 12px;
             box-shadow: 0 4px 10px rgba(0,0,0,0.05);
         }
+
         .chart-card h4 {
             margin: 0 0 20px;
             border-bottom: 1px solid #eee;
@@ -128,6 +148,7 @@
             font-size: 16px;
             color: #004aad;
         }
+
         .employee-list {
             list-style: none;
             padding: 0;
@@ -135,6 +156,7 @@
             max-height: 300px;
             overflow-y: auto;
         }
+
         .employee-list li {
             display: flex;
             justify-content: space-between;
@@ -143,21 +165,26 @@
             border-bottom: 1px solid #f0f0f0;
             font-size: 15px;
         }
+
         .employee-list li:last-child { 
             border-bottom: none; 
         }
+
         .employee-list .name { 
             font-weight: 600; 
         }
+
         .employee-list .value { 
             font-weight: 500; 
             color: #004aad; 
         }
+
         @media (max-width: 900px) {
             .charts-row { 
                 grid-template-columns: 1fr; 
             }
         }
+
         @media (max-width: 768px) {
             .dashboard-header { 
                 flex-direction: column; 
@@ -169,6 +196,7 @@
                 justify-content: center; 
             }
         }
+        
     </style>
 </head>
 <body>
