@@ -111,16 +111,16 @@ export default function HomeScreen() {
             icon="sync-circle-outline"
             label="Processing"
             count={getOrderStatusCount("Processing")}
-            colors={["#5DADE2", "#3498DB"]}
+            colors={["#3498DB", "#0D47A1"]}
             onPress={() =>
               router.push({ pathname: "/home/processing", params: { shopId } })
             }
           />
           <StatusCardLink
-            icon="rocket-outline"
+            icon="car-outline"
             label="For Delivery"
             count={getOrderStatusCount("For Delivery")}
-            colors={["#AF7AC5", "#9B59B6"]}
+            colors={["#F8C471", "#F5B041"]}
             onPress={() =>
               router.push({ pathname: "/home/forDelivery", params: { shopId } })
             }
@@ -129,7 +129,7 @@ export default function HomeScreen() {
             icon="checkmark-circle-outline"
             label="Completed"
             count={getOrderStatusCount("Completed")}
-            colors={["#58D68D", "#2ECC71"]}
+            colors={["#2ECC71", "#35B412"]}
             onPress={() =>
               router.push({ pathname: "/home/completed", params: { shopId } })
             }
@@ -138,7 +138,7 @@ export default function HomeScreen() {
             icon="close-circle-outline"
             label="Rejected"
             count={getOrderStatusCount("Rejected")}
-            colors={["#EC7063", "#E74C3C"]}
+            colors={["#E74C3C", "#A10D0D"]}
             onPress={() =>
               router.push({ pathname: "/home/rejected", params: { shopId } })
             }
@@ -270,119 +270,184 @@ function OrderCard({
 
 // --- Styles ---
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F8F9FA" },
-  logoutButton: { padding: 8 },
-  scrollContainer: { 
-    paddingHorizontal: 16, 
-    paddingTop: 16, 
-    paddingBottom: 32 
+  container: { 
+    flex: 1, 
+    backgroundColor: "#eef4f9" 
   },
+
+  logoutButton: { 
+    padding: 8, 
+    backgroundColor: "rgba(255,255,255,0.15)", 
+    borderRadius: 8 
+  },
+
+  scrollContainer: { 
+    paddingHorizontal: 18, 
+    paddingTop: 28,   
+    paddingBottom: 40 
+  },
+
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#1c3d63",
+    marginTop: 18,
+    marginBottom: 14,
+    letterSpacing: 0.3,
+  },
+
   statusGrid: { 
     flexDirection: "row", 
     flexWrap: "wrap", 
-    marginHorizontal: -8
+    marginHorizontal: -8,
   },
+
   statusCardWrapper: { 
     width: "50%", 
     padding: 8 
   },
+
   statusCard: {
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 18,
     justifyContent: "space-between",
-    minHeight: 120,
+    minHeight: 130,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
     elevation: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
   },
+
   statusCardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
     width: "100%",
   },
+
   statusCardLabel: {
     fontSize: 16,
-    color: "rgba(255,255,255,0.9)",
+    color: "rgba(255,255,255,0.92)",
     fontWeight: "600",
+    letterSpacing: 0.3,
   },
+
   statusCardCount: {
-    fontSize: 36,
-    fontWeight: "bold",
+    fontSize: 38,
+    fontWeight: "900",
     color: "#fff",
-    opacity: 0.9,
+    opacity: 0.95,
+    textShadowColor: "rgba(0,0,0,0.2)",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 3,
   },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#2c3e50",
-    marginTop: 16,
-    marginBottom: 12,
-  },
+
   orderCard: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    backgroundColor: "#ffffff",
+    borderRadius: 14,
+    padding: 18,
+    marginBottom: 18,
     borderWidth: 1,
-    borderColor: "#EFEFEF",
+    borderColor: "#e2e8f0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
   },
+
   orderCardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 12,
   },
+
+  orderId: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#5d6d7e",
+    letterSpacing: 0.6,
+  },
+
+  orderText: {
+    fontSize: 16,
+    color: "#2c3e50",
+    lineHeight: 24,
+    marginBottom: 18,
+  },
+
+  viewDetails: { 
+    fontSize: 14, 
+    color: "#3498db", 
+    fontWeight: "700",
+    textDecorationLine: "underline"
+  },
+
   noOrdersContainer: {
     alignItems: "center",
-    paddingVertical: 50,
-    backgroundColor: "#fff",
-    borderRadius: 12,
+    paddingVertical: 60,
+    backgroundColor: "#fdfdfd",
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#EFEFEF",
+    borderColor: "#e0e0e0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
   },
+
   noOrdersText: {
     textAlign: "center",
     color: "#7f8c8d",
     fontSize: 18,
-    fontWeight: "600",
+    fontWeight: "700",
   },
+
   noOrdersSubText: {
     textAlign: "center",
     color: "#95a5a6",
-    marginTop: 8,
+    marginTop: 6,
     fontSize: 14,
   },
-  orderId: {
-    fontSize: 12,
-    fontWeight: "bold",
-    color: "#7f8c8d",
-    letterSpacing: 0.5,
-  },
-  orderText: {
-    fontSize: 16,
-    color: "#34495e",
-    lineHeight: 24,
-    marginBottom: 20,
-  },
-  viewDetails: { fontSize: 14, color: "#3498db", fontWeight: "bold" },
+
   buttonRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginHorizontal: -4,
   },
+
   button: {
     flex: 1,
     paddingVertical: 14,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
     marginHorizontal: 4,
     flexDirection: "row",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  acceptBtn: { backgroundColor: "#2ECC71" },
-  rejectBtn: { backgroundColor: "#E74C3C" },
-  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 14, marginLeft: 8 },
+
+  acceptBtn: { 
+    backgroundColor: "#35B412",
+  },
+
+  rejectBtn: { 
+    backgroundColor: "#A10D0D",
+  },
+
+  buttonText: { 
+    color: "#fff", 
+    fontWeight: "700", 
+    fontSize: 14, 
+    marginLeft: 8 
+  },
 });

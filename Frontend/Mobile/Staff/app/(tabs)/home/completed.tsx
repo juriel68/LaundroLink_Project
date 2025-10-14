@@ -1,4 +1,3 @@
-// app/(tabs)/completed.tsx
 import StatusScreen from "@/components/StatusScreen";
 
 export default function Completed() {

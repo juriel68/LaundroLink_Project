@@ -28,12 +28,10 @@ export default function OrderScreen() {
   const options = ["Today", "This Week", "This Month"];
   
   useEffect(() => {
-    // This effect runs once to format and set the current date string.
     const date = new Date();
     const formattedDate = date.toLocaleString('en-US', { month: 'long', year: 'numeric' });
     setCurrentDateDisplay(formattedDate);
   }, []);
-
 
   const loadSummary = useCallback(async () => {
     if (shopId) {
@@ -61,20 +59,18 @@ export default function OrderScreen() {
         datasets: [{ data: summary.chartData.map(d => d.revenue) }]
       }
     : defaultChartData;
-    
-  const handleExport = (type: string) => {
-    Alert.alert("Export", `Exporting as ${type} is not yet implemented.`);
-  };
 
   return (
     <View style={styles.container}>
       <Header title="Orders" />
       <ScrollView contentContainerStyle={styles.content}>
+        {/* Date Row */}
         <View style={styles.dateRow}>
           <View style={styles.dateTitleContainer}>
             <Text style={styles.sectionTitle}>Date: </Text>
             <Text style={styles.dateText}>{currentDateDisplay}</Text>
           </View>
+
           <View style={{ position: "relative" }}>
             <TouchableOpacity style={styles.dropdownBtn} onPress={() => setMenuVisible(!menuVisible)}>
               <View style={styles.dropdownContent}>
@@ -94,31 +90,31 @@ export default function OrderScreen() {
           </View>
         </View>
 
+        {/* Status Summary */}
         <View style={styles.statusCardRow}> 
           <View style={styles.statusCardWrapper}>
-            <StatusCard icon="document-text-outline" label="Total" count={summary?.totalOrders ?? 0} color="#00aaff" />
+            <StatusCard icon="document-text-outline" label="Total" count={summary?.totalOrders ?? 0} color="#3498DB" />
           </View>
           <View style={styles.statusCardWrapper}>
-            <StatusCard icon="checkmark-circle-outline" label="Completed" count={summary?.completedOrders ?? 0} color="#28a745" />
+            <StatusCard icon="checkmark-circle-outline" label="Completed" count={summary?.completedOrders ?? 0} color="#2ECC71" />
           </View>
           <View style={styles.statusCardWrapper}>
-            <StatusCard icon="time-outline" label="In Progress" count={summary?.pendingOrders ?? 0} color="#ffc107" />
+            <StatusCard icon="time-outline" label="In Progress" count={summary?.pendingOrders ?? 0} color="#F8C471" />
           </View>
           <View style={styles.statusCardWrapper}>
             <StatusCard icon="bar-chart-outline" label="Revenue" count={summary?.totalRevenue ?? 0} color="#17a2b8" />
           </View>
         </View>
 
+        {/* Revenue Chart */}
         <Text style={styles.sectionTitle}>Revenue</Text>
-        
         <View style={styles.chartBox}>
           {loading ? <ActivityIndicator /> : (
             <LineChart
               data={chartData}
               width={screenWidth - 40}
-              height={160}
+              height={180}
               yAxisLabel="₱"
-              yAxisSuffix=""
               chartConfig={chartConfig}
               bezier
               style={{ borderRadius: 10 }}
@@ -126,15 +122,7 @@ export default function OrderScreen() {
           )}
         </View>
 
-        <View style={styles.exportRow}>
-          <TouchableOpacity style={[styles.exportBtn, { backgroundColor: "#c82333" }]} onPress={() => handleExport('PDF')}>
-            <Text style={styles.exportText}>Export PDF</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.exportBtn, { backgroundColor: "#218838" }]} onPress={() => handleExport('Excel')}>
-            <Text style={styles.exportText}>Export Excel</Text>
-          </TouchableOpacity>
-        </View>
-
+        {/* Recent Orders Table */}
         <View style={styles.tableBox}>
           <Text style={styles.tableTitle}>📋 Recent Orders</Text>
           <View style={styles.tableHeader}>
@@ -147,10 +135,19 @@ export default function OrderScreen() {
             <View key={order.id} style={[styles.tableRow, index % 2 === 0 ? styles.rowEven : styles.rowOdd]}>
               <Text style={styles.tableCell}>{order.id}</Text>
               <Text style={styles.tableCell}>{order.customer}</Text>
-              <Text style={[styles.tableCell, { color: order.status === "Completed" ? "green" : order.status === "Pending" || order.status === "In Progress" ? "orange" : "red" }]}>
+              <Text
+                style={[
+                  styles.tableCell,
+                  { 
+                    color: order.status === "Completed" ? "#2ecc71" :
+                           order.status === "Pending" || order.status === "In Progress" ? "#f39c12" : "#e74c3c",
+                    fontWeight: "600"
+                  }
+                ]}
+              >
                 {order.status}
               </Text>
-              <Text style={styles.tableCell}>₱{order.amount?.toFixed(2) ?? 'N/A'}</Text>
+              <Text style={styles.tableCell}>₱{order.amount?.toFixed(2) ?? "N/A"}</Text>
             </View>
           ))}
         </View>
@@ -159,48 +156,173 @@ export default function OrderScreen() {
   );
 }
 
-// Chart configuration
 const chartConfig = {
-  backgroundColor: "#fff", backgroundGradientFrom: "#fff", backgroundGradientTo: "#fff", decimalPlaces: 0,
+  backgroundColor: "#fff",
+  backgroundGradientFrom: "#fff",
+  backgroundGradientTo: "#fff",
+  decimalPlaces: 0,
   color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
   labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
   propsForDots: { r: "5", strokeWidth: "2", stroke: "#0077b6" },
 };
 
-// ... existing styles, but I've updated them slightly for better presentation
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f9fafb" },
-  content: { padding: 16 },
-  dateRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 5, zIndex: 10 },
-  dateTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
+  container: { 
+    flex: 1, 
+    backgroundColor: "#f9fafb" 
   },
-  dateText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#555',
-    marginBottom: 10,
+
+  content: { 
+    padding: 16 
   },
-  sectionTitle: { fontSize: 16, fontWeight: "600", marginBottom: 10 },
-  dropdownBtn: { backgroundColor: "#e6f7ff", paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 },
-  dropdownContent: { flexDirection: "row", alignItems: "center", justifyContent: "center" },
-  dropdownText: { fontSize: 14, fontWeight: "500", color: "#0077b6", marginRight: 4 },
-  menu: { position: "absolute", top: "100%", right: 0, backgroundColor: "#fff", borderRadius: 8, marginTop: 4, paddingVertical: 6, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 4, elevation: 3, zIndex: 20 },
-  menuItem: { paddingVertical: 8, paddingHorizontal: 12 },
-  menuText: { fontSize: 14, color: "#333" },
-  statusCardRow: { flexDirection: "row", justifyContent: "space-between", marginHorizontal: -4, paddingVertical: 12, marginBottom: 10 },
-  statusCardWrapper: { flex: 1, marginHorizontal: 4 },
-  chartBox: { backgroundColor: "#fff", borderRadius: 10, borderWidth: 1, borderColor: "#ddd", alignItems: "center", justifyContent: "center", marginBottom: 20, paddingVertical: 10 },
-  exportRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 20 },
-  exportBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: "center", marginHorizontal: 5 },
-  exportText: { color: "#fff", fontWeight: "600" },
-  tableBox: { backgroundColor: "#fff", borderRadius: 10, borderWidth: 1, borderColor: "#ddd", padding: 12, marginBottom: 30 },
-  tableTitle: { fontWeight: "600", fontSize: 16, marginBottom: 8, color: "#000" },
-  tableHeader: { flexDirection: "row", backgroundColor: "#e6f7ff", borderRadius: 6, marginBottom: 4, paddingVertical: 8, paddingHorizontal: 4 },
-  tableRow: { flexDirection: "row", paddingVertical: 8, paddingHorizontal: 4, borderRadius: 4, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  rowEven: { backgroundColor: "#f9f9f9" },
-  rowOdd: { backgroundColor: "#fff" },
-  tableCell: { flex: 1, fontSize: 13, color: "#333", textAlign: 'center' },
-  headerCell: { fontWeight: "700", color: "#0077b6" },
+
+  dateRow: { 
+    flexDirection: "row", 
+    justifyContent: "space-between", 
+    alignItems: "center", 
+    marginBottom: 5, 
+    zIndex: 10 
+  },
+
+  dateTitleContainer: { 
+    flexDirection: "row", 
+    alignItems: "baseline" 
+  },
+
+  dateText: { 
+    fontSize: 16, 
+    fontWeight: "500", 
+    color: "#555", 
+    marginBottom: 10 
+  },
+
+  sectionTitle: { 
+    fontSize: 16, 
+    fontWeight: "600", 
+    marginBottom: 10 
+  },
+
+  dropdownBtn: { 
+    backgroundColor: "#e6f7ff", 
+    paddingVertical: 6, 
+    paddingHorizontal: 12, 
+    borderRadius: 8 
+  },
+
+  dropdownContent: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    justifyContent: "center" 
+  },
+
+  dropdownText: { 
+    fontSize: 14, 
+    fontWeight: "500", 
+    color: "#0077b6", 
+    marginRight: 4 
+  },
+
+  menu: { 
+    position: "absolute", 
+    top: "100%", 
+    right: 0, 
+    backgroundColor: "#fff", 
+    borderRadius: 8, 
+    marginTop: 4, 
+    paddingVertical: 6, 
+    shadowColor: "#000", 
+    shadowOpacity: 0.1, 
+    shadowRadius: 4, 
+    elevation: 3, 
+    zIndex: 20 
+  },
+
+  menuItem: { 
+    paddingVertical: 8, 
+    paddingHorizontal: 12 
+  },
+
+  menuText: { 
+    fontSize: 14, 
+    color: "#333" 
+  },
+
+  statusCardRow: { 
+    flexDirection: "row", 
+    justifyContent: "space-between", 
+    marginHorizontal: -4, 
+    paddingVertical: 12, 
+    marginBottom: 10 
+  },
+
+  statusCardWrapper: { 
+    flex: 1, 
+    marginHorizontal: 4 
+  },
+
+  chartBox: { 
+    backgroundColor: "#fff", 
+    borderRadius: 10, 
+    borderWidth: 1, 
+    borderColor: "#ddd", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    marginBottom: 20, 
+    paddingVertical: 10 
+  },
+
+  tableBox: { 
+    backgroundColor: "#fff", 
+    borderRadius: 10, 
+    borderWidth: 1, 
+    borderColor: "#ddd", 
+    padding: 12, 
+    marginBottom: 30 
+  },
+
+  tableTitle: { 
+    fontWeight: "600", 
+    fontSize: 16, 
+    marginBottom: 8, 
+    color: "#000" 
+  },
+
+  tableHeader: { 
+    flexDirection: "row", 
+    backgroundColor: "#e6f7ff", 
+    borderRadius: 6, 
+    marginBottom: 4, 
+    paddingVertical: 8, 
+    paddingHorizontal: 4 
+  },
+
+  tableRow: { 
+    flexDirection: "row", 
+    paddingVertical: 8, 
+    paddingHorizontal: 4, 
+    borderRadius: 4, 
+    borderBottomWidth: 1, 
+    borderBottomColor: "#f0f0f0" 
+  },
+
+  rowEven: { 
+    backgroundColor: "#f9f9f9" 
+  },
+
+  rowOdd: { 
+    backgroundColor: "#fff" 
+  },
+
+  tableCell: { 
+    flex: 1, 
+    fontSize: 13, 
+    color: "#333", 
+    textAlign: "center" 
+  },
+
+  headerCell: { 
+    fontWeight: "700", 
+    color: "#0077b6" 
+  },
+
 });
