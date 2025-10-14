@@ -158,7 +158,7 @@ export default function HomeScreen() {
         ) : (
           <View style={styles.noOrdersContainer}>
             <Text style={styles.noOrdersText}>🎉 No new orders to review!</Text>
-            <Text style={styles.noOrdersSubText}>Pull down to refresh.</Text>
+            <Text style={styles.noOrdersSubText}>Pull down to refresh</Text>
           </View>
         )}
       </ScrollView>
