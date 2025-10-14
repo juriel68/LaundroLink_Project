@@ -1,4 +1,3 @@
-//rejected.tsx
 import StatusScreen from "@/components/StatusScreen";
 
 export default function Rejected() {

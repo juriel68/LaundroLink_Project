@@ -117,16 +117,70 @@ export default function OrderDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-  scrollContent: { paddingBottom: 30 }, // ✅ extra space at bottom
-  section: {
-    padding: 18,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
+  container: { 
+    flex: 1, 
+    backgroundColor: "#f9fcff", // softer blueish background
   },
-  sectionTitle: { fontSize: 16, fontWeight: "bold", marginBottom: 10 },
-  customer: { fontSize: 18, fontWeight: "600" },
-  subText: { fontSize: 15, color: "#555" },
-  normalText: { fontSize: 15, color: "#222", marginBottom: 4 },
-  totalText: { fontSize: 16, fontWeight: "bold", color: "#000", marginTop: 5 },
+  scrollContent: { 
+    paddingBottom: 40, 
+    paddingHorizontal: 16, 
+    paddingTop: 15,
+  },
+
+  /* ==== SECTION CARD STYLE ==== */
+  section: {
+    backgroundColor: "#ffffff",
+    padding: 18,
+    borderRadius: 14,
+    marginBottom: 15,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+
+  /* ==== TITLES ==== */
+  sectionTitle: { 
+    fontSize: 16, 
+    fontWeight: "700", 
+    marginBottom: 10, 
+    color: "#004aad",
+    letterSpacing: 0.3,
+  },
+
+  /* ==== CUSTOMER NAME ==== */
+  customer: { 
+    fontSize: 20, 
+    fontWeight: "700", 
+    color: "#1b263b", 
+  },
+  subText: { 
+    fontSize: 14, 
+    color: "#555", 
+    marginTop: 2,
+  },
+
+  /* ==== TEXT STYLES ==== */
+  normalText: { 
+    fontSize: 15, 
+    color: "#222", 
+    marginBottom: 6, 
+    lineHeight: 22,
+  },
+  totalText: { 
+    fontSize: 17, 
+    fontWeight: "700", 
+    color: "#0077b6", 
+    marginTop: 8,
+  },
+
+  /* ==== ADDED VISUAL DETAILS ==== */
+  editIcon: {
+    marginLeft: 10,
+    backgroundColor: "#eaf5ff",
+    padding: 6,
+    borderRadius: 8,
+  },
 });
+

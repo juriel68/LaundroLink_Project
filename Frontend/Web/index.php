@@ -10,22 +10,75 @@
     body {
       margin: 0;
       font-family: 'Poppins', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(180deg, #0077b6, #004aad);
+      background: linear-gradient(120deg, #95dafaff, #87caecff, #65baecff, #399fdeff);
+      background-size: 300% 300%;
+      animation: gradientShift 12s ease infinite;
       height: 100vh;
       display: flex;
       flex-direction: column;
       justify-content: center;
       align-items: center;
       overflow: hidden;
+      position: relative;
     }
+
+    @keyframes gradientShift {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    /* ==== FLOATING BUBBLES ==== */
+.bubbles {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.bubble {
+  position: absolute;
+  bottom: -150px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.6),
+              0 0 25px rgba(173, 216, 230, 0.5);
+  animation: floatUpSideways linear infinite;
+  mix-blend-mode: screen;
+}
+
+@keyframes floatUpSideways {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+  25% {
+    transform: translateX(15px) translateY(-25vh) scale(1.05);
+  }
+  50% {
+    transform: translateX(-20px) translateY(-50vh) scale(1.1);
+  }
+  75% {
+    transform: translateX(10px) translateY(-75vh) scale(1.2);
+  }
+  100% {
+    transform: translateX(-10px) translateY(-110vh) scale(1.3);
+    opacity: 0;
+  }
+}
+
 
     /* ==== BRAND TITLE ==== */
     .brand-title {
       font-size: 36px;
       font-weight: 600;
-      color: #caf0f8;
+      color: #ffffff;
       letter-spacing: 2px;
       margin-bottom: 65px;
+      z-index: 1;
     }
 
     /* ==== LOGIN BOX ==== */
@@ -38,6 +91,7 @@
       text-align: center;
       gap: 18px;
       margin-top: -63px;
+      z-index: 1;
     }
 
     /* ==== AVATAR ==== */
@@ -79,7 +133,7 @@
       background: #fff;
       margin-bottom: 18px;
       box-shadow: inset 0 1.5px 3px rgba(0, 0, 0, 0.08);
-    transition: all 0.2s ease-in-out;
+      transition: all 0.2s ease-in-out;
     }
 
     input:focus {
@@ -119,6 +173,17 @@
 </head>
 
 <body>
+  <div class="bubbles">
+  <div class="bubble" style="left: 5%; width: 30px; height: 30px; animation-duration: 11s; animation-delay: 0s;"></div>
+  <div class="bubble" style="left: 20%; width: 45px; height: 45px; animation-duration: 14s; animation-delay: 2s;"></div>
+  <div class="bubble" style="left: 35%; width: 25px; height: 25px; animation-duration: 10s; animation-delay: 1s;"></div>
+  <div class="bubble" style="left: 50%; width: 40px; height: 40px; animation-duration: 13s; animation-delay: 3s;"></div>
+  <div class="bubble" style="left: 65%; width: 20px; height: 20px; animation-duration: 9s; animation-delay: 4s;"></div>
+  <div class="bubble" style="left: 80%; width: 35px; height: 35px; animation-duration: 12s; animation-delay: 1s;"></div>
+  <div class="bubble" style="left: 90%; width: 25px; height: 25px; animation-duration: 15s; animation-delay: 2s;"></div>
+</div>
+
+
   <h1 class="brand-title">LaundroLink</h1>
 
   <div class="login-box">

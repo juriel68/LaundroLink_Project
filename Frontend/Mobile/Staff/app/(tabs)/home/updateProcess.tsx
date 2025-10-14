@@ -35,7 +35,7 @@ export default function UpdateProcess() {
       Alert.alert("Already Updated", `This order is already marked as "${currentStatus}".`);
       return;
     }
-    
+
     const requiredPrev = statusFlow[selectedStatus];
     const latestStatus = currentStatus || null;
     if (requiredPrev && latestStatus !== requiredPrev) {
@@ -53,7 +53,7 @@ export default function UpdateProcess() {
       Alert.alert("Error", "Failed to update status.");
     }
   };
-  
+
   return (
     <View style={styles.container}>
       <Header title="Update Laundry Process" />
@@ -65,8 +65,6 @@ export default function UpdateProcess() {
         </Text>
 
         {statusOptions.map((status) => (
-          // This component now doesn't need the complex disabling logic,
-          // as the save button's logic handles the validation.
           <TouchableOpacity
             key={status}
             style={[styles.option, selectedStatus === status && styles.selected]}
@@ -91,39 +89,89 @@ export default function UpdateProcess() {
   );
 }
 
-// Your existing styles for this component
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f5f6fa" },
+  container: {
+    flex: 1,
+    backgroundColor: "#f2f6fb", 
+  },
   card: {
     flex: 1,
     backgroundColor: "#fff",
-    margin: 16,
-    borderRadius: 12,
-    padding: 20,
+    margin: 18,
+    borderRadius: 16,
+    padding: 22,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 6,
+    elevation: 5,
   },
-  title: { fontSize: 18, fontWeight: "bold", marginBottom: 6 },
-  subtitle: { fontSize: 14, color: "#555", marginBottom: 12 },
-  currentStatus: { fontSize: 15, color: "blue", fontWeight: "600", marginBottom: 20, fontStyle: 'italic' },
-  option: {
-    backgroundColor: "#e9ecef",
-    padding: 15,
-    borderRadius: 10,
+  title: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#2c3e50",
+    marginBottom: 4,
+    textAlign: "center",
+  },
+  subtitle: {
+    fontSize: 15,
+    color: "#555",
+    textAlign: "center",
     marginBottom: 10,
   },
-  selected: { backgroundColor: "#007bff" },
-  optionText: { color: "#333", fontSize: 16, fontWeight: "600" },
-  optionTextSelected: { color: "#fff" },
-  saveButton: {
-    backgroundColor: "#28a745",
-    padding: 15,
-    borderRadius: 10,
-    alignItems: "center",
-    marginTop: 20,
+  currentStatus: {
+    fontSize: 15,
+    color: "#007bff",
+    fontWeight: "600",
+    marginBottom: 22,
+    fontStyle: "italic",
+    textAlign: "center",
   },
-  saveText: { color: "#fff", fontWeight: "bold" },
+  option: {
+    backgroundColor: "#eef2f6",
+    paddingVertical: 15,
+    borderRadius: 12,
+    marginBottom: 10,
+    borderWidth: 1.5,
+    borderColor: "#dde3ea",
+    alignItems: "center",
+    transition: "0.2s",
+  },
+  selected: {
+    backgroundColor: "#0D47A1",
+    borderColor: "#007bff",
+    shadowColor: "#007bff",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  optionText: {
+    color: "#2c3e50",
+    fontSize: 16,
+    fontWeight: "600",
+    letterSpacing: 0.3,
+  },
+  optionTextSelected: {
+    color: "#fff",
+  },
+  saveButton: {
+    backgroundColor: "#35B412",
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 28,
+    shadowColor: "#28a745",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  saveText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 17,
+    letterSpacing: 0.5,
+  },
 });
