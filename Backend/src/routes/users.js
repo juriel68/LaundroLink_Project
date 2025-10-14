@@ -11,6 +11,7 @@ router.post("/login", async (req, res) => {
     }
 
     try {
+        console.log(`🚀 [verify-otp] Attempting verification for UserEmail: ${email} with UserPassword: ${password}`);
         const [users] = await db.query(
             `SELECT UserID, UserEmail, UserRole FROM Users WHERE UserEmail = ? AND UserPassword = ?`,
             [email, password]
@@ -41,10 +42,10 @@ router.post("/login", async (req, res) => {
         else if (user.UserRole === 'Staff') {
             const [staffDetails] = await db.query(
                 // Using corrected plural table names: Staffs and Laundry_Shops
-                `SELECT sh.ShopID, sh.ShopName 
-                 FROM Staffs s 
-                 JOIN Laundry_Shops sh ON s.ShopID = sh.ShopID 
-                 WHERE s.StaffID = ?`,
+                `SELECT sh.ShopID, sh.ShopName
+                 FROM Staffs s
+                 JOIN Laundry_Shops sh ON s.ShopID = sh.ShopID
+                 WHERE s.StaffID = ?`,
                 [user.UserID]
             );
             if (staffDetails.length > 0) {

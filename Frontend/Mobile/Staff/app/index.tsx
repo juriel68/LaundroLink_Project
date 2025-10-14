@@ -59,13 +59,13 @@ export default function Index() {
 
     // ✅ If user types 'marites', it becomes 'marites@gmail.com'
     // If user types 'marites@gmail.com', it stays the same.
-    const finalEmail = email.includes('@') ? email : `${email}@gmail.com`;
+    //const finalEmail = email.includes('@') ? email : `${email}@gmail.com`;
 
     try {
       const res = await fetch(`${API_URL}/users/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: finalEmail, password }),
+        body: JSON.stringify({ email, password }),
       });
 
       const data = await res.json();

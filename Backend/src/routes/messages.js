@@ -40,7 +40,7 @@ router.get("/conversations/:userId", async (req, res) => {
             AND m.MessageStatus = 'Delivered'
         ) AS unreadCount
       FROM Conversations c
-      JOIN Customer u 
+      JOIN Customers u 
         ON u.CustID = IF(c.Participant1_ID = ?, c.Participant2_ID, c.Participant1_ID)
       WHERE c.Participant1_ID = ? OR c.Participant2_ID = ?
       ORDER BY c.UpdatedAt DESC;
