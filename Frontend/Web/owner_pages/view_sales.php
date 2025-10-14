@@ -4,106 +4,128 @@
     <meta charset="UTF-8">
     <title>Sales</title>
     <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            background-color: #f8f9fa;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            overflow: hidden;
-        }
-        .header-container {
-            width: 90%;
-            max-width: 1100px;
-            margin: 30px auto 20px auto;
-            flex-shrink: 0;
-        }
-        .top-box {
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-            padding: 25px 40px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        h1 { color: #004aad; margin: 0; }
-        p { color: #555; margin: 0; }
-        .date-filters button {
-            padding: 8px 15px;
-            margin-left: 5px;
-            border: 1px solid #ccc;
-            background-color: white;
-            cursor: pointer;
-            border-radius: 6px;
-            transition: 0.2s;
-            font-weight: 600;
-        }
-        .date-filters button.active {
-            background-color: #004aad;
-            color: white;
-            border-color: #004aad;
-        }
-        .kpi-row {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 20px;
-            margin-top: 20px;
-        }
-        .kpi-card {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
-            border-top: 4px solid #004aad;
-        }
-        .kpi-card h4 {
-            margin: 0 0 5px 0;
-            font-size: 14px;
-            color: #6c757d;
-            font-weight: 600;
-        }
-        .kpi-card .value {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #343a40;
-        }
-        .table-container {
-            width: 90%;
-            max-width: 1100px;
-            margin: 0 auto 30px auto;
-            flex-grow: 1;
-            overflow-y: auto;
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.08);
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        th, td {
-            padding: 12px 15px;
-            text-align: left;
-            border-bottom: 1px solid #eee;
-        }
-        th {
-            background-color: #004aad;
-            color: white;
-            font-weight: 600;
-            font-size: 15px;
-            position: sticky;
-            top: 0;
-            z-index: 1;
-        }
-        tbody tr:last-child td { border-bottom: none; }
+        
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        margin: 0;
+        background-color: #f8f9fa;
+    }
+
+    .title-box {
+        background: white;
+        border-radius: 10px;
+        max-width: 1100px;
+        margin: 30px auto 40px;
+        padding: 25px 40px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+
+    .title-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 15px;
+    }
+
+    h1 {
+        color: #004aad;
+        margin-bottom: 8px;
+    }
+
+    p {
+        color: #555;
+        margin: 0;
+    }
+
+    .date-filters button {
+        padding: 8px 15px;
+        margin-left: 5px;
+        border: 1px solid #ccc;
+        background-color: white;
+        cursor: pointer;
+        border-radius: 6px;
+        transition: 0.2s;
+        font-weight: 600;
+    }
+    .date-filters button.active {
+        background-color: #004aad;
+        color: white;
+        border-color: #004aad;
+    }
+
+    .kpi-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 20px;
+        max-width: 1100px;
+        margin: 0 auto 20px auto;
+    }
+
+    .kpi-card {
+        background: white;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        border-top: 4px solid #004aad;
+    }
+
+    .kpi-card h4 {
+        margin: 0 0 5px 0;
+        font-size: 14px;
+        color: #6c757d;
+        font-weight: 600;
+    }
+
+    .kpi-card .value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #343a40;
+    }
+
+    .table-container {
+        width: 90%;
+        max-width: 1100px;
+        margin: 0 auto 30px auto;
+        flex-grow: 1;
+        overflow-y: auto;
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    th, td {
+        padding: 12px 15px;
+        text-align: left;
+        border-bottom: 1px solid #eee;
+    }
+
+    th {
+        background-color: #004aad;
+        color: white;
+        font-weight: 600;
+        font-size: 15px;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+
+    tbody tr:last-child td { 
+        border-bottom: none; 
+    }
+
     </style>
 </head>
 <body>
 
-    <div class="header-container">
-        <div class="top-box">
+    <!-- Title Section -->
+    <div class="title-box">
+        <div class="title-row">
             <div>
                 <h1>Sales</h1>
                 <p>View sales performance and transaction history.</p>
@@ -114,22 +136,25 @@
                 <button data-period="Yearly">This Year</button>
             </div>
         </div>
-        <div class="kpi-row">
-            <div class="kpi-card">
-                <h4>Total Sales</h4>
-                <div class="value" id="total-sales">₱0.00</div>
-            </div>
-            <div class="kpi-card">
-                <h4>Number of Sales</h4>
-                <div class="value" id="num-sales">0</div>
-            </div>
-            <div class="kpi-card">
-                <h4>Average Sale Value</h4>
-                <div class="value" id="avg-sale">₱0.00</div>
-            </div>
+    </div>
+
+    <!-- KPI Section -->
+    <div class="kpi-row">
+        <div class="kpi-card">
+            <h4>Total Sales</h4>
+            <div class="value" id="total-sales">₱0.00</div>
+        </div>
+        <div class="kpi-card">
+            <h4>Number of Sales</h4>
+            <div class="value" id="num-sales">0</div>
+        </div>
+        <div class="kpi-card">
+            <h4>Average Sale Value</h4>
+            <div class="value" id="avg-sale">₱0.00</div>
         </div>
     </div>
 
+    <!-- Sales Table -->
     <div class="table-container">
         <table>
             <thead>

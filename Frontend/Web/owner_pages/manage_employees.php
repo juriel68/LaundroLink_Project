@@ -24,24 +24,29 @@
         flex-wrap: wrap;
         gap: 15px;
     }
+
     h1 {
         color: #004aad;
         margin-bottom: 8px;
     }
+
     p {
         color: #555;
         margin: 0;
     }
+
     .controls-container {
         display: flex;
         align-items: center;
         gap: 20px;
     }
+
     .sort-container label {
         font-weight: 600;
         color: #333;
         margin-right: 8px;
     }
+
     .sort-container select {
         padding: 8px 12px;
         border-radius: 6px;
@@ -49,6 +54,7 @@
         font-size: 14px;
         background-color: white;
     }
+
     .btn-add {
         display: inline-flex;
         align-items: center;
@@ -66,9 +72,11 @@
         box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
         transition: all 0.25s ease;
     }
+
     .btn-add:hover {
         background-color: #004aad;
     }
+
     table {
         width: 90%;
         margin: 30px auto;
@@ -78,22 +86,27 @@
         border-radius: 10px;
         overflow: hidden;
     }
+
     th, td {
         padding: 12px 15px;
         text-align: left;
     }
+
     th {
         background-color: #004aad;
         color: white;
         font-weight: 600;
         font-size: 15px;
     }
+
     tr:nth-child(even) {
         background-color: #f9f9f9;
     }
+
     tr:hover {
         background-color: #eef3ff;
     }
+
     .btn-update, .btn-delete {
         border: none;
         border-radius: 6px;
@@ -103,20 +116,25 @@
         transition: 0.3s;
         margin-right: 5px;
     }
+
     .btn-update {
         background-color: #004aad;
         color: white;
     }
+
     .btn-update:hover {
         background-color: #003c8a;
     }
+
     .btn-delete {
         background-color: #d9534f;
         color: white;
     }
+
     .btn-delete:hover {
         background-color: #b94642;
     }
+
     .popup {
         display: none;
         position: fixed;
@@ -128,6 +146,7 @@
         background-color: rgba(0,0,0,0.5);
         overflow-y: auto;
     }
+
     .popup-content {
         background-color: #fff;
         margin: 8% auto;
@@ -136,25 +155,30 @@
         width: 400px;
         box-shadow: 0 4px 10px rgba(0,0,0,0.2);
     }
+
     .popup-content h2 {
         color: #004aad;
         margin-bottom: 20px;
     }
+
     .popup-content form {
         display: flex;
         flex-direction: column;
         gap: 10px;
     }
+
     .popup-content input {
         width: 95%;
         padding: 10px;
         border-radius: 6px;
         border: 1px solid #ccc;
     }
+
     .popup-buttons {
         text-align: right;
         margin-top: 20px;
     }
+
     .btn-cancel {
         background-color: #ccc;
         color: #333;
@@ -164,6 +188,7 @@
         cursor: pointer;
         margin-right: 10px;
     }
+
     .btn-save {
         background-color: #0b53ce;
         color: white;
@@ -172,17 +197,21 @@
         border: none;
         cursor: pointer;
     }
+
     .btn-save:hover {
         background-color: #004aad;
     }
+
     .popup-delete {
         text-align: center;
     }
+
     .popup-delete p {
         font-size: 16px;
         color: #333;
         margin-bottom: 25px;
     }
+
     .btn-confirm-delete {
         background-color: #d9534f;
         color: white;
@@ -191,9 +220,11 @@
         border: none;
         cursor: pointer;
     }
+
     .btn-confirm-delete:hover {
         background-color: #b94642;
     }
+    
 </style>
 </head>
 <body>
