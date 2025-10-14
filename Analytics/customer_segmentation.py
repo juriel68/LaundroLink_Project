@@ -45,7 +45,7 @@ def create_analytics_tables(cursor):
         averageRecency DECIMAL(10, 2),
         SegmentedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (ShopID, SegmentName),
-        FOREIGN KEY (ShopID) REFERENCES Laundry_Shop(ShopID) ON DELETE CASCADE
+        FOREIGN KEY (ShopID) REFERENCES Laundry_Shops(ShopID) ON DELETE CASCADE
     );
     """
     
@@ -57,7 +57,7 @@ def create_analytics_tables(cursor):
         orderCount INT,
         AnalyzedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (ShopID, SvcName),
-        FOREIGN KEY (ShopID) REFERENCES Laundry_Shop(ShopID) ON DELETE CASCADE
+        FOREIGN KEY (ShopID) REFERENCES Laundry_Shops(ShopID) ON DELETE CASCADE
     );
     """
     
@@ -69,7 +69,7 @@ def create_analytics_tables(cursor):
         orderCount INT,
         AnalyzedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (ShopID, timeSlot),
-        FOREIGN KEY (ShopID) REFERENCES Laundry_Shop(ShopID) ON DELETE CASCADE
+        FOREIGN KEY (ShopID) REFERENCES Laundry_Shops(ShopID) ON DELETE CASCADE
     );
     """
     
@@ -96,8 +96,8 @@ SELECT
     o.OrderID, o.ShopID, o.CustID, 
     i.PayAmount, o.OrderCreatedAt, s.SvcName
 FROM Orders o
-JOIN Service s ON o.SvcID = s.SvcID
-JOIN Invoice i ON o.OrderID = i.OrderID
+JOIN Services s ON o.SvcID = s.SvcID
+JOIN Invoices i ON o.OrderID = i.OrderID
 JOIN (
     SELECT OrderID, MAX(OrderUpdatedAt) AS LatestUpdate
     FROM Order_Status

@@ -26,7 +26,7 @@ router.get("/conversations/:userId", async (req, res) => {
               WHEN m.MessageImage IS NOT NULL AND m.MessageImage != '' THEN '📷 Photo'
               ELSE ''
             END
-          FROM Message m
+          FROM Messages m
           WHERE m.ConversationID = c.ConversationID 
           ORDER BY m.CreatedAt DESC 
           LIMIT 1
@@ -34,12 +34,12 @@ router.get("/conversations/:userId", async (req, res) => {
         -- Count unread messages for this user in this conversation
         (
           SELECT COUNT(*) 
-          FROM Message m 
+          FROM Messages m 
           WHERE m.ConversationID = c.ConversationID 
             AND m.ReceiverID = ? 
             AND m.MessageStatus = 'Delivered'
         ) AS unreadCount
-      FROM Conversation c
+      FROM Conversations c
       JOIN Customer u 
         ON u.CustID = IF(c.Participant1_ID = ?, c.Participant2_ID, c.Participant1_ID)
       WHERE c.Participant1_ID = ? OR c.Participant2_ID = ?
@@ -73,7 +73,7 @@ router.get("/history/:conversationId", async (req, res) => {
         MessageImage as image, 
         CreatedAt as time, 
         MessageStatus as status
-      FROM Message
+      FROM Messages
       WHERE ConversationID = ?
       ORDER BY CreatedAt ASC;
     `;
@@ -97,9 +97,9 @@ router.post("/", async (req, res) => {
     const participant1 = senderId < receiverId ? senderId : receiverId;
     const participant2 = senderId < receiverId ? receiverId : senderId;
 
-    // Step 1: Find or Create the Conversation
+    // Step 1: Find or Create the Conversations
     let [[conversation]] = await db.query(
-      "SELECT ConversationID FROM Conversation WHERE Participant1_ID = ? AND Participant2_ID = ?",
+      "SELECT ConversationID FROM Conversations WHERE Participant1_ID = ? AND Participant2_ID = ?",
       [participant1, participant2]
     );
 
@@ -109,7 +109,7 @@ router.post("/", async (req, res) => {
     } else {
       conversationId = `CONV${Date.now().toString().slice(-7)}`;
       await db.query(
-        "INSERT INTO Conversation (ConversationID, Participant1_ID, Participant2_ID, UpdatedAt) VALUES (?, ?, ?, NOW())",
+        "INSERT INTO Conversations (ConversationID, Participant1_ID, Participant2_ID, UpdatedAt) VALUES (?, ?, ?, NOW())",
         [conversationId, participant1, participant2]
       );
     }
@@ -117,7 +117,7 @@ router.post("/", async (req, res) => {
     // Step 2: Insert the new message
     const newMessageId = `MSG${Date.now().toString().slice(-7)}`;
     await db.query(
-      `INSERT INTO Message 
+      `INSERT INTO Messages 
         (MessageID, ConversationID, SenderID, ReceiverID, MessageText, MessageImage, CreatedAt, MessageStatus) 
        VALUES (?, ?, ?, ?, ?, ?, NOW(), 'Sent')`,
       [newMessageId, conversationId, senderId, receiverId, text || null, image || null]
@@ -125,12 +125,12 @@ router.post("/", async (req, res) => {
 
     // Step 3: Update the conversation's timestamp
     await db.query(
-      "UPDATE Conversation SET UpdatedAt = NOW() WHERE ConversationID = ?",
+      "UPDATE Conversations SET UpdatedAt = NOW() WHERE ConversationID = ?",
       [conversationId]
     );
 
     // Step 4: Return the newly created message
-    const [[newMessage]] = await db.query("SELECT * FROM Message WHERE MessageID = ?", [newMessageId]);
+    const [[newMessage]] = await db.query("SELECT * FROM Messages WHERE MessageID = ?", [newMessageId]);
     res.status(201).json(newMessage);
 
   } catch (error) {
@@ -146,11 +146,11 @@ router.post("/", async (req, res) => {
 router.patch("/read", async (req, res) => {
   const { conversationId, userId } = req.body; // userId is the person reading the messages
   if (!conversationId || !userId) {
-    return res.status(400).json({ error: "Conversation ID and User ID are required" });
+    return res.status(400).json({ error: "Conversations ID and User ID are required" });
   }
   try {
     await db.query(
-      "UPDATE Message SET MessageStatus = 'Read' WHERE ConversationID = ? AND ReceiverID = ? AND MessageStatus = 'Delivered'",
+      "UPDATE Messages SET MessageStatus = 'Read' WHERE ConversationID = ? AND ReceiverID = ? AND MessageStatus = 'Delivered'",
       [conversationId, userId]
     );
     res.status(200).json({ success: true, message: "Messages marked as read" });

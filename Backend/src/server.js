@@ -8,37 +8,50 @@ import orderRoutes from "./routes/orders.js";
 import messagesRouter from './routes/messages.js';
 import analyticsRouter from "./routes/analytics.js";
 import shopRouter from "./routes/shops.js";
+import authRouter from "./routes/auth.js"; // ✅ 1. Import the new auth router
 
 dotenv.config();
 
 const app = express();
 
-// ✅ Middlewares
-// This CORS configuration is correct for your setup
+const allowedOrigins = [
+    // For local web/simulator testing (where your current error originates)
+    'http://localhost:8081',
+    'http://localhost:8080', 
+
+    // For mobile device/emulator testing on the local network (based on your Metro output)
+    'http://192.168.0.101:8081',
+
+    // Add any other necessary origins (like the default localhost without port, etc.)
+    'http://localhost',
+];
+
 app.use(cors({
-  origin: 'http://localhost'
+  origin: allowedOrigins,
+  credentials: true // Important if you use cookies/sessions later
 }));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// ✅ API Routes
+
+// API Routes
 app.use("/api/users", userRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/messages", messagesRouter);
 app.use("/api/analytics", analyticsRouter);
 app.use("/api/shops", shopRouter);
+app.use("/api/auth", authRouter); // ✅ 2. Tell the app to use it
 
-
-// ✅ Health check route (for quick testing in browser)
+// Health check route
 app.get("/", (req, res) => {
-  res.send("🚀 Backend API is running...");
+  res.send("🚀 Main Backend API is running...");
 });
 
 const hostArg = process.argv.find(arg => arg.startsWith('--host'));
 const host = hostArg ? hostArg.split('=')[1] : 'localhost';
 
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 8080; // Your main backend runs on 8080
 
-// Use the host variable in app.listen
 app.listen(PORT, host, () => {
-  console.log(`🚀 Backend running on http://${host}:${PORT}`);
+  console.log(`🚀 Main Backend running on http://${host}:${PORT}`);
 });

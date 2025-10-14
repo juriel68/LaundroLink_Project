@@ -31,7 +31,7 @@ router.get("/shop/:shopId", async (req, res) => {
         rej.RejectionReason as reason,
         rej.RejectionNote as note,
         -- This subquery gets the latest invoice status
-        (SELECT s.InvoiceStatus FROM Invoice inv JOIN Invoice_Status s ON inv.InvoiceID = s.InvoiceID WHERE inv.OrderID = o.OrderID ORDER BY s.StatUpdateAt DESC LIMIT 1) as invoiceStatus,
+        (SELECT s.InvoiceStatus FROM Invoices inv JOIN Invoice_Status s ON inv.InvoiceID = s.InvoiceID WHERE inv.OrderID = o.OrderID ORDER BY s.StatUpdateAt DESC LIMIT 1) as invoiceStatus,
         (
             SELECT op.OrderProcStatus 
             FROM Order_Processing op 
@@ -40,9 +40,9 @@ router.get("/shop/:shopId", async (req, res) => {
             LIMIT 1
         ) AS latestProcessStatus
       FROM Orders o
-      JOIN Customer c ON o.CustID = c.CustID
+      JOIN Customers c ON o.CustID = c.CustID
       JOIN LatestOrderStatus los ON o.OrderID = los.OrderID
-      LEFT JOIN Rejected_Order rej ON o.OrderID = rej.OrderID
+      LEFT JOIN Rejected_Orders rej ON o.OrderID = rej.OrderID
       WHERE o.ShopID = ? AND los.rn = 1
       ORDER BY o.OrderCreatedAt DESC;
       `,
@@ -77,7 +77,7 @@ router.post("/status", async (req, res) => {
     if (newStatus === "Rejected" && reason) {
       const newRejectedId = `REJ${Date.now().toString().slice(-7)}`;
       await db.query(
-        "INSERT INTO Rejected_Order (RejectedID, OrderID, RejectionReason, RejectionNote, RejectedAt) VALUES (?, ?, ?, ?, NOW())",
+        "INSERT INTO Rejected_Orders (RejectedID, OrderID, RejectionReason, RejectionNote, RejectedAt) VALUES (?, ?, ?, ?, NOW())",
         [newRejectedId, orderId, reason, note || null]
       );
     }
@@ -102,7 +102,7 @@ router.get("/:orderId", async (req, res) => {
         o.OrderCreatedAt AS createdAt,
         c.CustName AS customerName,
         c.CustPhone AS customerPhone,
-        (SELECT CustAddress FROM Cust_Address WHERE CustID = c.CustID LIMIT 1) AS customerAddress,
+        (SELECT CustAddress FROM Cust_Addresses WHERE CustID = c.CustID LIMIT 1) AS customerAddress,
         s.SvcName AS serviceName,
         ss.SvcPrice AS servicePrice,
         ld.Kilogram AS weight,
@@ -118,12 +118,12 @@ router.get("/:orderId", async (req, res) => {
         rej.RejectionReason as reason,
         rej.RejectionNote as note
       FROM Orders o
-      LEFT JOIN Customer c ON o.CustID = c.CustID
-      LEFT JOIN Service s ON o.SvcID = s.SvcID
-      LEFT JOIN Shop_Service ss ON o.ShopID = ss.ShopID AND o.SvcID = ss.SvcID
+      LEFT JOIN Customers c ON o.CustID = c.CustID
+      LEFT JOIN Services s ON o.SvcID = s.SvcID
+      LEFT JOIN Shop_Services ss ON o.ShopID = ss.ShopID AND o.SvcID = ss.SvcID
       LEFT JOIN Laundry_Details ld ON o.LndryDtlID = ld.LndryDtlID
-      LEFT JOIN Delivery_Option do ON o.DlvryID = do.DlvryID
-      LEFT JOIN Rejected_Order rej ON o.OrderID = rej.OrderID
+      LEFT JOIN Delivery_Options do ON o.DlvryID = do.DlvryID
+      LEFT JOIN Rejected_Orders rej ON o.OrderID = rej.OrderID
       WHERE o.OrderID = ?;
     `;
 
@@ -235,7 +235,7 @@ router.post("/summary", async (req, res) => {
           i.OrderID,
           i.PayAmount,
           (SELECT s.InvoiceStatus FROM Invoice_Status s WHERE s.InvoiceID = i.InvoiceID ORDER BY s.StatUpdateAt DESC LIMIT 1) as InvoiceStatus
-        FROM Invoice i
+        FROM Invoices i
       ),
       FilteredOrders AS (
         SELECT 
@@ -261,7 +261,7 @@ router.post("/summary", async (req, res) => {
       RecentOrders AS (
         SELECT
           OrderID AS id,
-          (SELECT CustName FROM Customer WHERE CustID = FilteredOrders.CustID) AS customer,
+          (SELECT CustName FROM Customers WHERE CustID = FilteredOrders.CustID) AS customer,
           status,
           PayAmount AS amount,
           InvoiceStatus
@@ -331,7 +331,7 @@ router.post("/dashboard-summary", async (req, res) => {
         -- Calculate Total Revenue for the period
         (SELECT SUM(i.PayAmount) 
          FROM Orders o 
-         JOIN Invoice i ON o.OrderID = i.OrderID
+         JOIN Invoices i ON o.OrderID = i.OrderID
          WHERE o.ShopID = ? AND ${dateCondition} AND (SELECT s.InvoiceStatus FROM Invoice_Status s WHERE s.InvoiceID = i.InvoiceID ORDER BY s.StatUpdateAt DESC LIMIT 1) = 'Paid'
         ) AS totalRevenue,
 
@@ -357,7 +357,7 @@ router.post("/dashboard-summary", async (req, res) => {
               DATE_FORMAT(o.OrderCreatedAt, ${dateFormat}) AS label,
               SUM(i.PayAmount) AS revenue
             FROM Orders o
-            JOIN Invoice i ON o.OrderID = i.OrderID
+            JOIN Invoices i ON o.OrderID = i.OrderID
             WHERE o.ShopID = ? AND ${dateCondition} AND (SELECT s.InvoiceStatus FROM Invoice_Status s WHERE s.InvoiceID = i.InvoiceID ORDER BY s.StatUpdateAt DESC LIMIT 1) = 'Paid'
             GROUP BY ${groupBy}, label
             ORDER BY o.OrderCreatedAt
@@ -398,7 +398,7 @@ router.post("/report/order-types", async (req, res) => {
         s.SvcName AS label,
         COUNT(o.OrderID) AS count
       FROM Orders o
-      JOIN Service s ON o.SvcID = s.SvcID
+      JOIN Services s ON o.SvcID = s.SvcID
       WHERE o.ShopID = ?
       GROUP BY s.SvcName
       ORDER BY count DESC;
@@ -426,9 +426,9 @@ router.post("/report/top-employees", async (req, res) => {
       SELECT
         s.StaffName as name,
         SUM(i.PayAmount) AS revenue
-      FROM Invoice i
+      FROM Invoices i
       JOIN Orders o ON i.OrderID = o.OrderID
-      JOIN Staff s ON o.StaffID = s.StaffID 
+      JOIN Staffs s ON o.StaffID = s.StaffID 
       WHERE o.ShopID = ? AND (SELECT s.InvoiceStatus FROM Invoice_Status s WHERE s.InvoiceID = i.InvoiceID ORDER BY s.StatUpdateAt DESC LIMIT 1) = 'Paid'
       GROUP BY s.StaffID, s.StaffName
       ORDER BY revenue DESC
@@ -475,8 +475,8 @@ router.get("/list/:shopId", async (req, res) => {
                 ) AS OrderStatus,
                 o.OrderCreatedAt
             FROM Orders o
-            LEFT JOIN Service s ON o.SvcID = s.SvcID
-            LEFT JOIN Invoice i ON o.OrderID = i.OrderID
+            LEFT JOIN Services s ON o.SvcID = s.SvcID
+            LEFT JOIN Invoices i ON o.OrderID = i.OrderID
             WHERE o.ShopID = ?
             ORDER BY ${sortColumn} ${sortDirection}`, // Dynamic sorting
             [shopId]
@@ -508,7 +508,7 @@ router.get("/sales/:shopId", async (req, res) => {
                     o.OrderCreatedAt,
                     i.PayAmount
                 FROM Orders o
-                JOIN Invoice i ON o.OrderID = i.OrderID
+                JOIN Invoices i ON o.OrderID = i.OrderID
                 WHERE 
                     o.ShopID = ? 
                     AND ${dateCondition} 
@@ -621,8 +621,8 @@ router.get("/overview/:shopId", async (req, res) => {
                 (SELECT os.OrderStatus FROM Order_Status os WHERE os.OrderID = o.OrderID ORDER BY os.OrderUpdatedAt DESC LIMIT 1) AS OrderStatus,
                 o.OrderCreatedAt
             FROM Orders o
-            LEFT JOIN Service s ON o.SvcID = s.SvcID
-            LEFT JOIN Invoice i ON o.OrderID = i.OrderID
+            LEFT JOIN Services s ON o.SvcID = s.SvcID
+            LEFT JOIN Invoices i ON o.OrderID = i.OrderID
             WHERE o.ShopID = ? AND ${dateCondition}
             ORDER BY ${sortColumn} ${sortDirection}`,
             [shopId, ...dateParams]

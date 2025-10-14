@@ -15,14 +15,14 @@ router.get("/:shopId/details", async (req, res) => {
             [[ratingSummary]]  // Get the first object from the result array
         ] = await Promise.all([
             // Query 1: Get basic shop info
-            connection.query(`SELECT * FROM Laundry_Shop WHERE ShopID = ?`, [shopId]),
+            connection.query(`SELECT * FROM Laundry_Shops WHERE ShopID = ?`, [shopId]),
             
             // Query 2: Get the average rating and total count of ratings
             connection.query(
                 `SELECT 
                     AVG(cr.CustRating) as averageRating, 
                     COUNT(cr.CustRateID) as ratingCount
-                 FROM Customer_Rating cr 
+                 FROM Customer_Ratings cr 
                  JOIN Orders o ON cr.OrderID = o.OrderID 
                  WHERE o.ShopID = ?`,
                 [shopId]
@@ -54,7 +54,7 @@ router.put("/:shopId", async (req, res) => {
     const { ShopName, ShopDescrp, ShopAddress, ShopPhone, ShopOpeningHours, ShopStatus } = req.body;
     try {
         const [result] = await db.query(
-            `UPDATE Laundry_Shop SET 
+            `UPDATE Laundry_Shops SET 
                 ShopName = ?, ShopDescrp = ?, ShopAddress = ?, 
                 ShopPhone = ?, ShopOpeningHours = ?, ShopStatus = ?
             WHERE ShopID = ?`,

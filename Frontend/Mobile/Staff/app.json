@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "ShopOwnerApp",
-    "slug": "ShopOwnerApp",
+    "name": "StaffApp",
+    "slug": "StaffApp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "shopownerapp",
+    "scheme": "staffapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
