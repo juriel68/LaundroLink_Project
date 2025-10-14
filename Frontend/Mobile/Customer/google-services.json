@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:733628029063:android:454a7d333a9c2da5a1c022",
         "android_client_info": {
-          "package_name": "com.eijiakaso.laundrolinkapplication"
+          "package_name": "com.eijiakaso.customerapp"
         }
       },
       "oauth_client": [
@@ -17,7 +17,7 @@
           "client_id": "733628029063-jrjr2deegbok6dv9hef79s2e11ih5666.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.eijiakaso.laundrolinkapplication",
+            "package_name": "com.eijiakaso.customerapp",
             "certificate_hash": "5728f5b7ccb57a37c3481c6f7e6b25f0f8cc0da7"
           }
         },

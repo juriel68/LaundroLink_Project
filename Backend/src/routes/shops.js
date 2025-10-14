@@ -3,6 +3,45 @@ import db from "../db.js";
 
 const router = express.Router();
 
+// Fetches a list of all laundry shops for the homepage
+router.get("/", async (req, res) => {
+    const connection = await db.getConnection();
+    try {
+        const [shops] = await connection.query(`
+            SELECT
+                LS.ShopID as id,
+                LS.ShopName as name,
+                LS.ShopAddress as address,
+                LS.ShopDescrp as description,
+                LS.ShopPhone as contact,
+                LS.ShopOpeningHours as hours,
+                LS.ShopStatus as availability,
+                LS.ShopDistance as distance,
+                COALESCE(AVG(CR.CustRating), 0.0) AS rating -- Calculates average rating
+            FROM
+                Laundry_Shops AS LS
+            LEFT JOIN
+                Orders AS O ON LS.ShopID = O.ShopID
+            LEFT JOIN
+                Customer_Ratings AS CR ON O.OrderID = CR.OrderID
+            GROUP BY
+                LS.ShopID
+            ORDER BY
+                LS.ShopDistance;
+        `);
+
+        // The image path needs to be handled on the frontend or stored in the DB
+        // For now, we'll return the raw data
+        res.json({ shops });
+
+    } catch (error) {
+        console.error("Error fetching all shops:", error);
+        res.status(500).json({ error: "Failed to fetch shop list." });
+    } finally {
+        connection.release();
+    }
+});
+
 // GET /api/shops/:shopId/details
 // Fetches shop details and its average rating.
 router.get("/:shopId/details", async (req, res) => {
