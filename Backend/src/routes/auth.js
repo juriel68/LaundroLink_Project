@@ -139,7 +139,8 @@ router.post("/google-login", async (req, res) => {
                 // If update didn't work (Cust_Credentials entry was missing for this UserID)
                 if (updateResult.affectedRows === 0) {
                      await db.query(
-                        `INSERT INTO Cust_Credentials(CustID, google_id, is_verified, picture, paymongo_customer_id)
+                        `INSERT INTO Cust_Credentials
+                        (CustID, google_id, is_verified, picture, paymongo_customer_id)
                         VALUES (?, ?, ?, ?, ?)`,
                         [user.UserID, google_id, 1, picture, paymongo_customer_id]
                     );

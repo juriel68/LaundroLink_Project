@@ -3,23 +3,36 @@ import db from "../db.js";
 
 const router = express.Router();
 
+// ✅ ID Generation Function
+function generateID(prefix) {
+    // Generate a timestamp-based unique ID
+    const timestamp = Date.now().toString();
+    
+    // Add random digits for additional uniqueness
+    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+    
+    // Combine prefix, timestamp, and random digits
+    return `${prefix}${timestamp.slice(-8)}${random}`;
+}
+
+// POST /api/orders
 // POST /api/orders
 router.post("/", async (req, res) => {
     const {
-        CustID,         // Customer ID (must exist in Customers/Users)
+        CustID,         // Customer ID (must exist in Customers)
         ShopID,         // Shop ID (must exist in Laundry_Shops)
-        SvcID,          // Service ID (must exist in Services/Shop_Services)
+        SvcID,          // Service ID (must exist in Services)
         StaffID,        // Staff ID (optional/can be null)
         deliveryId,     // Delivery Option ID (DlvryID from Delivery_Options)
         weight,         // Initial laundry weight (Kilogram)
         instructions,   // Special instructions
-        fabrics,        // Fabrics JSON array (optional)
-        addons          // Addons JSON array (optional)
+        fabrics,         // SINGLE Fabric Type ID (FabTypeID)
+        addons          // Addons JSON array (optional - array of AddOnID)
     } = req.body;
 
     // Basic validation
-    if (!CustID || !ShopID || !SvcID || !deliveryId || weight === undefined) {
-        return res.status(400).json({ success: false, message: "Missing required fields (CustID, ShopID, SvcID, deliveryId, weight)." });
+    if (!CustID || !ShopID || !SvcID || !deliveryId || weight === undefined || !fabrics) {
+        return res.status(400).json({ success: false, message: "Missing required fields (CustID, ShopID, SvcID, deliveryId, weight, fabrics)." });
     }
 
     const connection = await db.getConnection();
@@ -29,40 +42,51 @@ router.post("/", async (req, res) => {
         // 1. Insert into Laundry_Details (for weight and instructions)
         const newLndryDtlID = generateID('LD');
         await connection.query(
-            "INSERT INTO Laundry_Details (LndryDtlID, Kilogram, Instructions, FabricsJson, AddonsJson) VALUES (?, ?, ?, ?, ?)",
-            [newLndryDtlID, weight, instructions || null, fabrics ? JSON.stringify(fabrics) : null, addons ? JSON.stringify(addons) : null]
+            "INSERT INTO Laundry_Details (LndryDtlID, Kilogram, SpecialInstr) VALUES (?, ?, ?)",
+            [newLndryDtlID, weight, instructions || null]
         );
 
-        // 2. Generate the main OrderID
-        // This is a complex ID generation, simplified here with a unique prefix+timestamp.
-        // You may need a more robust sequential ID generator like the one in auth.js.
-        const newOrderID = generateID('O');
+        // 2. Insert SINGLE fabric type into Order_Fabrics junction table
+        await connection.query(
+            "INSERT INTO Order_Fabrics (LndryDtlID, FabTypeID) VALUES (?, ?)",
+            [newLndryDtlID, fabrics]
+        );
 
-        // 3. Insert into the main Orders table
+        // 3. Insert addons into Order_AddOns junction table
+        if (addons && Array.isArray(addons) && addons.length > 0) {
+            for (const addonId of addons) {
+                await connection.query(
+                    "INSERT INTO Order_AddOns (LndryDtlID, AddOnID) VALUES (?, ?)",
+                    [newLndryDtlID, addonId]
+                );
+            }
+        }
+
+        // 4. Generate the main OrderID and insert into Orders table
+        const newOrderID = generateID('O');
         await connection.query(
             "INSERT INTO Orders (OrderID, CustID, ShopID, SvcID, StaffID, LndryDtlID, DlvryID, OrderCreatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
             [newOrderID, CustID, ShopID, SvcID, StaffID || null, newLndryDtlID, deliveryId]
         );
 
-        // 4. Set initial status to 'Pending'
+        // 5. Set initial status to 'Pending' in Order_Status
         const newOrderStatId = generateID('OSD');
         await connection.query(
             "INSERT INTO Order_Status (OrderStatID, OrderID, OrderStatus, OrderUpdatedAt) VALUES (?, ?, 'Pending', NOW())",
             [newOrderStatId, newOrderID]
         );
 
-        // 5. Create an initial Invoice record (to be updated later with pricing)
-        // Since we don't know the PayAmount yet, we initialize it.
+        // 6. Create an initial Invoice record
         const newInvoiceID = generateID('INV');
         await connection.query(
             "INSERT INTO Invoices (InvoiceID, OrderID, PayAmount) VALUES (?, ?, ?)",
             [newInvoiceID, newOrderID, 0.00] // Initial amount is 0.00
         );
 
-        // 6. Set initial Invoice_Status
+        // 7. Set initial Invoice_Status
         const newInvoiceStatID = generateID('IS');
-         await connection.query(
-            "INSERT INTO Invoice_Status (StatID, InvoiceID, InvoiceStatus, StatUpdateAt) VALUES (?, ?, 'Draft', NOW())",
+        await connection.query(
+            "INSERT INTO Invoice_Status (InvoiceStatusID, InvoiceID, InvoiceStatus, StatUpdateAt) VALUES (?, ?, 'Draft', NOW())",
             [newInvoiceStatID, newInvoiceID]
         );
 
