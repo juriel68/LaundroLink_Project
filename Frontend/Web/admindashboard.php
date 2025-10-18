@@ -124,8 +124,6 @@
         <div>
             <h2>🧺 LaundroLink</h2>
             <nav class="sidebar-nav">
-                <a data-page="welcome">Dashboard</a>
-                <a data-page="create_owner">Create Owner Account</a>
                 <a data-page="manage_users">Manage Users</a>
                 <a data-page="monitor_activity">Monitor System Activity</a>
                 <a data-page="payment_processing">Payment Processing</a>
@@ -161,35 +159,16 @@
 
         // *** THIS IS THE CORRECTED LOGIC ***
         // Both pages are now loaded inside an iframe
-        if (page === 'create_owner' || page === 'manage_users') {
-            const iframe = document.createElement('iframe');
-            iframe.src = `pages/${page}.php`;
-            iframe.style.width = '100%';
-            iframe.style.height = '90vh';
-            iframe.style.border = 'none';
-            contentArea.appendChild(iframe);
-            return; 
-        }
-
-        // Handle simple, static content
-        contentArea.innerHTML = '<h2>Loading...</h2>';
-        try {
-            let htmlContent = '';
-            switch (page) {
-                case 'welcome':
-                    htmlContent = `<h2>Welcome to the Admin Dashboard</h2><p>Select an option from the sidebar.</p>`;
-                    break;
-                case 'reports':
-                    htmlContent = `<h2>Generate Reports</h2><p>Reporting features will be displayed here.</p>`;
-                    break;
-                default:
-                    htmlContent = `<h2>${page.replace(/_/g, ' ')}</h2><p>Content for this section is not yet implemented.</p>`;
-            }
-            contentArea.innerHTML = htmlContent;
-        } catch (error) {
-            console.error('Failed to load content:', error);
-            contentArea.innerHTML = '<h2>Error</h2><p>Could not load content from the server.</p>';
-        }
+        if (['create_owner', 'manage_users', 'monitor_activity', 'payment_processing', 'system_settings', 'data_security', 'reports'].includes(page)) {
+        const iframe = document.createElement('iframe');
+        iframe.src = `pages/${page}.php`;
+        iframe.style.width = '100%';
+        iframe.style.height = '90vh';
+        iframe.style.border = 'none';
+        contentArea.appendChild(iframe);
+        return; 
+    }
+        
     }
 
     // The rest of your script (event listeners) remains the same
@@ -213,7 +192,6 @@
         }
     });
 
-    loadContent('welcome');
 </script>
 </body>
 </html>
