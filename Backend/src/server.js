@@ -8,7 +8,9 @@ import orderRoutes from "./routes/orders.js";
 import messagesRouter from './routes/messages.js';
 import analyticsRouter from "./routes/analytics.js";
 import shopRouter from "./routes/shops.js";
-import authRouter from "./routes/auth.js"; // ✅ 1. Import the new auth router
+import authRouter from "./routes/auth.js"; 
+import activityRouter from "./routes/activity.js";
+import paymentRoutes from "./routes/payments.js";
 
 dotenv.config();
 
@@ -40,7 +42,9 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/messages", messagesRouter);
 app.use("/api/analytics", analyticsRouter);
 app.use("/api/shops", shopRouter);
-app.use("/api/auth", authRouter); // ✅ 2. Tell the app to use it
+app.use("/api/auth", authRouter); 
+app.use("/api/activity", activityRouter);
+app.use("/api/payments", paymentRoutes);
 
 // Health check route
 app.get("/", (req, res) => {

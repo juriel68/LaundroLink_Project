@@ -204,7 +204,7 @@
   </div>
 
   <script type="module">
-    import { API_LOGIN_URL } from './api.js';
+    import { API_BASE_URL } from './api.js';
     const loginForm = document.getElementById('loginForm');
     const errorMessage = document.getElementById('errorMessage');
 
@@ -216,7 +216,7 @@
       const data = Object.fromEntries(formData.entries());
 
       try {
-        const response = await fetch(API_LOGIN_URL, {
+          const response = await fetch(`${API_BASE_URL}/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data),
