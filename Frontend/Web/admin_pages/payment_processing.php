@@ -183,10 +183,6 @@
     </div>
 
     <script type="module">
-        // *** JAVASCRIPT PATH CHECK ***
-        // payment_processing.php is in /admin_pages/
-        // api.js is in / (root)
-        // The relative path to go UP one folder is '../'
         import { API_BASE_URL } from '../api.js'; 
 
         // --- Utility Functions (Same as before) ---

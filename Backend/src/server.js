@@ -11,6 +11,7 @@ import shopRouter from "./routes/shops.js";
 import authRouter from "./routes/auth.js"; 
 import activityRouter from "./routes/activity.js";
 import paymentRoutes from "./routes/payments.js";
+import adminRoutes from "./routes/admin.js";
 
 dotenv.config();
 
@@ -45,6 +46,7 @@ app.use("/api/shops", shopRouter);
 app.use("/api/auth", authRouter); 
 app.use("/api/activity", activityRouter);
 app.use("/api/payments", paymentRoutes);
+app.use("/api/admin", adminRoutes);
 
 // Health check route
 app.get("/", (req, res) => {
