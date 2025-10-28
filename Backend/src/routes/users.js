@@ -2,7 +2,7 @@
 import express from "express";
 import bcrypt from "bcryptjs";
 import db from "../db.js";
-import { cloudinary } from "../config/services.js"; 
+import { cloudinary } from "../config/externalServices.js"; 
 import multer from 'multer'; 
 
 // 💡 IMPORT THE LOGGER UTILITY

@@ -1,3 +1,4 @@
+// index.tsx - FINAL CORRECTED IMPORT PATH
 import { AntDesign } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as AuthSession from "expo-auth-session";
@@ -13,7 +14,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { API_URL } from "@/lib/api";
+
+// ✅ CORRECTED: Using the Expo Router/TypeScript alias
+import { API_URL } from "@/lib/api"; 
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -21,7 +24,8 @@ export default function Index() {
   const [identifier, setIdentifier] = useState(""); // phone or email
   const [password, setPassword] = useState("");
   const router = useRouter();
-  const redirectUri = AuthSession.makeRedirectUri();
+
+  const redirectUri = AuthSession.makeRedirectUri({});
   const [request, response, promptAsync] = Google.useAuthRequest({
     clientId: "323428340651-rprfrcvs3cqtrjtrdrj4ffh8u2ikjn3d.apps.googleusercontent.com",
     webClientId: "323428340651-rprfrcvs3cqtrjtrdrj4ffh8u2ikjn3d.apps.googleusercontent.com",
@@ -34,6 +38,8 @@ export default function Index() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const user = await res.json();
+      
+      // Using the centralized API_URL
       const backendRes = await fetch(`${API_URL}/auth/google-login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -44,6 +50,7 @@ export default function Index() {
           picture: user.picture,
         }),
       });
+
       const data = await backendRes.json();
       if (backendRes.ok && data.success) {
         await AsyncStorage.setItem('user', JSON.stringify(data.user));
@@ -71,13 +78,30 @@ export default function Index() {
       Alert.alert("Missing Fields", "Please enter your phone/email and password.");
       return;
     }
+    
+    // 🔍 CONSOLE LOGS ADDED
+    console.log("-----------------------------------------");
+    console.log("Attempting Login...");
+    console.log(`API URL: ${API_URL}/auth/login`);
+    console.log(`Sending Data: { identifier: "${identifier}", password: "[HIDDEN]" }`);
+    console.log("-----------------------------------------");
+
     try {
+      // Using the centralized API_URL
       const response = await fetch(`${API_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ identifier, password }),
       });
+      
+      // 🔍 CONSOLE LOGS ADDED
+      console.log(`Response Status: ${response.status} (${response.statusText})`);
+      
+      // We must await .json() before checking response.ok for non-200 responses if we want to get the error body
       const data = await response.json();
+      
+      // 🔍 CONSOLE LOGS ADDED
+      console.log("Response Body (data):", data);
 
       if (!response.ok) {
         Alert.alert("Login Failed", data.message || "Invalid credentials");
@@ -85,13 +109,18 @@ export default function Index() {
       }
       
       if (data.success && data.userId) {
+        // 🔍 CONSOLE LOG ADDED
+        console.log(`Login Success! Redirecting to Verify for UserID: ${data.userId}`);
         router.push({ pathname: "/Verify", params: { userId: String(data.userId) } });
       } else {
         Alert.alert("Error", "Could not initiate login. Please try again.");
       }
     } catch (err) {
-      console.error("❌ Login error:", err);
-      Alert.alert("Error", "Something went wrong during login.");
+      // 🔍 CONSOLE LOG ADDED
+      console.log("-----------------------------------------");
+      console.error("❌ Login error (Network or Parsing):", err);
+      console.log("-----------------------------------------");
+      Alert.alert("Error", "Something went wrong during login. Check console for network errors.");
     }
   };
 
@@ -120,7 +149,6 @@ export default function Index() {
       </TouchableOpacity>
       <TouchableOpacity
         style={styles.forgotButton}
-        // ✅ UPDATED: Points directly to the ResetPassword screen
         onPress={() => router.push("/ResetPassword")}
       >
         <Text style={styles.forgotText}>Forgot Password?</Text>

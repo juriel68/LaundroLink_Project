@@ -13,7 +13,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { API_URL } from "@/lib/api";
 
 export default function OrderSummaryScreen() {
   const router = useRouter();
@@ -64,7 +63,7 @@ export default function OrderSummaryScreen() {
         deliveryOption: deliveryOption as string,
       };
 
-      const response = await axios.post(`${API_URL}/orders`, orderData);
+      const response = await axios.post("http://192.168.1.70:5000/api/orders", orderData);
 
       if (response.data.success) {
         router.push({

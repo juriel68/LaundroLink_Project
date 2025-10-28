@@ -1,2 +1,2 @@
 // The single source of truth for your backend URL
-export const API_URL = "http://192.168.1.12:8080/api";
+export const API_URL = "https://necole-greathearted-vernell.ngrok-free.dev/api";

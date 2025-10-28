@@ -19,9 +19,9 @@ export default function OrderSummaryScreen() {
   const parsedServices = services ? JSON.parse(services as string) : [];
   const parsedFabrics = fabrics ? JSON.parse(fabrics as string) : [];
   const parsedAddons = addons ? JSON.parse(addons as string) : [];
-  
-  // FIX APPLIED HERE: Instructions is now a plain string, so read it directly.
-  const finalInstructions = instructions ? (instructions as string) : "None";
+  const parsedInstructions = instructions
+    ? JSON.parse(instructions as string)
+    : [];
 
   // Generate a mock Order ID
   const orderId = "#LAU" + Math.floor(Math.random() * 900000 + 100000);
@@ -122,10 +122,15 @@ export default function OrderSummaryScreen() {
           {/* Special Instructions */}
           <Text style={styles.subTitle}>Special Instructions</Text>
           <View style={styles.listGroup}>
-            {/* RENDER THE STRING DIRECTLY */}
-            <Text style={[styles.listItem, finalInstructions === "None" ? styles.emptyText : {}]}>
-              • {finalInstructions}
-            </Text>
+            {parsedInstructions.length > 0 ? (
+              parsedInstructions.map((instruction: string, index: number) => (
+                <Text key={index} style={styles.listItem}>
+                  • {instruction}
+                </Text>
+              ))
+            ) : (
+              <Text style={styles.emptyText}>• None</Text>
+            )}
           </View>
         </View>
 
@@ -152,8 +157,7 @@ export default function OrderSummaryScreen() {
                 services: JSON.stringify(parsedServices),
                 fabrics: JSON.stringify(parsedFabrics),
                 addons: JSON.stringify(parsedAddons),
-                // Instructions is a string, pass it as a string
-                instructions: finalInstructions, 
+                instructions: JSON.stringify(parsedInstructions),
                 deliveryOption: deliveryOption || "Not selected",
               },
             })

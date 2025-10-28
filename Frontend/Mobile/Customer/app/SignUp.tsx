@@ -15,7 +15,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { API_URL } from "@/lib/api";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -44,7 +43,7 @@ export default function SignUp() {
         .then((res) => res.json())
         .then(async (user) => {
           try {
-            const res = await axios.post(`${API_URL}/auth/google-login`, {
+            const res = await axios.post("http://192.168.1.70:5000/auth/google-login", {
               google_id: user.id,
               email: user.email,
               name: user.name,
@@ -54,7 +53,7 @@ export default function SignUp() {
             if (res.data.success) {
               await AsyncStorage.setItem("user", JSON.stringify(res.data.user));
               Alert.alert("Welcome!", `Hello ${res.data.user.name}`);
-              router.replace("/homepage/homepage");
+              router.replace("/homepage");
             } else {
               setError(res.data.message || "Unable to log in with Google.");
             }
