@@ -1,266 +1,262 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Link, Stack, useFocusEffect, useRouter } from "expo-router";
+import * as Location from 'expo-location';
 import React, { useCallback, useState } from "react";
-import { FlatList, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { FlatList, Image, Pressable, StyleSheet, Text, View, ActivityIndicator, Alert, TouchableOpacity } from "react-native";
+import axios from "axios";
 
-// This interface should match the one in your profile.tsx
+// 💡 BEST PRACTICE: Import API_URL from the shared configuration file
+import { API_URL } from "@/lib/api"; 
+
 interface UserProfile {
-  id: number;
-  name: string;
-  email: string;
-  phone: string | null;
+  // 🎯 UPDATED: Changed from 'id: number' to 'UserID: string'
+  UserID: string; 
   picture: string | null;
-  address: string | null;
 }
 
-const shops = [
-  {
-    id: "1",
-    name: "Wash n’ Dry - Lahug",
-    distance: "1.7km",
-    rating: "4.5",
-    image: require("@/assets/images/washndry.png"),
-    description: "Experience top-notch laundry facilities equipped with state-of-the-art machines and a clean, comfortable environment.",
-    addDescription: "We accept a wide variety of fabrics, including cotton, linen, polyester, denim, wool, and delicate materials like silk and lace. Whether it's everyday wear or specialty garments, your laundry is in good hands.",
-    address: "Wilson St., Lahug, Cebu City",
-    contact: "09223324839",
-    hours: "8am-6pm",
-    availability: "Available",
-  },
-  {
-    id: "2",
-    name: "Sparklean - Apas",
-    distance: "1km",
-    rating: "4.0",
-    image: require("@/assets/images/sparklean.jpg"),
-    description: "Offering comprehensive laundry services with a focus on quality and customer satisfaction.",
-    addDescription: "From wash and fold to dry cleaning, we handle all types of laundry with care. Our eco-friendly detergents ensure your clothes are not only clean but also safe for the environment.",
-    address: "Apas, Cebu City",
-    contact: "09171234567",
-    hours: "9am-7pm",
-    availability: "Available",
-  },
-  // ... other shops
-];
+interface Shop {
+  id: string;
+  name: string;
+  distance: number;
+  image_url: string;
+  description: string;
+  // 🎯 REMOVED: addDescription field to match backend changes
+  address: string;
+  contact: string;
+  hours: string;
+  availability: string;
+  rating?: string;
+}
 
 export default function Homepage() {
   const router = useRouter();
+  // 🎯 UPDATED: The user state now uses the corrected UserProfile interface
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [shops, setShops] = useState<Shop[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [locationPermission, setLocationPermission] = useState(false);
 
-  // ✅ This hook re-fetches user data every time the screen comes into focus.
-  // This ensures the profile picture is always up-to-date.
+  // =================================================================
+  // HANDLER: Shop Fetching Logic
+  // =================================================================
+
+  const fetchNearbyShops = async (shouldRequestPermission = true) => {
+    if (isLoading) return; 
+
+    setIsLoading(true);
+    try {
+      let status: Location.PermissionStatus = Location.PermissionStatus.UNDETERMINED;
+      
+      if (shouldRequestPermission) {
+        const permissionResult = await Location.requestForegroundPermissionsAsync();
+        status = permissionResult.status;
+      } else {
+        const permissionResult = await Location.getForegroundPermissionsAsync();
+        status = permissionResult.status;
+      }
+
+      if (status !== 'granted') {
+        if (shouldRequestPermission) {
+          Alert.alert('Permission Denied', 'Please enable location services in your settings to find nearby shops.');
+        }
+        setLocationPermission(false);
+        setShops([]);
+        return;
+      }
+      setLocationPermission(true);
+
+      let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude, longitude } = location.coords;
+
+      const response = await axios.get(`${API_URL}/shops/nearby`, {
+        params: { lat: latitude, lon: longitude }
+      });
+
+      if (response.data.success) {
+        setShops(response.data.shops || []);
+      } else {
+        Alert.alert('Error', response.data.message || 'Could not fetch nearby shops.');
+        setShops([]);
+      }
+    } catch (error) {
+      console.error("❌ Failed to fetch shops:", error);
+      Alert.alert('Server Error', 'Could not connect to the server to find shops.');
+      setShops([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // =================================================================
+  // EFFECTS: Load User & Shops on Focus
+  // =================================================================
+  
   useFocusEffect(
     useCallback(() => {
-      const loadUser = async () => {
-        try {
-          const storedUser = await AsyncStorage.getItem("user");
-          if (storedUser) {
-            setUser(JSON.parse(storedUser));
-          }
-        } catch (error) {
-          console.error("Failed to load user from storage", error);
+      const loadData = async () => {
+        // 1. Load User Profile
+        const storedUser = await AsyncStorage.getItem("user");
+        if (storedUser) {
+            const parsedUser = JSON.parse(storedUser);
+            // 🎯 UPDATED: Map the stored user data to the new UserProfile structure
+            setUser({ 
+                UserID: parsedUser.UserID || parsedUser.id, // Handle potential old 'id' key if needed
+                picture: parsedUser.picture || null 
+            });
+        }
+
+        // 2. Check Permission and Fetch Shops Automatically
+        let { status } = await Location.getForegroundPermissionsAsync();
+        if (status === 'granted') {
+            setLocationPermission(true);
+            fetchNearbyShops(false); 
+        } else {
+             setLocationPermission(false);
         }
       };
-
-      loadUser();
+      
+      loadData();
     }, [])
   );
+  
+  // =================================================================
+  // RENDER
+  // =================================================================
 
   return (
     <>
-        <Stack.Screen
-            options={{
-                headerShown: true,
-                headerStyle: {
-                    backgroundColor: "#89CFF0",
-                },
-                // Remove borderBottomWidth and borderBottomColor from headerTitleStyle
-                headerTitleStyle: {
-                    color: "#2d2d2dff",
-                    fontWeight: "600",
-                    fontSize: 20,
-                },
-                headerTintColor: "#2d2d2dff",
-                headerShadowVisible: false,
-                headerLeft: () => null,
-                headerTitle: () => (
-                    <View style={{ flexDirection: "row", alignItems: "center" }}>
-                        <Ionicons name="location-outline" size={20} color="#2d2d2dff" />
-                        <Text style={{ color: "#2d2d2dff", marginLeft: 5, fontSize: 20, fontWeight: "600" }}>
-                            Home ▼
-                        </Text>
-                    </View>
-                ),
-                headerRight: () => (
-                    <Pressable onPress={() => router.push("/(tabs)/homepage/profile" as any)}>
-                        {user && user.picture ? (
-                            <Image
-                                source={{ uri: user.picture }}
-                                style={styles.headerAvatar}
-                            />
-                        ) : (
-                            <Ionicons
-                                name="person-circle-outline"
-                                size={32}
-                                color="#2d2d2dff"
-                                style={{ marginRight: 10 }}
-                            />
-                        )}
-                    </Pressable>
-                ),
-            }}
-        />
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          headerStyle: { backgroundColor: "#89CFF0" },
+          headerTintColor: "#2d2d2dff",
+          headerLeft: () => null,
+          headerTitle: () => (
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Ionicons name="location-outline" size={20} color="#2d2d2dff" />
+              <Text style={{ color: "#2d2d2dff", marginLeft: 5, fontSize: 20, fontWeight: "600" }}>
+                Home ▼
+              </Text>
+            </View>
+          ),
+          headerRight: () => (
+            <Pressable onPress={() => router.push("/(tabs)/homepage/profile" as any)}>
+              {user && user.picture ? (
+                <Image source={{ uri: user.picture.replace('http://', 'https://') }} style={styles.headerAvatar} />
+              ) : (
+                <Ionicons name="person-circle-outline" size={32} color="#2d2d2dff" style={{ marginRight: 10 }} />
+              )}
+            </Pressable>
+          ),
+        }}
+      />
 
-        <View style={styles.container}>
-            <Link href="./search_laundry" asChild>
-                <Pressable style={styles.searchBar}>
-                    <Ionicons name="search" size={20} color="#888" style={styles.icon} />
-                    <Text style={styles.placeholder}>Search laundry shops</Text>
+      <View style={styles.container}>
+        <Link href="./search_laundry" asChild>
+          <Pressable style={styles.searchBar}>
+            <Ionicons name="search" size={20} color="#888" style={styles.icon} />
+            <Text style={styles.placeholder}>Search laundry shops</Text>
+          </Pressable>
+        </Link>
+
+        <Text style={styles.sectionTitle}>Laundry Shops Nearby</Text>
+
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+             <ActivityIndicator size="large" color="#004aad" />
+             <Text style={{ marginTop: 10, color: '#004aad' }}>Finding nearby shops...</Text>
+          </View>
+        ) : shops.length > 0 ? (
+          <FlatList
+            data={shops}
+            numColumns={2}
+            keyExtractor={(item) => item.id.toString()}
+            contentContainerStyle={styles.shopList}
+            renderItem={({ item }) => (
+              // Passing item to the next screen. The item no longer contains addDescription.
+              <Link href={{ pathname: "./about_laundry", params: { ...item, image: item.image_url } }} asChild>
+                <Pressable style={styles.shopCard}>
+                  <Image source={{ uri: item.image_url }} style={styles.shopImage} />
+                  <Text style={styles.shopName} numberOfLines={1}>{item.name}</Text>
+                  <Text style={styles.shopDetails}>
+                    {item.distance.toFixed(1)} km • ⭐ {item.rating || 'N/A'}
+                  </Text>
+                  <View style={[ styles.badge, { backgroundColor: item.availability === "Available" ? "#4CAF50" : "#FF5252" } ]}>
+                    <Text style={styles.badgeText}>{item.availability || 'Unknown'}</Text>
+                  </View>
                 </Pressable>
-            </Link>
-
-            <Text style={styles.sectionTitle}>Laundry Shops Nearby</Text>
-
-            <FlatList
-                data={shops}
-                numColumns={2}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.shopList}
-                renderItem={({ item }) => (
-                    <Link
-                        href={{
-                            pathname: "./about_laundry",
-                            params: {
-                                id: item.id,
-                                name: item.name,
-                                distance: item.distance,
-                                rating: item.rating,
-                                description: item.description,
-                                addDescription: item.addDescription,
-                                address: item.address,
-                                contact: item.contact,
-                                hours: item.hours,
-                                availability: item.availability,
-                            },
-                        }}
-                        asChild
-                    >
-                        <Pressable style={styles.shopCard}>
-                            <Image source={item.image} style={styles.shopImage} />
-                            <Text style={styles.shopName}>{item.name}</Text>
-                            <Text style={styles.shopDetails}>
-                                {item.distance} • ⭐ {item.rating}
-                            </Text>
-                            <View
-                                style={[
-                                    styles.badge,
-                                    { backgroundColor: item.availability === "Available" ? "#4CAF50" : "#FF5252" },
-                                ]}
-                            >
-                                <Text style={styles.badgeText}>{item.availability}</Text>
-                            </View>
-                        </Pressable>
-                    </Link>
-                )}
-            />
-        </View>
+              </Link>
+            )}
+          />
+        ) : (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>
+                {locationPermission 
+                    ? "No shops found nearby. Try again or check your location settings."
+                    : "Press the button to allow location access and find shops near you."
+                }
+            </Text>
+            <TouchableOpacity 
+                style={styles.findButton} 
+                // Pass true to explicitly request permission
+                onPress={() => fetchNearbyShops(true)} 
+            >
+              <Ionicons name="navigate-outline" size={20} color="#fff" />
+              <Text style={styles.findButtonText}>Find Shops Near Me</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  // ✅ ADDED: Style for the header avatar
-  headerAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    marginRight: 10,
-    borderWidth: 1,
-    borderColor: '#5EC1EF'
-  },
-  container: {
+  headerAvatar: { width: 34, height: 34, borderRadius: 17, marginRight: 10, borderWidth: 1, borderColor: '#5EC1EF' },
+  container: { flex: 1, backgroundColor: "#f8f9fb", paddingTop: 30, paddingHorizontal: 16 },
+  searchBar: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", width: "100%", paddingVertical: 12, paddingHorizontal: 16, borderRadius: 25, elevation: 2, marginBottom: 22, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 2 },
+  icon: { marginRight: 8 },
+  placeholder: { fontSize: 16, color: "#777", fontWeight: "500" },
+  sectionTitle: { fontSize: 18, fontWeight: "700", marginBottom: 16, color: "#2d2d2d" },
+  shopList: { paddingBottom: 20, justifyContent: 'space-between' },
+  shopCard: { flex: 1, backgroundColor: "#fff", margin: 8, borderRadius: 16, padding: 14, alignItems: "center", elevation: 3, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3 },
+  shopImage: { width: '100%', aspectRatio: 1, borderRadius: 12, marginBottom: 10, backgroundColor: '#eee' },
+  shopName: { fontSize: 14, fontWeight: "600", textAlign: "center", color: "#333" },
+  shopDetails: { fontSize: 12, color: "#666", marginTop: 4 },
+  badge: { marginTop: 8, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, alignSelf: "center", elevation: 2, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 2 },
+  badgeText: { fontSize: 12, fontWeight: "600", color: "#fff" },
+  emptyContainer: {
     flex: 1,
-    backgroundColor: "#f8f9fb",
-    paddingTop: 30,
-    paddingHorizontal: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  searchBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    width: "100%",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 25,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    elevation: 2,
-    marginBottom: 22,
-  },
-  icon: {
-    marginRight: 8,
-  },
-  placeholder: {
+  emptyText: {
+    textAlign: 'center',
+    marginBottom: 20,
+    color: '#888',
     fontSize: 16,
-    color: "#777",
-    fontWeight: "500",
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 16,
-    color: "#2d2d2d",
-  },
-  shopList: {
-    paddingBottom: 20,
-  },
-  shopCard: {
-    flex: 1,
-    backgroundColor: "#fff",
-    margin: 8,
-    borderRadius: 16,
-    padding: 14,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
+  findButton: {
+    flexDirection: 'row',
+    backgroundColor: '#004aad',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    alignItems: 'center',
     elevation: 3,
   },
-  shopImage: {
-    width: 110,
-    height: 110,
-    borderRadius: 12,
-    marginBottom: 10,
+  findButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 10,
   },
-  shopName: {
-    fontSize: 14,
-    fontWeight: "600",
-    textAlign: "center",
-    color: "#333",
-  },
-  shopDetails: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 4,
-  },
-  badge: {
-    marginTop: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignSelf: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  badgeText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#fff",
-  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: 150,
+  }
 });

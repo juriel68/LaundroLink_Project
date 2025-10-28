@@ -58,10 +58,33 @@
             font-size: 26px;
             color: #0077b6;
         }
+        /* --- Dashboard Styles --- */
+        .admin-kpi-grid { 
+            display: grid; 
+            grid-template-columns: repeat(4, 1fr); 
+            gap: 25px; 
+            margin-bottom: 40px; 
+        }
+        .kpi-card { 
+            background: white; 
+            padding: 25px; 
+            border-radius: 12px; 
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); 
+            border-left: 5px solid; 
+        }
+        .kpi-card h3 { 
+            margin: 0 0 5px 0; 
+            font-size: 16px; 
+            color: #6c757d; 
+            font-weight: 500; 
+        }
+        .kpi-card p { 
+            margin: 0; 
+            font-size: 36px; 
+            font-weight: 700; 
+            color: #343a40; 
+        }
         .dashboard-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
             background: white;
             padding: 15px 25px;
             border-radius: 10px;
@@ -70,22 +93,31 @@
         }
         .dashboard-header h1 {
             margin: 0;
-            font-size: 22px;
+            font-size: 24px;
             color: #0077b6;
         }
-        .dashboard-header .logout-btn {
-            background: #e63946;
-            color: white;
-            border: none;
-            padding: 10px 16px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: background 0.3s ease;
+        .chart-container { 
+            background: white; 
+            padding: 25px; 
+            border-radius: 12px; 
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); 
         }
-        .dashboard-header .logout-btn:hover {
-            background: #d62828;
+        .container-title { 
+            font-size: 20px; 
+            font-weight: 600; 
+            color: #343a40; 
+            margin: 0 0 30px 0; 
         }
+        .chart-area { 
+            position: relative; 
+            width: 100%; 
+            height: 350px; 
+        }
+        .chart-svg { 
+            width: 100%; 
+            height: 100%; 
+        }
+        /* --- Bubble Animation --- */
         .bubble {
             position: absolute;
             border-radius: 50%;
@@ -106,26 +138,13 @@
             100% { transform: translateY(0); opacity: 1; }
         }
     </style>
-
-    <script>
-        const userJSON = localStorage.getItem('laundroUser');
-        if (!userJSON) {
-            window.location.href = 'index.php';
-        } else {
-            const user = JSON.parse(userJSON);
-            if (user.UserRole !== 'Admin') {
-                window.location.href = 'index.php';
-            }
-        }
-    </script>
 </head>
 <body>
     <div class="sidebar">
         <div>
             <h2>🧺 LaundroLink</h2>
             <nav class="sidebar-nav">
-                <a data-page="welcome">Dashboard</a>
-                <a data-page="create_owner">Create Owner Account</a>
+                <a data-page="dashboard" class="active">Dashboard</a> 
                 <a data-page="manage_users">Manage Users</a>
                 <a data-page="monitor_activity">Monitor System Activity</a>
                 <a data-page="payment_processing">Payment Processing</a>
@@ -140,7 +159,7 @@
     </div>
 
     <div class="main-content" id="content-area">
-        </div>
+    </div>
 
     <div class="bubble small"></div>
     <div class="bubble large"></div>
@@ -148,72 +167,291 @@
     <script type="module">
     import { API_BASE_URL } from './api.js';
 
+    // --- INITIAL AUTHENTICATION CHECK ---
+    const userJSON = localStorage.getItem('laundroUser');
+    if (!userJSON) {
+        window.location.href = 'index.php';
+        // Prevent further execution if redirecting
+        throw new Error('User not logged in or session expired.'); 
+    }
+    const loggedInUser = JSON.parse(userJSON);
+    if (loggedInUser.UserRole !== 'Admin') {
+        window.location.href = 'index.php';
+        // Prevent further execution if redirecting
+        throw new Error('Access denied. User is not Admin.'); 
+    }
+    
     const contentArea = document.getElementById('content-area');
     const navLinks = document.querySelectorAll('.sidebar-nav a');
     const logoutButton = document.getElementById('logoutButton');
+    
+    // --- ADMIN DASHBOARD FUNCTIONS ---
+    
+    function drawAdminDashboard() {
+        const dashboardHtml = `
+            <div class="dashboard-header">
+                <h1>Welcome, Admin ${loggedInUser.UserName || ''}!</h1>
+            </div>
+            <div class="admin-kpi-grid">
+                <div class="kpi-card" style="border-color: #007bff;">
+                    <h3>Total Shop Owners</h3>
+                    <p id="totalOwners">...</p>
+                </div>
+                <div class="kpi-card" style="border-color: #28a745;">
+                    <h3>Active Shops (Last 30 Days)</h3>
+                    <p id="activeShops">...</p>
+                </div>
+                <div class="kpi-card" style="border-color: #ffc107;">
+                    <h3>Total Payments Processed</h3>
+                    <p id="totalPayments">...</p>
+                </div>
+                <div class="kpi-card" style="border-color: #17a2b8;">
+                    <h3>Total System Users</h3>
+                    <p id="totalUsers">...</p>
+                </div>
+            </div>
+            
+            <div class="chart-container">
+                <h3 class="container-title">System Growth (New Users/Shops - Last 12 Months)</h3>
+                <div class="chart-area">
+                    <svg class="chart-svg" id="adminChartSvg"></svg>
+                </div>
+            </div>
+            `;
+        contentArea.innerHTML = dashboardHtml;
+        fetchAdminDashboardData();
+    }
+    
+    async function fetchAdminDashboardData() {
+        document.getElementById('totalOwners').textContent = 'Fetching...';
+        document.getElementById('activeShops').textContent = 'Fetching...';
+        document.getElementById('totalPayments').textContent = 'Fetching...';
+        document.getElementById('totalUsers').textContent = 'Fetching...';
+
+        const chartSvg = document.getElementById('adminChartSvg');
+        if (chartSvg) {
+            chartSvg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#adb5bd" font-family="Segoe UI">Loading data...</text>`;
+        }
+        
+        try {
+            // Fetching data from the consolidated analytics endpoint
+            const response = await fetch(`${API_BASE_URL}/analytics/admin-dashboard-stats`);
+            if (!response.ok) throw new Error('Failed to fetch admin dashboard stats');
+            
+            const data = await response.json();
+            
+            document.getElementById('totalOwners').textContent = data.totalOwners || '0';
+            document.getElementById('activeShops').textContent = data.activeShops || '0';
+            document.getElementById('totalPayments').textContent = data.totalPayments || '0';
+            document.getElementById('totalUsers').textContent = data.totalUsers || '0';
+            
+            drawChart(data.chartData); 
+            
+        } catch (error) {
+            console.error("Admin Dashboard fetch error:", error);
+            document.getElementById('totalOwners').textContent = 'Error';
+            document.getElementById('activeShops').textContent = 'Error';
+            document.getElementById('totalPayments').textContent = 'Error';
+            document.getElementById('totalUsers').textContent = 'Error';
+
+            if (chartSvg) {
+                chartSvg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#dc3545" font-family="Segoe UI">Error loading chart data.</text>`;
+            }
+        }
+    }
+
+    // --- CHART DRAWING FUNCTION (SVG logic) ---
+
+    function drawChart(chartData) {
+        const chartSvg = document.getElementById('adminChartSvg'); 
+        chartSvg.innerHTML = '';
+        if (!chartData || chartData.length === 0) {
+            chartSvg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#adb5bd" font-family="Segoe UI">No growth data for the last 12 months.</text>`;
+            return;
+        }
+        
+        const values = chartData.map(d => d.value);
+        const labels = chartData.map(d => d.label);
+        const maxCount = Math.ceil(Math.max(...values, 1) / 10) * 10 || 10;
+        const svgNS = "http://www.w3.org/2000/svg";
+        const padding = { top: 20, right: 20, bottom: 60, left: 70 };
+        const svgWidth = chartSvg.clientWidth;
+        const svgHeight = chartSvg.clientHeight;
+        const chartWidth = svgWidth - padding.left - padding.right;
+        const chartHeight = svgHeight - padding.top - padding.bottom;
+
+        // Draw grid lines and Y-axis labels
+        const numGridLines = 5;
+        for (let i = 0; i <= numGridLines; i++) {
+            const y = padding.top + (chartHeight / numGridLines) * i;
+            const value = maxCount - (maxCount / numGridLines) * i;
+            // Horizontal grid line
+            const gridLine = document.createElementNS(svgNS, 'line'); 
+            gridLine.setAttribute('x1', padding.left); gridLine.setAttribute('y1', y); 
+            gridLine.setAttribute('x2', svgWidth - padding.right); gridLine.setAttribute('y2', y); 
+            gridLine.setAttribute('stroke', '#5b5e61ff'); gridLine.setAttribute('stroke-dasharray', '3 3'); 
+            chartSvg.appendChild(gridLine);
+            
+            // Y-axis label
+            const yLabel = document.createElementNS(svgNS, 'text'); 
+            yLabel.setAttribute('x', padding.left - 10); yLabel.setAttribute('y', y + 4); 
+            yLabel.setAttribute('text-anchor', 'end'); yLabel.setAttribute('fill', '#1a1b1cff'); 
+            yLabel.setAttribute('font-size', '12'); yLabel.textContent = `${value}`; 
+            chartSvg.appendChild(yLabel);
+        }
+
+        // --- ADD AXIS TITLES ---
+        
+        // Y-Axis Title
+        const yTitle = document.createElementNS(svgNS, 'text');
+        yTitle.setAttribute('transform', `rotate(-90)`);
+        yTitle.setAttribute('x', -(svgHeight / 2));
+        yTitle.setAttribute('y', 20); 
+        yTitle.setAttribute('text-anchor', 'middle');
+        yTitle.setAttribute('fill', '#000000ff');
+        yTitle.setAttribute('font-size', '14');
+        yTitle.setAttribute('font-weight', '600');
+        yTitle.textContent = 'New Users/Shops Count';
+        chartSvg.appendChild(yTitle);
+
+        // X-Axis Title
+        const xTitle = document.createElementNS(svgNS, 'text');
+        xTitle.setAttribute('x', padding.left + chartWidth / 2);
+        xTitle.setAttribute('y', svgHeight - 10); 
+        xTitle.setAttribute('text-anchor', 'middle');
+        xTitle.setAttribute('fill', '#000000ff');
+        xTitle.setAttribute('font-size', '14');
+        xTitle.setAttribute('font-weight', '600');
+        xTitle.textContent = 'Month of Registration (YYYY-MM)';
+        chartSvg.appendChild(xTitle);
+        
+        // --- DRAW LINE AND AREA ---
+        const defs = document.createElementNS(svgNS, 'defs'); 
+        const gradient = document.createElementNS(svgNS, 'linearGradient'); 
+        gradient.id = 'adminAreaGradient'; 
+        gradient.innerHTML = `<stop offset="0%" style="stop-color:#0096c7; stop-opacity:0.4"/><stop offset="100%" style="stop-color:#0096c7; stop-opacity:0"/>`; 
+        defs.appendChild(gradient); 
+        chartSvg.appendChild(defs);
+        
+        const points = values.map((value, index) => {
+            let pointX;
+            
+            if (labels.length > 1) {
+                // Standard calculation for 2 or more points
+                pointX = padding.left + (index / (labels.length - 1)) * chartWidth;
+            } else {
+                // FIX: If only one point, place it in the center
+                pointX = padding.left + chartWidth / 2;
+            }
+
+            return { 
+                x: pointX, 
+                y: padding.top + chartHeight - (value / maxCount) * chartHeight 
+            };
+        });
+        
+        // Logic for drawing the line/area (only runs if labels.length > 1)
+        if (labels.length > 1) {
+            const line = (points) => { 
+                let d = `M ${points[0].x} ${points[0].y}`; 
+                for (let i = 0; i < points.length - 1; i++) { 
+                    const x_mid = (points[i].x + points[i+1].x) / 2; 
+                    const cp_x1 = (x_mid + points[i].x) / 2; 
+                    d += ` C ${cp_x1},${points[i].y} ${cp_x1},${points[i+1].y} ${points[i+1].x},${points[i+1].y}`; 
+                } 
+                return d; 
+            };
+            
+            const areaPath = document.createElementNS(svgNS, 'path'); 
+            areaPath.setAttribute('d', line(points) + ` L ${svgWidth - padding.right} ${svgHeight - padding.bottom} L ${padding.left} ${svgHeight - padding.bottom} Z`); 
+            areaPath.setAttribute('fill', 'url(#adminAreaGradient)');
+            chartSvg.appendChild(areaPath);
+
+            const linePath = document.createElementNS(svgNS, 'path'); 
+            linePath.setAttribute('d', line(points)); 
+            linePath.setAttribute('fill', 'none'); 
+            linePath.setAttribute('stroke', '#0096c7'); 
+            linePath.setAttribute('stroke-width', '3');
+            chartSvg.appendChild(linePath);
+        }
+
+        // Draw circles and x-labels for all points (regardless of count)
+        points.forEach((point, index) => {
+            const circle = document.createElementNS(svgNS, 'circle'); 
+            circle.setAttribute('cx', point.x); circle.setAttribute('cy', point.y); 
+            circle.setAttribute('r', '5'); circle.setAttribute('fill', '#0096c7'); 
+            circle.setAttribute('stroke', 'white'); circle.setAttribute('stroke-width', '2'); 
+            chartSvg.appendChild(circle);
+            
+            const xLabel = document.createElementNS(svgNS, 'text'); 
+            xLabel.setAttribute('x', point.x); xLabel.setAttribute('y', svgHeight - padding.bottom + 20); 
+            xLabel.setAttribute('text-anchor', 'middle'); xLabel.setAttribute('fill', '#000000ff'); 
+            xLabel.setAttribute('font-size', '12'); 
+            // Show only MM part, or the full label if only one point
+            xLabel.textContent = labels[index].replace(/^\d{4}-/, ''); 
+            chartSvg.appendChild(xLabel);
+        });
+    }
+
+    // --- NAVIGATION AND INITIAL LOAD ---
 
     async function loadContent(page) {
         navLinks.forEach(link => link.classList.remove('active'));
         const activeLink = document.querySelector(`[data-page="${page}"]`);
         if (activeLink) activeLink.classList.add('active');
         
-        contentArea.innerHTML = ''; // Clear previous content
+        contentArea.innerHTML = ''; 
 
-        // *** THIS IS THE CORRECTED LOGIC ***
-        // Both pages are now loaded inside an iframe
-        if (page === 'create_owner' || page === 'manage_users') {
+        if (page === 'dashboard') {
+            drawAdminDashboard(); 
+            return;
+        }
+
+        const iframePages = ['manage_users', 'monitor_activity', 'payment_processing', 'system_settings', 'data_security', 'reports'];
+        if (iframePages.includes(page)) {
             const iframe = document.createElement('iframe');
-            iframe.src = `pages/${page}.php`;
+            iframe.src = `admin_pages/${page}.php`;
             iframe.style.width = '100%';
             iframe.style.height = '90vh';
             iframe.style.border = 'none';
+            iframe.style.borderRadius = '12px';
+            iframe.style.boxShadow = '0 5px 15px rgba(0, 0, 0, 0.05)';
             contentArea.appendChild(iframe);
             return; 
         }
-
-        // Handle simple, static content
-        contentArea.innerHTML = '<h2>Loading...</h2>';
-        try {
-            let htmlContent = '';
-            switch (page) {
-                case 'welcome':
-                    htmlContent = `<h2>Welcome to the Admin Dashboard</h2><p>Select an option from the sidebar.</p>`;
-                    break;
-                case 'reports':
-                    htmlContent = `<h2>Generate Reports</h2><p>Reporting features will be displayed here.</p>`;
-                    break;
-                default:
-                    htmlContent = `<h2>${page.replace(/_/g, ' ')}</h2><p>Content for this section is not yet implemented.</p>`;
-            }
-            contentArea.innerHTML = htmlContent;
-        } catch (error) {
-            console.error('Failed to load content:', error);
-            contentArea.innerHTML = '<h2>Error</h2><p>Could not load content from the server.</p>';
-        }
+        
+        contentArea.innerHTML = `<h2>${page.replace(/_/g, ' ')}</h2><p>Content not yet implemented for ${page}.</p>`;
     }
 
-    // The rest of your script (event listeners) remains the same
+    // --- EVENT LISTENERS ---
+
     navLinks.forEach(link => {
         link.addEventListener('click', (event) => {
             event.preventDefault();
             const page = link.getAttribute('data-page');
-            loadContent(page);
+            if (page) {
+                loadContent(page);
+            }
         });
     });
 
     logoutButton.addEventListener('click', (event) => {
         event.preventDefault();
-        localStorage.removeItem('laundroUser');
-        window.location.href = 'index.php';
+        if (confirm('Are you sure you want to logout?')) {
+            localStorage.removeItem('laundroUser');
+            window.location.href = 'index.php';
+        }
     });
 
+    // Handle messages from iframes (if any are used to navigate)
     window.addEventListener('message', (event) => {
         if (event.data.type === 'loadPage') {
             loadContent(event.data.page);
         }
     });
 
-    loadContent('welcome');
-</script>
+    // Initial page load
+    loadContent('dashboard'); 
+    </script>
 </body>
 </html>

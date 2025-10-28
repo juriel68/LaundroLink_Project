@@ -53,7 +53,7 @@ export default function SignUp() {
             if (res.data.success) {
               await AsyncStorage.setItem("user", JSON.stringify(res.data.user));
               Alert.alert("Welcome!", `Hello ${res.data.user.name}`);
-              router.replace("/homepage/homepage");
+              router.replace("/homepage");
             } else {
               setError(res.data.message || "Unable to log in with Google.");
             }

@@ -1,3 +1,5 @@
+// Backend/src/routes/analytics.js
+
 import express from "express";
 import db from "../db.js";
 
@@ -5,9 +7,13 @@ const router = express.Router();
 
 /**
  * ======================================================
- * 1️⃣ DETAILED CUSTOMER SEGMENTS (For PHP dashboard)
- * Endpoint: GET /api/analytics/segment-details/:shopId
+ * SHOP OWNER ANALYTICS ROUTES (Existing)
  * ======================================================
+ */
+
+/**
+ * 1️⃣ DETAILED CUSTOMER SEGMENTS
+ * Endpoint: GET /api/analytics/segment-details/:shopId
  */
 router.get("/segment-details/:shopId", async (req, res) => {
     const { shopId } = req.params;
@@ -34,10 +40,8 @@ router.get("/segment-details/:shopId", async (req, res) => {
 });
 
 /**
- * ======================================================
  * 2️⃣ POPULAR SERVICES
  * Endpoint: GET /api/analytics/popular-services/:shopId
- * ======================================================
  */
 router.get("/popular-services/:shopId", async (req, res) => {
     const { shopId } = req.params;
@@ -63,10 +67,8 @@ router.get("/popular-services/:shopId", async (req, res) => {
 
 
 /**
- * ======================================================
  * 3️⃣ BUSIEST TIMES
  * Endpoint: GET /api/analytics/busiest-times/:shopId
- * ======================================================
  */
 router.get("/busiest-times/:shopId", async (req, res) => {
     const { shopId } = req.params;
@@ -88,5 +90,54 @@ router.get("/busiest-times/:shopId", async (req, res) => {
         res.status(500).json({ error: "Failed to fetch busiest times." });
     }
 });
+
+/**
+ * ======================================================
+ * 4️⃣ ADMIN DASHBOARD - SYSTEM-WIDE KPIs
+ * Endpoint: GET /api/analytics/admin-dashboard-stats
+ * Fetches pre-calculated data from the Python script.
+ * ======================================================
+ */
+router.get("/admin-dashboard-stats", async (req, res) => {
+    try {
+        // 1. Fetch Key Performance Indicators (KPIs)
+        const kpiQuery = `
+            -- Fetch the single row of KPI data (MetricID=1)
+            SELECT totalOwners, activeShops, totalPaymentsProcessed, totalSystemUsers
+            FROM Admin_Growth_Metrics
+            WHERE MetricID = 1; 
+        `;
+        // Since we are fetching specific columns, kpiResults will be an array with one object
+        const [kpiResults] = await db.query(kpiQuery); 
+        const kpiData = kpiResults[0] || {}; // Get the first (and only) row
+
+        // 2. Fetch Monthly Growth Data for the Chart (System Growth)
+        const growthQuery = `
+            SELECT 
+                MonthYear as label, 
+                (NewUsers + NewOwners) as value 
+            FROM Admin_Monthly_Growth
+            ORDER BY MonthYear;
+        `;
+        const [chartData] = await db.query(growthQuery);
+        
+        // Combine and Send Response
+        res.json({
+            // Ensure keys match what the frontend expects
+            totalOwners: kpiData.totalOwners || 0,
+            // Use totalSystemUsers from the DB, but map it to 'totalUsers' for the frontend
+            totalUsers: kpiData.totalSystemUsers || 0, 
+            activeShops: kpiData.activeShops || 0,
+            // Use totalPaymentsProcessed from the DB, but map it to 'totalPayments' for the frontend
+            totalPayments: kpiData.totalPaymentsProcessed || 0, 
+            chartData: chartData
+        });
+
+    } catch (error) {
+        console.error("Error fetching admin dashboard stats:", error);
+        res.status(500).json({ error: "Failed to fetch admin stats" });
+    }
+});
+
 
 export default router;
