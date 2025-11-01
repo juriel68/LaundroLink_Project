@@ -34,104 +34,144 @@ const getDateCondition = (period, alias) => {
 // API Routes: Order Creation
 // =================================================================
 
-// POST /api/orders
 // Creates a new order along with related details, status, and invoice records.
 router.post("/", async (req, res) => {
-    const {
-        CustID, 
-        ShopID, 
-        SvcID, 
-        StaffID, 
-        deliveryId, 
-        weight, 
-        instructions, 
-        fabrics,     // Assuming this is an array of FabTypeID for better flexibility
-        addons      // Addons JSON array (array of AddOnID)
-    } = req.body;
+    // --- 💡 LOG: Request received and payload content ---
+    console.log("--- START ORDER CREATION PROCESS ---");
+    console.log("Payload received:", req.body);
+    
+    const {
+        CustID, 
+        ShopID, 
+        SvcID,
+        deliveryId, 
+        weight, 
+        instructions, 
+        fabrics, 
+        addons 
+    } = req.body;
 
-    // Basic validation
-    if (!CustID || !ShopID || !SvcID || !deliveryId || weight === undefined || !fabrics || fabrics.length === 0) {
-        return res.status(400).json({ success: false, message: "Missing required fields (CustID, ShopID, SvcID, deliveryId, weight, fabrics)." });
-    }
+    // Basic validation
+    if (!CustID || !ShopID || !SvcID || !deliveryId || weight === undefined || !fabrics || fabrics.length === 0) {
+        console.error("Validation failed: Missing required fields.");
+        return res.status(400).json({ success: false, message: "Missing required fields (CustID, ShopID, SvcID, deliveryId, weight, fabrics)." });
+    }
 
-    const connection = await db.getConnection();
-    try {
-        await connection.beginTransaction();
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+        console.log("Transaction started successfully.");
 
-        // 1. Insert into Laundry_Details (for weight and instructions)
-        const newLndryDtlID = generateID('LD');
-        await connection.query(
-            "INSERT INTO Laundry_Details (LndryDtlID, Kilogram, SpecialInstr) VALUES (?, ?, ?)",
-            [newLndryDtlID, weight, instructions || null]
-        );
+        // 🔑 NEW LOGIC: AUTOMATIC STAFF SELECTION
+        console.log("Step 0: Attempting to assign staff...");
+        const [staffs] = await connection.query(
+            `SELECT StaffID
+            FROM Staffs
+            WHERE ShopID = ? AND StaffRole = 'Cashier'
+            ORDER BY StaffID ASC
+            LIMIT 1`,
+            [ShopID]
+        );
 
-        // 2. Insert fabric types into Order_Fabrics junction table
-        const fabricPlaceholders = fabrics.map(() => `(?, ?)`).join(', ');
-        const fabricValues = fabrics.flatMap(fabTypeID => [newLndryDtlID, fabTypeID]);
-        if (fabrics && fabrics.length > 0) {
-             await connection.query(
-                `INSERT INTO Order_Fabrics (LndryDtlID, FabTypeID) VALUES ${fabricPlaceholders}`,
-                fabricValues
-            );
+        let assignedStaffID = null;
+        if (staffs.length > 0) {
+            assignedStaffID = staffs[0].StaffID;
+            console.log(`Staff assigned: ${assignedStaffID}`);
+        } else {
+            console.warn(`No cashier staff found for ShopID ${ShopID}. Order will be unassigned (StaffID is NULL).`);
+        }
+        // END NEW LOGIC
+
+        // 1. Insert into Laundry_Details
+        const newLndryDtlID = generateID('LD');
+        console.log(`Step 1: Inserting Laundry_Details with ID ${newLndryDtlID}`);
+        await connection.query(
+            "INSERT INTO Laundry_Details (LndryDtlID, Kilogram, SpecialInstr) VALUES (?, ?, ?)",
+            [newLndryDtlID, weight, instructions || null]
+        );
+
+        // 2. Insert fabric types
+        if (fabrics && fabrics.length > 0) {
+            console.log(`Step 2: Inserting ${fabrics.length} Fabric types.`);
+            const fabricPlaceholders = fabrics.map(() => `(?, ?)`).join(', ');
+            const fabricValues = fabrics.flatMap(fabTypeID => [newLndryDtlID, fabTypeID]);
+            await connection.query(
+                `INSERT INTO Order_Fabrics (LndryDtlID, FabTypeID) VALUES ${fabricPlaceholders}`,
+                fabricValues
+            );
+        } else {
+            console.log("Step 2: No fabrics to insert.");
         }
 
-        // 3. Insert addons into Order_AddOns junction table
-        if (addons && Array.isArray(addons) && addons.length > 0) {
-            const addonPlaceholders = addons.map(() => `(?, ?)`).join(', ');
-            const addonValues = addons.flatMap(addonId => [newLndryDtlID, addonId]);
-            await connection.query(
-                `INSERT INTO Order_AddOns (LndryDtlID, AddOnID) VALUES ${addonPlaceholders}`,
-                addonValues
-            );
+        // 3. Insert addons
+        if (addons && Array.isArray(addons) && addons.length > 0) {
+            console.log(`Step 3: Inserting ${addons.length} Add-Ons.`);
+            const addonPlaceholders = addons.map(() => `(?, ?)`).join(', ');
+            const addonValues = addons.flatMap(addonId => [newLndryDtlID, addonId]);
+            await connection.query(
+                `INSERT INTO Order_AddOns (LndryDtlID, AddOnID) VALUES ${addonPlaceholders}`,
+                addonValues
+            );
+        } else {
+            console.log("Step 3: No Add-Ons to insert.");
         }
 
-        // 4. Generate the main OrderID and insert into Orders table
-        const newOrderID = generateID('O');
-        await connection.query(
-            "INSERT INTO Orders (OrderID, CustID, ShopID, SvcID, StaffID, LndryDtlID, DlvryID, OrderCreatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
-            [newOrderID, CustID, ShopID, SvcID, StaffID || null, newLndryDtlID, deliveryId]
-        );
+        // 4. Generate the main OrderID and insert into Orders table
+        const newOrderID = generateID('O');
+        console.log(`Step 4: Inserting main Order with ID ${newOrderID}.`);
+        await connection.query(
+            "INSERT INTO Orders (OrderID, CustID, ShopID, SvcID, StaffID, LndryDtlID, DlvryID, OrderCreatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
+            [newOrderID, CustID, ShopID, SvcID, assignedStaffID, newLndryDtlID, deliveryId]
+        );
 
-        // 5. Set initial status to 'Pending' in Order_Status
-        const newOrderStatId = generateID('OSD');
-        await connection.query(
-            "INSERT INTO Order_Status (OrderStatID, OrderID, OrderStatus, OrderUpdatedAt) VALUES (?, ?, 'Pending', NOW())",
-            [newOrderStatId, newOrderID]
-        );
+        // 5. Set initial status to 'Pending' in Order_Status
+        const newOrderStatId = generateID('OSD');
+        console.log(`Step 5: Inserting initial Order_Status: 'Pending'`);
+        await connection.query(
+            "INSERT INTO Order_Status (OrderStatID, OrderID, OrderStatus, OrderUpdatedAt) VALUES (?, ?, 'Pending', NOW())",
+            [newOrderStatId, newOrderID]
+        );
 
-        // 6. Create an initial Invoice record
-        const newInvoiceID = generateID('INV');
-        await connection.query(
-            "INSERT INTO Invoices (InvoiceID, OrderID, PayAmount) VALUES (?, ?, ?)",
-            [newInvoiceID, newOrderID, 0.00] // Initial amount is 0.00
-        );
+        // 6. Create an initial Invoice record
+        const newInvoiceID = generateID('INV');
+        console.log(`Step 6: Inserting initial Invoice ID ${newInvoiceID} (Amount: 0.00).`);
+        await connection.query(
+            "INSERT INTO Invoices (InvoiceID, OrderID, DlvryFee, PayAmount) VALUES (?, ?, 0.00, 0.00)",
+            [newInvoiceID, newOrderID] 
+        );
 
-        // 7. Set initial Invoice_Status
-        const newInvoiceStatID = generateID('IS');
-        await connection.query(
-            "INSERT INTO Invoice_Status (InvoiceStatusID, InvoiceID, InvoiceStatus, StatUpdateAt) VALUES (?, ?, 'Draft', NOW())",
-            [newInvoiceStatID, newInvoiceID]
-        );
-        
-        // 💡 LOG: Successful Order Creation
-        await logUserActivity(CustID, 'Customer', 'Create Order', `New order created: ${newOrderID} for Shop: ${ShopID}`);
+        // 7. Set initial Invoice_Status
+        const newInvoiceStatID = generateID('IS');
+        console.log(`Step 7: Inserting initial Invoice_Status: 'Draft'`);
+        await connection.query(
+            "INSERT INTO Invoice_Status (InvoiceStatusID, InvoiceID, InvoiceStatus, StatUpdateAt) VALUES (?, ?, 'Draft', NOW())",
+            [newInvoiceStatID, newInvoiceID]
+        );
+        
+        console.log("All insertions complete. Committing transaction...");
+        
+        // 💡 LOG: Successful Order Creation... (omitted for brevity)
+        await logUserActivity(CustID, 'Customer', 'Create Order', `New order created: ${newOrderID} assigned to: ${assignedStaffID}`);
 
 
-        await connection.commit();
+        await connection.commit();
+        console.log("Transaction committed successfully. Sending response.");
 
-        res.status(201).json({ 
-            success: true, 
-            message: "Order created successfully with initial details.", 
-            orderId: newOrderID 
-        });
+        res.status(201).json({ 
+            success: true, 
+            message: "Order created successfully with initial details.", 
+            orderId: newOrderID 
+        });
 
-    } catch (error) {
-        await connection.rollback();
-        console.error("❌ Create order error:", error);
-        res.status(500).json({ success: false, message: "Failed to create order." });
-    } finally {
-        connection.release();
-    }
+    } catch (error) {
+        console.error("--- TRANSACTION FAILED. ROLLING BACK. ---");
+        await connection.rollback();
+        console.error("❌ Create order error:", error);
+        res.status(500).json({ success: false, message: "Failed to create order." });
+    } finally {
+        connection.release();
+        console.log("Database connection released. --- END ORDER CREATION PROCESS ---");
+    }
 });
 
 // =================================================================
@@ -453,82 +493,116 @@ router.post("/processing-status", async (req, res) => {
 // API Routes: Reporting & Dashboard
 // =================================================================
 
-// GET /api/orders/overview/:shopId
-// Fetches summary counts and a detailed list of orders, with date filtering.
+// Inside orders.js (assuming you're using express and mysql2/promise)
+
 router.get("/overview/:shopId", async (req, res) => {
     const { shopId } = req.params;
     const { 
-        sortBy = 'OrderCreatedAt', 
-        sortOrder = 'DESC', 
-        period = 'Today', 
+        period, 
         startDate, 
-        endDate 
+        endDate, 
+        sortBy = 'OrderCreatedAt', 
+        sortOrder = 'DESC' 
     } = req.query;
 
-    // --- Date Filtering Logic ---
-    let dateCondition;
-    let dateParams = [];
+    if (!shopId) {
+        return res.status(400).json({ error: "Shop ID is required" });
+    }
+
+    let dateCondition = "";
+    const queryParams = [shopId]; // Initialize with shopId for the summary/order list
+
+    // --- 1. Dynamic Date Filtering Logic ---
     if (startDate && endDate) {
-        dateCondition = `DATE(o.OrderCreatedAt) BETWEEN ? AND ?`;
-        dateParams = [startDate, endDate];
+        dateCondition = `o.OrderCreatedAt BETWEEN ? AND DATE_ADD(?, INTERVAL 1 DAY)`; // Include the end date
+        queryParams.push(startDate, endDate);
     } else {
-        dateCondition = getDateCondition(period, 'o');
+        // Handle period filtering (Today, Weekly, Monthly, Yearly)
+        switch (period) {
+            case 'Today':
+                dateCondition = `DATE(o.OrderCreatedAt) = CURDATE()`;
+                break;
+            case 'Weekly':
+                // Assuming MySQL's default week start (Sunday=0 or Monday=1). Adjust '1' if needed.
+                dateCondition = `YEARWEEK(o.OrderCreatedAt, 1) = YEARWEEK(CURDATE(), 1)`;
+                break;
+            case 'Monthly':
+                dateCondition = `YEAR(o.OrderCreatedAt) = YEAR(CURDATE()) AND MONTH(o.OrderCreatedAt) = MONTH(CURDATE())`;
+                break;
+            case 'Yearly':
+                dateCondition = `YEAR(o.OrderCreatedAt) = YEAR(CURDATE())`;
+                break;
+            default:
+                // Default to showing all time if no period/dates are specified
+                dateCondition = `1=1`;
+        }
     }
     
-    // --- Sorting Logic ---
-    const allowedSortColumns = { SvcName: 's.SvcName', OrderStatus: 'OrderStatus', OrderCreatedAt: 'o.OrderCreatedAt' };
-    const sortColumn = allowedSortColumns[sortBy] || 'o.OrderCreatedAt';
-    const sortDirection = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
-
-    const connection = await db.getConnection();
+    // --- 2. SQL Queries (Combined for efficiency) ---
+    // The query needs to be structured to return two result sets: summary and orders.
+    // However, since we're using mysql2, it's safer and cleaner to execute two separate queries.
     try {
-        // Query 1: Get the summary counts with the date filter
-        const [summaryRows] = await connection.query(
-            `WITH LatestOrderStatus AS (
-                SELECT 
-                    o.OrderID,
-                    (SELECT os.OrderStatus FROM Order_Status os WHERE os.OrderID = o.OrderID ORDER BY os.OrderUpdatedAt DESC LIMIT 1) AS LatestStatus
-                FROM Orders o
-                WHERE o.ShopID = ? AND ${dateCondition}
-            )
-            SELECT LatestStatus, COUNT(OrderID) as count 
-            FROM LatestOrderStatus 
-            GROUP BY LatestStatus;`,
-            [shopId, ...dateParams]
-        );
-
-        const summary = { pending: 0, processing: 0, forDelivery: 0, completed: 0, rejected: 0, cancelled: 0 };
-        summaryRows.forEach(row => {
-            const status = row.LatestStatus;
-            if (status === 'Pending') summary.pending = row.count;
-            else if (status === 'Processing') summary.processing = row.count;
-            else if (status === 'For Delivery' || status === 'Ready for Pickup') summary.forDelivery = row.count;
-            else if (status === 'Completed') summary.completed = row.count;
-            else if (status === 'Rejected') summary.rejected = row.count;
-            else if (status === 'Cancelled') summary.cancelled = row.count;
-        });
-
-        // Query 2: Get the detailed list of orders with the date filter
-        const [orders] = await connection.query(
-            `SELECT 
-                o.OrderID, o.CustID, s.SvcName, i.PayAmount,
+        // Query 1: Order List (The main data for the table)
+        const ordersQuery = `
+            SELECT 
+                o.OrderID,
+                o.CustID,
+                s.SvcName,
+                i.PayAmount,
                 (SELECT os.OrderStatus FROM Order_Status os WHERE os.OrderID = o.OrderID ORDER BY os.OrderUpdatedAt DESC LIMIT 1) AS OrderStatus,
                 o.OrderCreatedAt
-            FROM Orders o
-            LEFT JOIN Services s ON o.SvcID = s.SvcID
-            LEFT JOIN Invoices i ON o.OrderID = i.OrderID
-            WHERE o.ShopID = ? AND ${dateCondition}
-            ORDER BY ${sortColumn} ${sortDirection}`,
-            [shopId, ...dateParams]
-        );
+            FROM 
+                Orders o
+            LEFT JOIN 
+                Services s ON o.SvcID = s.SvcID
+            LEFT JOIN
+                Invoices i ON o.OrderID = i.OrderID
+            WHERE 
+                o.ShopID = ? AND ${dateCondition}
+            ORDER BY 
+                ${sortBy} ${sortOrder}
+        `;
+        // The first shopId is used here. 
+        // We need to duplicate the date parameters for the order list query.
+        const orderListParams = [shopId];
+        if (startDate && endDate) {
+             orderListParams.push(startDate, endDate);
+        }
 
-        res.json({ summary, orders });
+        const [orders] = await db.query(ordersQuery, orderListParams);
+
+
+        // Query 2: Status Summary (KPI Counts)
+        const summaryQuery = `
+            SELECT
+                SUM(CASE WHEN (SELECT os.OrderStatus FROM Order_Status os WHERE os.OrderID = o.OrderID ORDER BY os.OrderUpdatedAt DESC LIMIT 1) = 'Pending' THEN 1 ELSE 0 END) AS pending,
+                SUM(CASE WHEN (SELECT os.OrderStatus FROM Order_Status os WHERE os.OrderID = o.OrderID ORDER BY os.OrderUpdatedAt DESC LIMIT 1) = 'Processing' THEN 1 ELSE 0 END) AS processing,
+                SUM(CASE WHEN (SELECT os.OrderStatus FROM Order_Status os WHERE os.OrderID = o.OrderID ORDER BY os.OrderUpdatedAt DESC LIMIT 1) = 'For Delivery' THEN 1 ELSE 0 END) AS forDelivery,
+                SUM(CASE WHEN (SELECT os.OrderStatus FROM Order_Status os WHERE os.OrderID = o.OrderID ORDER BY os.OrderUpdatedAt DESC LIMIT 1) = 'Completed' THEN 1 ELSE 0 END) AS completed,
+                SUM(CASE WHEN (SELECT os.OrderStatus FROM Order_Status os WHERE os.OrderID = o.OrderID ORDER BY os.OrderUpdatedAt DESC LIMIT 1) = 'Rejected' THEN 1 ELSE 0 END) AS rejected
+            FROM 
+                Orders o
+            WHERE 
+                o.ShopID = ? AND ${dateCondition}
+        `;
+        // The shopId and date parameters need to be repeated for the summary query.
+        const summaryParams = [shopId];
+        if (startDate && endDate) {
+            summaryParams.push(startDate, endDate);
+        }
+
+        const [summaryResults] = await db.query(summaryQuery, summaryParams);
+        const summary = summaryResults[0] || {};
+        
+        // --- 3. Return Final Structure ---
+        res.json({
+            summary: summary,
+            orders: orders
+        });
 
     } catch (error) {
         console.error("Error fetching order overview:", error);
-        res.status(500).json({ error: "Server error while fetching order overview." });
-    } finally {
-        connection.release();
+        res.status(500).json({ error: "Failed to fetch order overview" });
     }
 });
 
@@ -628,6 +702,7 @@ router.post("/dashboard-summary", async (req, res) => {
     }
 
     let groupBy, dateFormat, dateCondition;
+    // ... (omitted switch block for brevity, it is correct)
     switch (period) {
         case 'Monthly':
             groupBy = `DATE_FORMAT(o.OrderCreatedAt, '%Y-%m')`;
@@ -646,8 +721,9 @@ router.post("/dashboard-summary", async (req, res) => {
             dateCondition = `YEARWEEK(o.OrderCreatedAt, 1) = YEARWEEK(CURDATE(), 1)`;
     }
 
-    // Adjust the date condition for the newCustomers query based on the selected period
+
     let newCustomerDateCondition;
+    // ... (omitted switch block for brevity, it is correct)
     switch (period) {
         case 'Monthly':
             newCustomerDateCondition = `YEAR(first_order_date) = YEAR(CURDATE()) AND MONTH(first_order_date) = MONTH(CURDATE())`;
@@ -666,17 +742,17 @@ router.post("/dashboard-summary", async (req, res) => {
 
         const query = `
             SELECT
-                -- Calculate Total Orders for the period
+                -- 1. Calculate Total Orders for the period (Placeholder: 1)
                 (SELECT COUNT(*) FROM Orders o WHERE o.ShopID = ? AND ${dateCondition}) AS totalOrders,
                 
-                -- Calculate Total Revenue for the period
+                -- 2. Calculate Total Revenue for the period (Placeholder: 2)
                 (SELECT SUM(i.PayAmount) 
-                 FROM Orders o 
-                 JOIN Invoices i ON o.OrderID = i.OrderID
-                 WHERE o.ShopID = ? AND ${dateCondition} AND (SELECT s.InvoiceStatus FROM Invoice_Status s WHERE s.InvoiceID = i.InvoiceID ORDER BY s.StatUpdateAt DESC LIMIT 1) = 'Paid'
+                    FROM Orders o 
+                    JOIN Invoices i ON o.OrderID = i.OrderID
+                    WHERE o.ShopID = ? AND ${dateCondition} AND (SELECT s.InvoiceStatus FROM Invoice_Status s WHERE s.InvoiceID = i.InvoiceID ORDER BY s.StatUpdateAt DESC LIMIT 1) = 'Paid'
                 ) AS totalRevenue,
 
-                -- Calculate New Customers for the period
+                -- 3. Calculate New Customers for the period (Placeholder: 3)
                 (
                     SELECT COUNT(CustID)
                     FROM (
@@ -688,23 +764,28 @@ router.post("/dashboard-summary", async (req, res) => {
                     WHERE ${newCustomerDateCondition} 
                 ) AS newCustomers,
 
-                -- Aggregate chart data into a JSON string
+                -- 4. Aggregate chart data into a JSON string (Placeholder: 4)
                 (
-                    SELECT CONCAT('[', GROUP_CONCAT(JSON_OBJECT('label', label, 'value', revenue) ORDER BY o.OrderCreatedAt), ']')
+                    SELECT CONCAT('[', 
+                        GROUP_CONCAT(
+                            JSON_OBJECT('label', label, 'value', revenue) 
+                            ORDER BY sortKey /* Fixed: Uses the alias from the inner query */
+                        ), 
+                    ']')
                     FROM (
                         SELECT
+                            ${groupBy} AS sortKey, /* New: Column for explicit ordering */
                             DATE_FORMAT(o.OrderCreatedAt, ${dateFormat}) AS label,
                             SUM(i.PayAmount) AS revenue
                         FROM Orders o
                         JOIN Invoices i ON o.OrderID = i.OrderID
                         WHERE o.ShopID = ? AND ${dateCondition} AND (SELECT s.InvoiceStatus FROM Invoice_Status s WHERE s.InvoiceID = i.InvoiceID ORDER BY s.StatUpdateAt DESC LIMIT 1) = 'Paid'
-                        GROUP BY ${groupBy}, label
-                        ORDER BY o.OrderCreatedAt
+                        GROUP BY sortKey, label
                     ) AS ChartData
                 ) AS chartData;
         `;
         
-        // Pass shopId for all four placeholders
+        // Pass shopId for ALL four placeholders
         const [[results]] = await db.query(query, [shopId, shopId, shopId, shopId]);
         
         const chartDataArray = results.chartData ? JSON.parse(results.chartData) : [];
@@ -770,14 +851,14 @@ router.post("/report/top-employees", async (req, res) => {
         const query = `
             SELECT
                 s.StaffName as name,
-                s.StaffPosition as position,
+                s.StaffRole as position,
                 SUM(i.PayAmount) AS revenue
             FROM Invoices i
             JOIN Orders o ON i.OrderID = o.OrderID
             JOIN Staffs s ON o.StaffID = s.StaffID 
             WHERE o.ShopID = ? AND ${dateCondition}
                 AND (SELECT invs.InvoiceStatus FROM Invoice_Status invs WHERE invs.InvoiceID = i.InvoiceID ORDER BY invs.StatUpdateAt DESC LIMIT 1) = 'Paid'
-            GROUP BY s.StaffID, s.StaffName, s.StaffPosition
+            GROUP BY s.StaffID, s.StaffName, s.StaffRole
             ORDER BY revenue DESC
             LIMIT 5;
         `;

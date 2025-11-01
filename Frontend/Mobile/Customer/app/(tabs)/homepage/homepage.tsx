@@ -1,47 +1,25 @@
+// homepage.tsx
 import Ionicons from "@expo/vector-icons/Ionicons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Link, Stack, useFocusEffect, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useRouter } from "expo-router"; 
 import * as Location from 'expo-location';
 import React, { useCallback, useState } from "react";
 import { FlatList, Image, Pressable, StyleSheet, Text, View, ActivityIndicator, Alert, TouchableOpacity } from "react-native";
-import axios from "axios";
 
-// 💡 BEST PRACTICE: Import API_URL from the shared configuration file
-import { API_URL } from "@/lib/api"; 
+import { fetchNearbyShops, Shop } from "@/lib/shops"; 
+// 🔑 IMPORT the UserDetails type from your authentication utilities
+import { UserDetails } from "@/lib/auth"; 
 
-interface UserProfile {
-  // 🎯 UPDATED: Changed from 'id: number' to 'UserID: string'
-  UserID: string; 
-  picture: string | null;
-}
-
-interface Shop {
-  id: string;
-  name: string;
-  distance: number;
-  image_url: string;
-  description: string;
-  // 🎯 REMOVED: addDescription field to match backend changes
-  address: string;
-  contact: string;
-  hours: string;
-  availability: string;
-  rating?: string;
-}
 
 export default function Homepage() {
   const router = useRouter();
-  // 🎯 UPDATED: The user state now uses the corrected UserProfile interface
-  const [user, setUser] = useState<UserProfile | null>(null);
-  const [shops, setShops] = useState<Shop[]>([]);
+  // 🎯 Use the imported UserDetails type
+  const [user, setUser] = useState<UserDetails | null>(null); 
+  const [shops, setShops] = useState<Shop[]>([]); 
   const [isLoading, setIsLoading] = useState(false);
   const [locationPermission, setLocationPermission] = useState(false);
 
-  // =================================================================
-  // HANDLER: Shop Fetching Logic
-  // =================================================================
-
-  const fetchNearbyShops = async (shouldRequestPermission = true) => {
+  const loadShops = async (shouldRequestPermission = true) => {
     if (isLoading) return; 
 
     setIsLoading(true);
@@ -69,50 +47,56 @@ export default function Homepage() {
       let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const { latitude, longitude } = location.coords;
 
-      const response = await axios.get(`${API_URL}/shops/nearby`, {
-        params: { lat: latitude, lon: longitude }
-      });
+      // Assuming fetchNearbyShops is defined correctly in "@/lib/shops"
+      const fetchedShops = await fetchNearbyShops(latitude, longitude);
 
-      if (response.data.success) {
-        setShops(response.data.shops || []);
+      if (fetchedShops.length > 0) {
+        setShops(fetchedShops);
       } else {
-        Alert.alert('Error', response.data.message || 'Could not fetch nearby shops.');
+        Alert.alert('Info', 'No shops were found near your location.');
         setShops([]);
       }
+
     } catch (error) {
       console.error("❌ Failed to fetch shops:", error);
-      Alert.alert('Server Error', 'Could not connect to the server to find shops.');
+      Alert.alert('Error', 'Could not load shops. Check your network connection.');
       setShops([]);
     } finally {
       setIsLoading(false);
     }
   };
-
-  // =================================================================
-  // EFFECTS: Load User & Shops on Focus
-  // =================================================================
   
+  const navigateToShopDetails = (item: Shop) => {
+    router.push({ 
+      pathname: "/homepage/about_laundry", 
+      params: { 
+        ...item, 
+        image: item.image_url 
+      } 
+    });
+  }
+
+  const navigateToSearch = () => {
+    router.push("./search_laundry");
+  };
+
+
   useFocusEffect(
     useCallback(() => {
       const loadData = async () => {
-        // 1. Load User Profile
         const storedUser = await AsyncStorage.getItem("user");
         if (storedUser) {
-            const parsedUser = JSON.parse(storedUser);
-            // 🎯 UPDATED: Map the stored user data to the new UserProfile structure
-            setUser({ 
-                UserID: parsedUser.UserID || parsedUser.id, // Handle potential old 'id' key if needed
-                picture: parsedUser.picture || null 
-            });
+            const parsedUser: UserDetails = JSON.parse(storedUser);
+            // 🎯 Ensure the User object is correctly stored in state.
+            setUser(parsedUser);
         }
 
-        // 2. Check Permission and Fetch Shops Automatically
         let { status } = await Location.getForegroundPermissionsAsync();
         if (status === 'granted') {
             setLocationPermission(true);
-            fetchNearbyShops(false); 
+            loadShops(false); 
         } else {
-             setLocationPermission(false);
+            setLocationPermission(false);
         }
       };
       
@@ -120,10 +104,6 @@ export default function Homepage() {
     }, [])
   );
   
-  // =================================================================
-  // RENDER
-  // =================================================================
-
   return (
     <>
       <Stack.Screen
@@ -135,15 +115,18 @@ export default function Homepage() {
           headerTitle: () => (
             <View style={{ flexDirection: "row", alignItems: "center" }}>
               <Ionicons name="location-outline" size={20} color="#2d2d2dff" />
-              <Text style={{ color: "#2d2d2dff", marginLeft: 5, fontSize: 20, fontWeight: "600" }}>
-                Home ▼
-              </Text>
+              <Text style={{ color: "#2d2d2dff", marginLeft: 5, fontSize: 20, fontWeight: "600" }}>Home</Text>
+              <Ionicons name="caret-down-outline" size={14} color="#2d2d2dff" style={{ marginLeft: 2, top: 1 }} />
             </View>
           ),
           headerRight: () => (
             <Pressable onPress={() => router.push("/(tabs)/homepage/profile" as any)}>
+              {/* Check if user exists AND if the picture property exists */}
               {user && user.picture ? (
-                <Image source={{ uri: user.picture.replace('http://', 'https://') }} style={styles.headerAvatar} />
+                <Image 
+                    source={{ uri: user.picture.replace('http://', 'https://') }} 
+                    style={styles.headerAvatar} 
+                />
               ) : (
                 <Ionicons name="person-circle-outline" size={32} color="#2d2d2dff" style={{ marginRight: 10 }} />
               )}
@@ -153,19 +136,17 @@ export default function Homepage() {
       />
 
       <View style={styles.container}>
-        <Link href="./search_laundry" asChild>
-          <Pressable style={styles.searchBar}>
-            <Ionicons name="search" size={20} color="#888" style={styles.icon} />
-            <Text style={styles.placeholder}>Search laundry shops</Text>
-          </Pressable>
-        </Link>
+        <Pressable style={styles.searchBar} onPress={navigateToSearch}>
+          <Ionicons name="search" size={20} color="#888" style={styles.icon} />
+          <Text style={styles.placeholder}>Search laundry shops</Text>
+        </Pressable>
 
         <Text style={styles.sectionTitle}>Laundry Shops Nearby</Text>
 
         {isLoading ? (
           <View style={styles.loadingContainer}>
-             <ActivityIndicator size="large" color="#004aad" />
-             <Text style={{ marginTop: 10, color: '#004aad' }}>Finding nearby shops...</Text>
+              <ActivityIndicator size="large" color="#004aad" />
+              <Text style={{ marginTop: 10, color: '#004aad' }}>Finding nearby shops...</Text>
           </View>
         ) : shops.length > 0 ? (
           <FlatList
@@ -174,19 +155,20 @@ export default function Homepage() {
             keyExtractor={(item) => item.id.toString()}
             contentContainerStyle={styles.shopList}
             renderItem={({ item }) => (
-              // Passing item to the next screen. The item no longer contains addDescription.
-              <Link href={{ pathname: "./about_laundry", params: { ...item, image: item.image_url } }} asChild>
-                <Pressable style={styles.shopCard}>
-                  <Image source={{ uri: item.image_url }} style={styles.shopImage} />
-                  <Text style={styles.shopName} numberOfLines={1}>{item.name}</Text>
-                  <Text style={styles.shopDetails}>
-                    {item.distance.toFixed(1)} km • ⭐ {item.rating || 'N/A'}
-                  </Text>
-                  <View style={[ styles.badge, { backgroundColor: item.availability === "Available" ? "#4CAF50" : "#FF5252" } ]}>
-                    <Text style={styles.badgeText}>{item.availability || 'Unknown'}</Text>
-                  </View>
-                </Pressable>
-              </Link>
+              <Pressable 
+                style={styles.shopCard}
+                onPress={() => navigateToShopDetails(item)}
+              >
+                <Image source={{ uri: item.image_url }} style={styles.shopImage} />
+                <Text style={styles.shopName} numberOfLines={1}>{item.name}</Text>
+                <Text style={styles.shopDetails}>{item.distance.toFixed(1)} km{' '}
+                    <Ionicons name="star" size={12} color="#fadb14" />{' '}
+                    {parseFloat(item.rating || '0').toFixed(1)}
+                </Text>
+                <View style={[ styles.badge, { backgroundColor: item.availability === "Available" ? "#4CAF50" : "#FF5252" } ]}>
+                  <Text style={styles.badgeText}>{item.availability || 'Unknown'}</Text>
+                </View>
+              </Pressable>
             )}
           />
         ) : (
@@ -199,8 +181,7 @@ export default function Homepage() {
             </Text>
             <TouchableOpacity 
                 style={styles.findButton} 
-                // Pass true to explicitly request permission
-                onPress={() => fetchNearbyShops(true)} 
+                onPress={() => loadShops(true)} 
             >
               <Ionicons name="navigate-outline" size={20} color="#fff" />
               <Text style={styles.findButtonText}>Find Shops Near Me</Text>
@@ -223,7 +204,13 @@ const styles = StyleSheet.create({
   shopCard: { flex: 1, backgroundColor: "#fff", margin: 8, borderRadius: 16, padding: 14, alignItems: "center", elevation: 3, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3 },
   shopImage: { width: '100%', aspectRatio: 1, borderRadius: 12, marginBottom: 10, backgroundColor: '#eee' },
   shopName: { fontSize: 14, fontWeight: "600", textAlign: "center", color: "#333" },
-  shopDetails: { fontSize: 12, color: "#666", marginTop: 4 },
+  shopDetails: { 
+    fontSize: 12, 
+    color: "#666", 
+    marginTop: 4,
+    alignSelf: 'center', 
+    textAlign: 'center' 
+  },
   badge: { marginTop: 8, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, alignSelf: "center", elevation: 2, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 2 },
   badgeText: { fontSize: 12, fontWeight: "600", color: "#fff" },
   emptyContainer: {

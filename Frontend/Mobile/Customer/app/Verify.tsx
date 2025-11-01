@@ -11,8 +11,8 @@ import {
   View,
 } from "react-native";
 
-// 💡 Import API_URL from the shared configuration
-import { API_URL } from "@/lib/api"; 
+// 🔑 NEW: Import the OTP verification function
+import { verifyUserOTP } from "@/lib/auth";
 
 export default function Verify() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
@@ -41,25 +41,22 @@ export default function Verify() {
     
     setIsLoading(true);
     try {
-      // 🎯 API Call to verify OTP
-      const response = await fetch(`${API_URL}/auth/verify-otp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, otp }),
-      });
+      // 🎯 MODIFIED: Using the centralized utility function
+      const data = await verifyUserOTP(userId, otp);
 
-      const data = await response.json();
-
-      if (response.ok && data.success) {
+      if (data.success && data.user) {
         Alert.alert("Login Successful", "OTP verified. Welcome back!");
         await AsyncStorage.setItem('user', JSON.stringify(data.user));
         router.replace("/homepage/homepage");
       } else {
+        // This line catches cases where the utility didn't throw an error 
+        // (which is less likely but possible if API behavior changes)
         Alert.alert("Verification Failed", data.message || "Invalid or expired OTP. Please try again.");
       }
-    } catch (error) {
-      console.error("❌ OTP verification error:", error);
-      Alert.alert("Network Error", "Could not connect to the server.");
+    } catch (error: any) {
+      // Catch network errors or errors thrown by verifyUserOTP
+      console.error("❌ OTP verification error:", error.message);
+      Alert.alert("Verification Failed", error.message || "Could not connect to the server.");
     } finally {
       setIsLoading(false);
     }
@@ -158,7 +155,6 @@ const styles = StyleSheet.create({
     fontSize: 16, 
     fontWeight: "bold" 
   },
-  // ❌ REMOVED: resendText style
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',

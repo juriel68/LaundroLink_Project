@@ -1,4 +1,4 @@
-// index.tsx - FINAL CORRECTED IMPORT PATH
+// index.tsx 
 import { AntDesign } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as AuthSession from "expo-auth-session";
@@ -15,8 +15,8 @@ import {
   View,
 } from "react-native";
 
-// ✅ CORRECTED: Using the Expo Router/TypeScript alias
-import { API_URL } from "@/lib/api"; 
+// 🔑 NEW: Import authentication functions
+import { handleUserLogin, googleLogin } from "@/lib/auth"; 
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -34,33 +34,31 @@ export default function Index() {
 
   const getUserInfo = async (token: string) => {
     try {
+      // 1. Get user info from Google
       const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
         headers: { Authorization: `Bearer ${token}` },
       });
       const user = await res.json();
       
-      // Using the centralized API_URL
-      const backendRes = await fetch(`${API_URL}/auth/google-login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          google_id: user.sub,
-          email: user.email,
-          name: user.name,
-          picture: user.picture,
-        }),
-      });
+      // 2. Use googleLogin utility function
+      const data = await googleLogin(
+          user.sub,
+          user.email,
+          user.name,
+          user.picture
+      );
 
-      const data = await backendRes.json();
-      if (backendRes.ok && data.success) {
+      if (data.success && data.user) {
         await AsyncStorage.setItem('user', JSON.stringify(data.user));
         router.replace("/homepage/homepage");
       } else {
+        // This catch should generally not be hit if googleLogin throws on non-success, 
+        // but included for robust error handling.
         Alert.alert("Error", data.message || "Failed to verify your Google account.");
       }
-    } catch (error) {
-      console.error("Google login error:", error);
-      Alert.alert("Error", "Failed to sign in with Google. Please try again.");
+    } catch (error: any) {
+      console.error("Google login error:", error.message);
+      Alert.alert("Error", error.message || "Failed to sign in with Google. Please try again.");
     }
   };
 
@@ -79,48 +77,36 @@ export default function Index() {
       return;
     }
     
-    // 🔍 CONSOLE LOGS ADDED
+    // 🔍 CONSOLE LOGS ADDED (Simplified since the logic is now in lib/auth.ts)
     console.log("-----------------------------------------");
     console.log("Attempting Login...");
-    console.log(`API URL: ${API_URL}/auth/login`);
-    console.log(`Sending Data: { identifier: "${identifier}", password: "[HIDDEN]" }`);
     console.log("-----------------------------------------");
 
     try {
-      // Using the centralized API_URL
-      const response = await fetch(`${API_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier, password }),
-      });
-      
-      // 🔍 CONSOLE LOGS ADDED
-      console.log(`Response Status: ${response.status} (${response.statusText})`);
-      
-      // We must await .json() before checking response.ok for non-200 responses if we want to get the error body
-      const data = await response.json();
+      // 🔑 NEW: Call the centralized handleUserLogin function
+      const data = await handleUserLogin(identifier, password); 
       
       // 🔍 CONSOLE LOGS ADDED
       console.log("Response Body (data):", data);
 
-      if (!response.ok) {
-        Alert.alert("Login Failed", data.message || "Invalid credentials");
-        return;
-      }
-      
-      if (data.success && data.userId) {
-        // 🔍 CONSOLE LOG ADDED
+      if (data.success && data.requiresOTP && data.userId) {
+        // Customer login flow: Redirect to OTP verification
         console.log(`Login Success! Redirecting to Verify for UserID: ${data.userId}`);
         router.push({ pathname: "/Verify", params: { userId: String(data.userId) } });
+      } else if (data.success && data.user) {
+        // Direct login flow (Staff, Owner, Admin): Save user and redirect to homepage
+        await AsyncStorage.setItem('user', JSON.stringify(data.user));
+        router.replace("/homepage/homepage");
       } else {
-        Alert.alert("Error", "Could not initiate login. Please try again.");
+        // Should catch cases where success is true but something is missing, though handleUserLogin should generally handle errors
+        Alert.alert("Error", data.message || "Could not complete login flow. Please try again.");
       }
-    } catch (err) {
-      // 🔍 CONSOLE LOG ADDED
+    } catch (error: any) {
+      // Catch network errors or errors thrown by handleUserLogin
       console.log("-----------------------------------------");
-      console.error("❌ Login error (Network or Parsing):", err);
+      console.error("❌ Login error:", error.message);
       console.log("-----------------------------------------");
-      Alert.alert("Error", "Something went wrong during login. Check console for network errors.");
+      Alert.alert("Login Failed", error.message || "Something went wrong during login. Please check your credentials.");
     }
   };
 

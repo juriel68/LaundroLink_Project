@@ -1,4 +1,4 @@
-// routes/shops.js
+// shops.js (MODIFIED to include Delivery Options)
 
 import express from "express";
 import db from "../db.js";
@@ -110,6 +110,9 @@ router.get("/nearby", async (req, res) => {
     }
 });
 
+
+// GET /api/shops/:shopId/full-details
+// MODIFIED: Fetches all data necessary for ordering, including Delivery Options and Fabric Types.
 router.get("/:shopId/full-details", async (req, res) => {
     const { shopId } = req.params;
     const connection = await db.getConnection();
@@ -121,9 +124,13 @@ router.get("/:shopId/full-details", async (req, res) => {
             // Query 2: Get shop services with price and load info
             services,
             // Query 3: Get shop add-ons
-            addOns
+            addOns,
+            // 🔑 Query 4: Get shop-specific delivery options
+            deliveryOptions,
+            // 🔑 NEW Query 5: Get shop-specific fabric types
+            fabricTypes 
         ] = await Promise.all([
-            // 1. Fetch shop details & rating
+            // 1. Fetch shop details & rating (Unchanged)
             connection.query(
                 `SELECT 
                     LS.ShopID as id,
@@ -143,9 +150,10 @@ router.get("/:shopId/full-details", async (req, res) => {
                 [shopId]
             ),
             
-            // 2. Fetch services
+            // 2. Fetch services (Including SvcID as 'id')
             connection.query(
                 `SELECT 
+                    S.SvcID as id,
                     S.SvcName as name,
                     SS.SvcPrice as price,
                     SS.MinLoad as minLoad,
@@ -157,18 +165,41 @@ router.get("/:shopId/full-details", async (req, res) => {
                 [shopId]
             ),
 
-            // 3. Fetch add-ons
-             connection.query(
+            // 3. Fetch add-ons (Including AddOnID as 'id')
+            connection.query(
                 `SELECT
-                    AddOnName as name,
-                    AddOnPrice as price
-                FROM Add_Ons
-                WHERE ShopID = ?
-                ORDER BY AddOnName`,
+                    AO.AddOnID as id,
+                    AO.AddOnName as name,
+                    AO.AddOnPrice as price
+                FROM Add_Ons AO
+                WHERE AO.ShopID = ?
+                ORDER BY AO.AddOnName`,
+                [shopId]
+            ),
+            
+            // 4. Fetch delivery options (Filtered by ShopID)
+            connection.query(
+                `SELECT
+                    DO.DlvryID as id,
+                    DO.DlvryName as name,
+                    DO.DlvryDescription as description
+                    FROM Delivery_Options DO
+                    WHERE DO.ShopID = ?`,
+                [shopId]
+            ),
+            
+            // 🔑 5. Fetch Fabric Types (NEW - Filtered by ShopID)
+            connection.query(
+                `SELECT 
+                    FT.FabTypeID as id,
+                    FT.FabricType as name
+                FROM Fabric_Types FT
+                WHERE FT.ShopID = ?
+                ORDER BY FT.FabricType`,
                 [shopId]
             )
         ]);
-
+        
         if (!shopDetails) {
             return res.status(404).json({ error: "Shop not found." });
         }
@@ -178,11 +209,13 @@ router.get("/:shopId/full-details", async (req, res) => {
             success: true,
             shop: {
                 ...shopDetails,
-                // Format rating to one decimal place
                 rating: parseFloat(shopDetails.rating).toFixed(1) 
             },
-            services: services[0], // services[0] contains the array of results
-            addOns: addOns[0]      // addOns[0] contains the array of results
+            services: services[0], 
+            addOns: addOns[0],     
+            deliveryOptions: deliveryOptions[0],
+            // 🔑 NEW: Return dynamic fabric types
+            fabricTypes: fabricTypes[0] 
         });
 
     } catch (error) {

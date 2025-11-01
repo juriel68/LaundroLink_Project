@@ -1,6 +1,7 @@
+// avail_services.tsx (FINALIZED with robust data chain re-passing)
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useRouter, useLocalSearchParams } from "expo-router"; // <-- Import useLocalSearchParams
-import React, { useState, useMemo } from "react"; // <-- Import useMemo
+import { Stack, useRouter, useLocalSearchParams } from "expo-router"; 
+import React, { useState, useMemo } from "react"; 
 import {
   Image,
   SafeAreaView,
@@ -9,68 +10,97 @@ import {
   Text,
   TouchableOpacity,
   View,
-  Alert, // <-- Added Alert
+  Alert, 
 } from "react-native";
 
-// Define the expected interfaces for the passed data
-interface Service {
-  name: string;
-  price: number | string; 
-  minLoad: number;
-  maxLoad: number;
+// 🔑 Import all necessary types
+import { Service, AddOn, DeliveryOption, FabricType } from "@/lib/shops"; 
+
+// --- Helper Function to safely parse JSON arrays ---
+// (This is essential for robust parameter reception)
+function safeParseParams<T>(param: string | string[] | undefined): T[] {
+    if (typeof param === 'string') {
+        try {
+            return JSON.parse(param) as T[];
+        } catch (e) {
+            console.error("Failed to parse navigation param:", e);
+            return [];
+        }
+    }
+    return [];
 }
+
 
 export default function AvailableServices() {
   const router = useRouter();
-  const params = useLocalSearchParams(); // <-- Get URL parameters
-  
-  const [selectedServiceNames, setSelectedServiceNames] = useState<string[]>([]);
-  
-  // 1. Process passed shop data
-  const shopName = params.shopName as string || "Selected Shop";
-  const shopImage = params.shopImage as string || "";
+  const params = useLocalSearchParams(); 
+  
+  // State holds the single selected Service ID, or null.
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null); 
+  
+  // 1. Process passed shop data
+  const shopId = params.shopId as string;
+  const shopName = params.shopName as string || "Selected Shop";
+  const shopImage = params.shopImage as string || "";
 
-  // 2. Process passed available services data
-  const services: Service[] = useMemo(() => {
-    if (params.availableServices && typeof params.availableServices === 'string') {
-      try {
-        // Parse the JSON string back into a JavaScript array of Service objects
-        return JSON.parse(params.availableServices) as Service[];
-      } catch (e) {
-        console.error("Failed to parse services:", e);
-        return [];
-      }
-    }
-    return [];
-  }, [params.availableServices]);
+  // 2. 🔑 Safely parse all JSON arrays passed from about_laundry.tsx
+  const availableServices: Service[] = useMemo(() => {
+    return safeParseParams<Service>(params.availableServices);
+  }, [params.availableServices]);
+  
+  const availableAddOns: AddOn[] = useMemo(() => {
+    return safeParseParams<AddOn>(params.availableAddOns);
+  }, [params.availableAddOns]);
+  
+  const availableDeliveryOptions: DeliveryOption[] = useMemo(() => {
+    return safeParseParams<DeliveryOption>(params.availableDeliveryOptions);
+  }, [params.availableDeliveryOptions]);
+  
+  const availableFabricTypes: FabricType[] = useMemo(() => {
+    return safeParseParams<FabricType>(params.availableFabricTypes);
+  }, [params.availableFabricTypes]);
 
 
-  const toggleService = (serviceName: string) => { // <-- Toggle by name since IDs might not be unique across shops (better for display)
-    setSelectedServiceNames((prev) =>
-      prev.includes(serviceName) ? prev.filter((name) => name !== serviceName) : [...prev, serviceName]
-    );
+  // 🛑 CORE LOGIC: Enforce Single Selection (Radio button behavior)
+  const toggleService = (serviceId: string) => { 
+    setSelectedServiceId((prevId) => {
+      // If the currently selected ID is clicked again, deselect (set to null).
+      if (prevId === serviceId) {
+        return null;
+      } else {
+        // Otherwise, select the new ID.
+        return serviceId;
+      }
+    });
   };
-  
-  // Function to prepare data for the next screen (including the Add-Ons)
-  const proceedToDetails = () => {
-      if (selectedServiceNames.length === 0) {
-          Alert.alert("Selection Required", "Please select at least one service to proceed.");
-          return;
-      }
-      
-      // Pass all necessary shop and selected service data to the next screen
-      router.push({
-          pathname: "/(tabs)/homepage/laundry_details",
-          params: { 
-              shopName: shopName,
-              selectedServices: JSON.stringify(selectedServiceNames),
-              // Pass Add-Ons list for selection on the next screen
-              availableAddOns: params.availableAddOns, 
-              shopId: params.shopId,
-              shopImage: shopImage,
-          },
-      });
-  };
+  
+  // 3. 🔑 CRITICAL FIX: Function to prepare and pass data for the next screen
+  const proceedToDetails = () => {
+      // Validation checks if a single ID is selected (not null)
+      if (!selectedServiceId) {
+          Alert.alert("Selection Required", "Please select exactly one primary service to proceed.");
+          return;
+      }
+      
+      // Pass all necessary shop and collected data to laundry_details.tsx
+      // CRITICAL: Re-stringify and pass all full lookup arrays (Services, Addons, etc.)
+      router.push({
+          pathname: "/(tabs)/homepage/laundry_details",
+          params: { 
+              // Selected Data
+              shopId: shopId,
+              shopName: shopName,
+              shopImage: shopImage,
+              SvcID: selectedServiceId, 
+              
+              // Re-passed Look-up Lists (ENSURING data integrity)
+              availableServices: JSON.stringify(availableServices), // ⬅️ THIS IS THE FIX
+              availableAddOns: JSON.stringify(availableAddOns),
+              availableDeliveryOptions: JSON.stringify(availableDeliveryOptions),
+              availableFabricTypes: JSON.stringify(availableFabricTypes),
+          },
+      });
+  };
 
 
   return (
@@ -104,49 +134,47 @@ export default function AvailableServices() {
         <ScrollView contentContainerStyle={styles.container}>
           <View style={styles.shopSection}>
             <Image
-                // Use the dynamically passed shop image, fall back to a local asset or placeholder if needed
-              source={shopImage ? { uri: shopImage } : require("@/assets/images/washndry.png")}
-              style={styles.shopImage}
+                source={shopImage ? { uri: shopImage } : require("@/assets/images/washndry.png")}
+                style={styles.shopImage}
             />
-            <Text style={styles.shopName}>{shopName}</Text> {/* <-- Use dynamic name */}
+            <Text style={styles.shopName}>{shopName}</Text> 
           </View>
 
-          <Text style={styles.instruction}>
-            Please select the service(s) you need:
+          <Text style={styles.instruction}>Please select **one** primary service for your order:
           </Text>
 
           <View style={styles.servicesList}>
-            {services.length === 0 && (
-                <Text style={styles.noServiceText}>No services available for this shop.</Text>
-            )}
-            {services.map((service) => (
+            {availableServices.length === 0 && (
+                <Text style={styles.noServiceText}>No services available for this shop.</Text>
+            )}
+            {availableServices.map((service) => (
               <TouchableOpacity
-                key={service.name} // <-- Use name as key, or shopId + name for ultimate safety
+                key={service.id} // Use ID as key
                 style={[
                   styles.serviceOption,
-                  selectedServiceNames.includes(service.name) &&
+                  selectedServiceId === service.id &&
                     styles.serviceOptionSelected,
                 ]}
-                onPress={() => toggleService(service.name)}
+                onPress={() => toggleService(service.id)} // Toggle by ID
                 activeOpacity={0.7}
               >
                 <Ionicons
+                  // Use radio button icon logic
                   name={
-                    selectedServiceNames.includes(service.name)
-                      ? "checkbox"
-                      : "square-outline"
+                    selectedServiceId === service.id
+                      ? "radio-button-on" 
+                      : "radio-button-off" 
                   }
                   size={22}
-                  color={selectedServiceNames.includes(service.name) ? "#004aad" : "#444"}
+                  color={selectedServiceId === service.id ? "#004aad" : "#444"}
                   style={{ marginRight: 12 }}
                 />
                 <Text
                   style={[
                     styles.serviceText,
-                    selectedServiceNames.includes(service.name) && styles.serviceTextSelected,
+                    selectedServiceId === service.id && styles.serviceTextSelected,
                   ]}
-                >
-                  {service.name}
+                >{service.name} (₱{parseFloat(String(service.price)).toFixed(2)})
                 </Text>
               </TouchableOpacity>
             ))}
@@ -159,13 +187,13 @@ export default function AvailableServices() {
         <TouchableOpacity
           style={[
             styles.nextButton,
-            selectedServiceNames.length === 0 && styles.nextButtonDisabled,
+            !selectedServiceId && styles.nextButtonDisabled, // Check for null
           ]}
-          disabled={selectedServiceNames.length === 0}
-          onPress={proceedToDetails} // <-- Use the new function
+          disabled={!selectedServiceId}
+          onPress={proceedToDetails} 
         >
           <Text style={styles.nextText}>
-            {selectedServiceNames.length === 0 ? "Select a service" : "Next"}
+            {!selectedServiceId ? "Select a service" : "Next"}
           </Text>
         </TouchableOpacity>
       </View>
@@ -200,7 +228,7 @@ const styles = StyleSheet.create({
   shopImage: {
     width: 130,
     height: 130,
-    resizeMode: "cover", // Changed from 'contain' for dynamic images
+    resizeMode: "cover", 
     borderRadius: 15,
     backgroundColor: "#fff",
     shadowColor: "#000",
@@ -221,12 +249,12 @@ const styles = StyleSheet.create({
     color: "#444",
     fontWeight: "500",
   },
-  noServiceText: {
-    textAlign: "center",
-    color: '#888',
-    fontStyle: 'italic',
-    marginTop: 20,
-  },
+  noServiceText: {
+    textAlign: "center",
+    color: '#888',
+    fontStyle: 'italic',
+    marginTop: 20,
+  },
   servicesList: {
     marginTop: 10,
     width: "100%",

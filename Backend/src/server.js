@@ -20,23 +20,14 @@ const app = express();
 
 // --- Robust CORS Configuration ---
 const allowedOrigins = [
+    'http://localhost',
     // 1. Local Development Environments
-    'http://localhost:8081', // React Native Dev Server (common default)
+    'http://localhost:8081',
+    'http://localhost:8082', // React Native Dev Server (common default)
     'http://localhost:8080', // Default port for Web apps
     'http://localhost:3000', // React/Next.js frontend default
     'http://127.0.0.1:8081',
     'http://127.0.0.1:8080',
-
-    // 2. Mobile Emulator/Device Testing (You may need to update the 192.x.x.x IP)
-    'http://192.168.0.101:8081', // Your specific local IP
-    'http://10.0.2.2:8081',      // Android Emulator localhost
-    'http://10.0.3.2:8081',      // Genymotion Emulator localhost
-
-    // 3. Production/Staging Domains (Replace these with your actual deployed URLs)
-    // process.env.CLIENT_URL, 
-    // 'https://your-production-app.com', 
-    
-    // Add any others as needed...
 ];
 
 app.use(cors({

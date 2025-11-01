@@ -55,7 +55,7 @@ async function sendEmail(to, subject, html) {
 // POST /api/auth/login
 router.post("/login", async (req, res) => {
     // Destructure 'identifier' and alias it to 'email'
-    const { identifier: email, password } = req.body;
+    const { email, password } = req.body;
 
     console.log("\n--- Backend Login Attempt Start ---");
     console.log(`[Input] Attempting login for email: ${email}`);
@@ -125,21 +125,21 @@ router.post("/login", async (req, res) => {
         // ... Fetch additional details based on role ... (This existing logic is retained)
         if (user.UserRole === 'Shop Owner') {
             const [ownerDetails] = await db.query(
-                `SELECT s.ShopID, s.ShopName
-                 FROM Shop_Owners o
-                 JOIN Laundry_Shops s ON o.OwnerID = s.OwnerID
-                 WHERE o.OwnerID = ?`,
-                [user.UserID]
+                `SELECT s.ShopID, s.ShopName
+                FROM Shop_Owners o
+                JOIN Laundry_Shops s ON o.OwnerID = s.OwnerID
+                WHERE o.OwnerID = ?`,
+                [user.UserID]
             );
             if (ownerDetails.length > 0) {
                 userDetails = { ...userDetails, ...ownerDetails[0] };
             }
         } else if (user.UserRole === 'Staff') {
             const [staffDetails] = await db.query(
-                `SELECT sh.ShopID, sh.ShopName, s.StaffName, s.StaffPosition
-                 FROM Staffs s
-                 JOIN Laundry_Shops sh ON s.ShopID = sh.ShopID
-                 WHERE s.StaffID = ?`,
+                `SELECT sh.ShopID, sh.ShopName, s.StaffName, s.StaffRole
+                FROM Staffs s
+                JOIN Laundry_Shops sh ON s.ShopID = sh.ShopID
+                WHERE s.StaffID = ?`,
                 [user.UserID]
             );
             if (staffDetails.length > 0) {
