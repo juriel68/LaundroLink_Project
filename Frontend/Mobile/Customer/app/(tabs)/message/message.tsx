@@ -27,7 +27,7 @@ interface ConversationUI {
   unread: boolean; 
   unreadCount: number; 
   logo: any; 
-  partnerId: string; // Needed for navigation to the chat screen (Staff ID or Shop ID)
+  partnerId: string; // Needed for navigation to the chat screen (Staff ID or Shop Owner ID)
 }
 
 const PLACEHOLDER_LOGO = require("@/assets/images/laundry.avif"); 
@@ -42,34 +42,70 @@ const formatTime = (timestamp: string): string => {
   }).replace('AM', 'am').replace('PM', 'pm');
 };
 
-// Maps backend ConversationPreview to frontend UI structure
-const mapToUI = (data: ConversationPreview[]): ConversationUI[] => {
-    // 🔑 CONSOLE LOG: Logging data before mapping
-    console.log(`[FRONTEND-UI] Starting mapping for ${data.length} raw conversations.`);
-    
-    const mappedData = data.map(item => ({
-        id: item.conversationId,             
-        title: item.name,                    
-        message: item.lastMessage || (item.lastMessageImage ? '📷 Photo' : 'Start a conversation...'),
-        time: formatTime(item.time),
-        unread: item.unreadCount > 0,
-        unreadCount: item.unreadCount,
-        logo: PLACEHOLDER_LOGO, 
-        partnerId: item.partnerId,
-    }));
-
-    // 🔑 CONSOLE LOG: Logging final mapped data sample
-    if (mappedData.length > 0) {
-        console.log(`[FRONTEND-UI] Mapping complete. First conversation title: ${mappedData[0].title}, ID: ${mappedData[0].id}`);
-    } else {
-        console.log("[FRONTEND-UI] Mapping complete. No conversations to display.");
+/**
+ * 🔑 NEW LOGIC: Strips the JSON payload and only returns the prefix.
+ */
+const getCleanDisplayMessage = (message: string | null, isImage: boolean): string => {
+    if (!message) {
+        return isImage ? '📷 Photo' : 'Start a conversation...';
     }
 
-    return mappedData;
+    // 1. Check for Cancellation (which is a clean static message from the backend now)
+    if (message.toLowerCase().includes('cancelled') || message.toLowerCase().includes('rejected')) {
+        // The backend should already be sending "❌ The order was cancelled"
+        return message; 
+    }
+
+    // 2. Check for Invoice (needs cleaning)
+    if (message.includes('{"type":"INVOICE"')) {
+        const jsonStartIndex = message.indexOf('{');
+        // Return only the readable prefix, if one exists
+        if (jsonStartIndex > 0) {
+            return message.substring(0, jsonStartIndex).trim();
+        }
+        // Fallback if the message is ONLY the JSON blob
+        return '🧾 Please confirm your order & proceed to pay'; 
+    }
+    
+    // 3. Return the clean text message
+    return message;
+};
+
+
+// Maps backend ConversationPreview to frontend UI structure
+const mapToUI = (data: ConversationPreview[]): ConversationUI[] => {
+    console.log(`[FRONTEND-UI] Starting mapping for ${data.length} raw conversations.`);
+    
+    const mappedData = data.map(item => {
+        // 🔑 CHANGE: Use the new cleaning logic to handle the JSON/Cancellation strings
+        let displayMessage = getCleanDisplayMessage(item.lastMessage, !!item.lastMessageImage);
+
+        return {
+            id: item.conversationId,             
+            title: item.name,                    
+            message: displayMessage,
+            time: formatTime(item.time),
+            unread: item.unreadCount > 0,
+            unreadCount: item.unreadCount,
+            logo: PLACEHOLDER_LOGO, 
+            partnerId: item.partnerId,
+        };
+    });
+
+    // 🔑 CONSOLE LOG: Logging final mapped data sample
+    if (mappedData.length > 0) {
+        console.log(`[FRONTEND-UI] Mapping complete. First conversation title: ${mappedData[0].title}, ID: ${mappedData[0].id}`);
+    } else {
+        console.log("[FRONTEND-UI] Mapping complete. No conversations to display.");
+    }
+
+    return mappedData;
 };
 
 
 export default function Message() {
+// ... (rest of the component remains the same) ...
+
   const router = useRouter();
   const navigation = useNavigation();
   const [conversations, setConversations] = useState<ConversationUI[]>([]);
@@ -82,10 +118,10 @@ export default function Message() {
   const loadConversations = async (userId: string) => {
     setIsLoading(true);
     try {
-        // fetchConversations in messages.ts has its own log
+        // fetchConversations in messages.ts has its own log
         const rawData = await fetchConversations(userId); 
-        // 🔑 CONSOLE LOG: Logging raw data count
-        console.log(`[FRONTEND-UI:loadConversations] Received ${rawData.length} items for mapping.`);
+        // 🔑 CONSOLE LOG: Logging raw data count
+        console.log(`[FRONTEND-UI:loadConversations] Received ${rawData.length} items for mapping.`);
         setConversations(mapToUI(rawData));
     } catch (error) {
       console.error("[FRONTEND-UI] Error fetching conversations:", error);
@@ -141,11 +177,11 @@ export default function Message() {
 
   const handlePress = async (item: ConversationUI) => {
     if (!currentUserId) return; 
-      
+     
     // 1. Backend Update: Mark messages as read
     if (item.unread) {
-        console.log(`[FRONTEND-UI] Marking messages as read for conversation: ${item.id}`);
-        markMessagesAsRead(item.id, currentUserId); 
+        console.log(`[FRONTEND-UI] Marking messages as read for conversation: ${item.id}`);
+        markMessagesAsRead(item.id, currentUserId); 
     }
     
     // 2. Navigation: Go to the chat screen

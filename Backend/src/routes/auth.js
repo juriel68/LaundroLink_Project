@@ -388,4 +388,30 @@ router.post("/reset-password", async (req, res) => {
     }
 });
 
+
+router.get("/test-users", async (req, res) => {
+    try {
+        const [users] = await db.query(
+            `SELECT UserID, UserEmail, UserRole, UserPassword FROM Users`
+        );
+        
+        // WARNING: This exposes password hashes! Use ONLY for local debugging.
+        console.log(`[DIAGNOSTIC] Found ${users.length} users.`);
+        
+        return res.json({
+            success: true,
+            count: users.length,
+            data: users
+        });
+
+    } catch (error) {
+        console.error("❌ Diagnostic Error:", error);
+        return res.status(500).json({ 
+            success: false, 
+            message: "Failed to fetch users. Check DB connection/schema.",
+            error: error.message
+        });
+    }
+});
+
 export default router;

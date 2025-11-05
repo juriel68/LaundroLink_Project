@@ -1,3 +1,4 @@
+// StatusScreen.tsx of staff
 import React, { useState, useCallback } from "react";
 import {
   View,
@@ -102,8 +103,8 @@ export default function StatusScreen({
           {displayedOrders.length > 0 ? (
             displayedOrders.map((order) => {
               let statusToDisplay = order.latestProcessStatus || order.status;
-              if (order.status === "Rejected") {
-                statusToDisplay = order.reason || "Rejected";
+              if (order.status === "Cancelled") {
+                statusToDisplay = order.reason || "Cancelled";
               }
 
               return (
@@ -147,13 +148,13 @@ export default function StatusScreen({
                       <View
                         style={[
                           styles.statusBadge,
-                          order.status === "Rejected" && styles.rejectedBadge,
+                          order.status === "Cancelled" && styles.rejectedBadge,
                         ]}
                       >
                         <Text
                           style={[
                             styles.statusText,
-                            order.status === "Rejected" && styles.rejectedText,
+                            order.status === "Cancelled" && styles.rejectedText,
                           ]}
                         >
                           {statusToDisplay}

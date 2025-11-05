@@ -179,9 +179,12 @@ router.post("/", async (req, res) => {
 // =================================================================
 
 // GET /api/orders/customer/:customerId
-// ✅ NEW ROUTE: Fetch all orders for a specific customer.
+// Fetch all orders for a specific customer.
 router.get("/customer/:customerId", async (req, res) => {
     const { customerId } = req.params;
+    
+    console.log(`\n--- BACKEND: Fetching Order Previews for ${customerId} ---`);
+
     try {
         const query = `
             WITH LatestOrderStatus AS (
@@ -206,10 +209,86 @@ router.get("/customer/:customerId", async (req, res) => {
             ORDER BY o.OrderCreatedAt DESC;
         `;
         const [rows] = await db.query(query, [customerId]);
+        
+        // 🚀 DIAGNOSTIC LOG: Display all fetched order details
+        console.log(`[BACKEND LOG] Found ${rows.length} order previews.`);
+        if (rows.length > 0) {
+            rows.forEach(row => {
+                console.log(` - ID: ${row.id}, Shop: ${row.shopName}, Status: ${row.status}, Total: ${row.totalAmount}`);
+            });
+        } else {
+            console.log(" - No orders found for this customer.");
+        }
+        console.log("------------------------------------------");
+
         res.json(rows);
     } catch (error) {
         console.error("Error fetching customer orders:", error);
         res.status(500).json({ error: "Failed to fetch customer orders" });
+    }
+});
+
+
+/**
+ * GET /api/orders/:orderId/process-history
+ * Fetches chronological process status updates for the order from Order_Processing and Order_Status tables.
+ * This provides the full timeline necessary for the frontend tracking bar.
+ */
+router.get("/:orderId/process-history", async (req, res) => {
+    const { orderId } = req.params;
+    
+    try {
+        // 1. Fetch Process Steps (Washing, Folding, etc.)
+        const [processSteps] = await db.query(
+            `
+            SELECT 
+                OrderProcStatus AS status,
+                OrderProcUpdatedAt AS time
+            FROM Order_Processing
+            WHERE OrderID = ?
+            ORDER BY OrderProcUpdatedAt ASC;
+            `,
+            [orderId]
+        );
+        
+        // 2. Fetch Core Statuses (Pending, Completed, Cancelled)
+        const [coreStatuses] = await db.query(
+            `
+            SELECT 
+                OrderStatus AS status,
+                OrderUpdatedAt AS time
+            FROM Order_Status
+            WHERE OrderID = ?
+            ORDER BY OrderUpdatedAt ASC;
+            `,
+            [orderId]
+        );
+        
+        const combinedMap = new Map();
+        
+        // Process core statuses first (to ensure 'Pending' is recorded)
+        coreStatuses.forEach(row => {
+            if (!combinedMap.has(row.status)) {
+                combinedMap.set(row.status, row);
+            }
+        });
+
+        // Process granular steps
+        processSteps.forEach(row => {
+            // Overwrite if it's a sub-step, or if the status hasn't been recorded yet
+            combinedMap.set(row.status, row);
+        });
+
+        const combinedTimeline = Array.from(combinedMap.values());
+
+        // 4. Final sort by time to ensure perfect chronological order
+        combinedTimeline.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+
+        res.json(combinedTimeline);
+        
+    } catch (error) {
+        console.error("Error fetching process history:", error);
+        res.status(500).json({ error: "Failed to fetch tracking history." });
     }
 });
 
@@ -268,8 +347,10 @@ router.get("/shop/:shopId", async (req, res) => {
     }
 });
 
-// GET /api/orders/:orderId
-// Fetches a single order's details, including fabrics and addons.
+
+
+// routes/orders.js (Excerpt: router.get("/:orderId"))
+
 router.get("/:orderId", async (req, res) => {
     const { orderId } = req.params;
     const connection = await db.getConnection();
@@ -281,14 +362,21 @@ router.get("/:orderId", async (req, res) => {
                 c.CustName AS customerName,
                 c.CustPhone AS customerPhone,
                 ls.ShopName AS shopName,
-                (SELECT CustAddress FROM Cust_Addresses WHERE CustID = c.CustID LIMIT 1) AS customerAddress,
+                i.InvoiceID AS invoiceId,
+                (SELECT CustAddress FROM Cust_Addresses WHERE CustID = c.CustID LIMIT 1) AS customerAddress, 
                 s.SvcName AS serviceName,
-                ss.SvcPrice AS servicePrice,
-                ld.Kilogram AS initialWeight,
-                ld.FinalWeight AS finalWeight,
+                
+                CAST(ss.SvcPrice AS DECIMAL(10, 2)) AS servicePrice, 
+                CAST(ld.Kilogram AS DECIMAL(5, 1)) AS initialWeight, 
                 ld.SpecialInstr AS instructions,
                 do.DlvryName AS deliveryType,
-                do.DlvryFee AS deliveryFee,
+                
+                CAST(i.DlvryFee AS DECIMAL(10, 2)) AS deliveryFee, 
+                CAST(i.PayAmount AS DECIMAL(10, 2)) AS totalAmount,
+                
+                -- 🔑 FIX 1: Join Payment_Methods and select the name
+                PM.MethodName AS paymentMethodName, 
+                
                 (
                     SELECT os.OrderStatus
                     FROM Order_Status os
@@ -306,6 +394,9 @@ router.get("/:orderId", async (req, res) => {
             LEFT JOIN Laundry_Details ld ON o.LndryDtlID = ld.LndryDtlID
             LEFT JOIN Delivery_Options do ON o.DlvryID = do.DlvryID
             LEFT JOIN Rejected_Orders rej ON o.OrderID = rej.OrderID
+            LEFT JOIN Invoices i ON o.OrderID = i.OrderID 
+            -- 🔑 FIX 2: Add JOIN to Payment_Methods
+            LEFT JOIN Payment_Methods PM ON i.MethodID = PM.MethodID
             WHERE o.OrderID = ?;
         `;
         const [[orderDetails]] = await connection.query(orderQuery, [orderId]);
@@ -313,27 +404,29 @@ router.get("/:orderId", async (req, res) => {
         if (!orderDetails) {
             return res.status(404).json({ error: "Order not found" });
         }
-
-        // --- Fetch Fabrics ---
+        
+        // Fetch Fabrics and Addons (queries remain the same)
         const [fabrics] = await connection.query(
-            `SELECT ft.FabTypeName FROM Order_Fabrics ofb 
+            `SELECT ft.FabricType FROM Order_Fabrics ofb 
              JOIN Fabric_Types ft ON ofb.FabTypeID = ft.FabTypeID
              WHERE ofb.LndryDtlID = (SELECT LndryDtlID FROM Orders WHERE OrderID = ?)`,
             [orderId]
         );
 
-        // --- Fetch Addons ---
         const [addons] = await connection.query(
-            `SELECT a.AddOnName FROM Order_AddOns oao 
-             JOIN AddOns a ON oao.AddOnID = a.AddOnID
+            `SELECT 
+                a.AddOnName, 
+                CAST(a.AddOnPrice AS DECIMAL(10, 2)) AS AddOnPrice 
+             FROM Order_AddOns oao 
+             JOIN Add_Ons a ON oao.AddOnID = a.AddOnID
              WHERE oao.LndryDtlID = (SELECT LndryDtlID FROM Orders WHERE OrderID = ?)`,
             [orderId]
         );
 
         res.json({
             ...orderDetails,
-            fabrics: fabrics.map(f => f.FabTypeName),
-            addons: addons.map(a => a.AddOnName)
+            fabrics: fabrics.map(f => f.FabricType),
+            addons: addons.map(a => ({ name: a.AddOnName, price: a.AddOnPrice }))
         });
     } catch (error) {
         console.error("Error fetching order details:", error);
@@ -343,12 +436,81 @@ router.get("/:orderId", async (req, res) => {
     }
 });
 
+
+
+// POST /api/orders/cancel
+// Handles the cancellation of an order by updating Order_Status, Invoice_Status, and Rejected_Orders.
+router.post("/cancel", async (req, res) => {
+    const { orderId, userId, userRole } = req.body;
+    
+    if (!orderId || !userId) {
+        return res.status(400).json({ success: false, message: "Order ID and User ID are required." });
+    }
+
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // 1. Update Order_Status: Insert 'Cancelled' status
+        const newOrderStatId = generateID('OSD'); 
+        await connection.query(
+            "INSERT INTO Order_Status (OrderStatID, OrderID, OrderStatus, OrderUpdatedAt) VALUES (?, ?, 'Cancelled', NOW())",
+            [newOrderStatId, orderId]
+        );
+
+        // 2. Find the latest InvoiceID associated with this Order
+        const [invoice] = await connection.query(
+            "SELECT InvoiceID FROM Invoices WHERE OrderID = ?",
+            [orderId]
+        );
+
+        if (invoice.length > 0) {
+            const invoiceId = invoice[0].InvoiceID;
+            
+            // 3. Update Invoice_Status: Insert 'Voided' status
+            const newInvoiceStatID = generateID('IS'); 
+            await connection.query(
+                "INSERT INTO Invoice_Status (InvoiceStatusID, InvoiceID, InvoiceStatus, StatUpdateAt) VALUES (?, ?, 'Voided', NOW())",
+                [newInvoiceStatID, invoiceId]
+            );
+        }
+
+        // 4. Update Rejected_Orders: Insert a record for the cancellation
+        const newRejectedId = generateID('REJ');
+        await connection.query(
+            "INSERT INTO Rejected_Orders (RejectedID, OrderID, RejectionReason, RejectionNote, RejectedAt) VALUES (?, ?, ?, ?, NOW())",
+            [newRejectedId, orderId, 'Customer Cancelled', null] // 'Customer Cancelled' is the reason, Note is NULL
+        );
+        
+        // 5. Log the cancellation activity
+        await logUserActivity(
+            userId,
+            userRole,
+            'Cancel Order',
+            `Order ${orderId} cancelled by ${userRole}.`
+        );
+
+        await connection.commit();
+        
+        res.status(200).json({ 
+            success: true, 
+            message: "Order has been successfully cancelled and voided." 
+        });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("❌ Error cancelling order:", error);
+        res.status(500).json({ success: false, message: "Failed to cancel order due to a server error." });
+    } finally {
+        connection.release();
+    }
+});
+
 // =================================================================
 // API Routes: Status & Details Update
 // =================================================================
 
-// POST /api/orders/status
-// Route for updating an order's main status.
+// routes/orders.js (Excerpt: POST /api/orders/status)
 router.post("/status", async (req, res) => {
     const { orderId, newStatus, reason, note, userId, userRole } = req.body;
 
@@ -362,30 +524,112 @@ router.post("/status", async (req, res) => {
     try {
         await connection.beginTransaction();
         
-        // 1. Always insert the main status into the Order_Status table
+        // 1. Insert the main status into the Order_Status table
         const newOrderStatId = generateID('OSD');
         await connection.query(
             "INSERT INTO Order_Status (OrderStatID, OrderID, OrderStatus, OrderUpdatedAt) VALUES (?, ?, ?, NOW())",
             [newOrderStatId, orderId, newStatus]
         );
 
-        // 2. If the status is "Rejected" or "Cancelled", also insert details into the relevant table
-        if (newStatus === "Rejected" && reason) {
+        // 2. Handle Non-Successful Order Statuses (Rejected or Cancelled)
+        if (newStatus === "Rejected" || newStatus === "Cancelled") {
+            
+            let rejectionReason;
+            let invoiceStatusToUse;
+            
+            if (newStatus === "Rejected") {
+                 rejectionReason = reason || 'Order Rejected by Shop';
+                 invoiceStatusToUse = 'Rejected'; 
+            } else { // newStatus === "Cancelled" (Customer initiated)
+                 rejectionReason = 'Customer Initiated Cancellation';
+                 invoiceStatusToUse = 'Cancelled';
+            }
+            
+            // 2a. Insert record into Rejected_Orders table
             const newRejectedId = generateID('REJ');
             await connection.query(
                 "INSERT INTO Rejected_Orders (RejectedID, OrderID, RejectionReason, RejectionNote, RejectedAt) VALUES (?, ?, ?, ?, NOW())",
-                [newRejectedId, orderId, reason, note || null]
+                [newRejectedId, orderId, rejectionReason, note || null]
             );
+
+            // 2b. Insert the appropriate status into Invoice_Status
+            const [invoice] = await connection.query(
+                "SELECT InvoiceID FROM Invoices WHERE OrderID = ?",
+                [orderId]
+            );
+
+            if (invoice.length > 0) {
+                const invoiceId = invoice[0].InvoiceID;
+                const newInvoiceStatID = generateID('IS');
+                await connection.query(
+                    "INSERT INTO Invoice_Status (InvoiceStatusID, InvoiceID, InvoiceStatus, StatUpdateAt) VALUES (?, ?, ?, NOW())",
+                    [newInvoiceStatID, invoiceId, invoiceStatusToUse]
+                );
+            }
+            
+            // 🔑 2c. CRITICAL FIX: INSERT STATIC CANCELLATION MESSAGE
+            if (newStatus === "Cancelled") {
+                const [orderParticipants] = await connection.query(
+                    `SELECT CustID, StaffID, ShopID FROM Orders WHERE OrderID = ?`, 
+                    [orderId]
+                );
+                
+                // Determine participants for the conversation thread
+                const customerId = orderParticipants[0].CustID;
+                const shopPartyId = orderParticipants[0].StaffID || orderParticipants[0].ShopID; 
+
+                // Sender is the current user (Customer)
+                const sender = userId; 
+                // Receiver is the other party (Staff/Shop)
+                const receiver = (userId === customerId) ? shopPartyId : customerId; 
+                
+                const participant1 = customerId < shopPartyId ? customerId : shopPartyId;
+                const participant2 = customerId < shopPartyId ? shopPartyId : customerId;
+
+                // Find or Create the Conversation
+                let [[conversation]] = await connection.query(
+                    "SELECT ConversationID FROM Conversations WHERE Participant1_ID = ? AND Participant2_ID = ?",
+                    [participant1, participant2]
+                );
+                
+                let conversationId;
+                if (conversation) {
+                    conversationId = conversation.ConversationID;
+                } else {
+                    conversationId = generateID('CONV');
+                    await connection.query(
+                        "INSERT INTO Conversations (ConversationID, Participant1_ID, Participant2_ID, UpdatedAt) VALUES (?, ?, ?, NOW())",
+                        [conversationId, participant1, participant2]
+                    );
+                }
+
+                // Insert the new message: "❌ The order was cancelled"
+                const newMessageId = generateID('MSG');
+                const staticMessageText = "❌ The order was cancelled";
+
+                await connection.query(
+                    `INSERT INTO Messages 
+                     (MessageID, ConversationID, SenderID, ReceiverID, MessageText, MessageStatus, CreatedAt) 
+                     VALUES (?, ?, ?, ?, ?, 'Delivered', NOW())`, 
+                    [newMessageId, conversationId, sender, receiver, staticMessageText]
+                );
+                
+                // Update conversation timestamp
+                await connection.query(
+                    "UPDATE Conversations SET UpdatedAt = NOW() WHERE ConversationID = ?",
+                    [conversationId]
+                );
+            }
         }
         
-        // 💡 LOG: Order Status Change
+        // 3. Log Order Status Change
         await logUserActivity(userId, userRole, 'Update Order Status', `Order ${orderId} status changed to: ${newStatus}`);
 
         await connection.commit();
 
         res
             .status(200)
-            .json({ success: true, message: "Order status updated successfully" });
+            .json({ success: true, message: `Order status updated to ${newStatus} successfully` });
     } catch (error) {
         await connection.rollback();
         console.error("Error updating order status:", error);
@@ -395,45 +639,162 @@ router.post("/status", async (req, res) => {
     }
 });
 
-// PATCH /api/orders/weight
-// PATCH to update the initial/final laundry weight.
+
+//PATCH /api/orders/weight route
 router.patch("/weight", async (req, res) => {
-    const { orderId, newWeight, isFinal = false, userId, userRole } = req.body;
+    const { orderId, newWeight, isFinal = false, userId, userRole } = req.body; 
 
     if (!orderId || newWeight === undefined) {
         return res
             .status(400)
             .json({ error: "Order ID and new weight are required" });
     }
+    
+    const validatedWeight = parseFloat(newWeight);
+    if (isNaN(validatedWeight) || validatedWeight < 0) {
+        return res.status(400).json({ success: false, message: "Invalid weight value." });
+    }
 
     const connection = await db.getConnection();
     try {
-        const weightColumn = isFinal ? 'FinalWeight' : 'Kilogram';
+        await connection.beginTransaction();
+
+        // 1. Fetch necessary details, INCLUDING CustomerID (CustID)
+        const [orderData] = await connection.query(
+            `
+            SELECT 
+                o.LndryDtlID, 
+                o.CustID, 
+                o.ShopID,
+                i.InvoiceID,
+                i.DlvryFee,
+                ss.SvcPrice 
+            FROM Orders o
+            JOIN Invoices i ON o.OrderID = i.OrderID
+            JOIN Shop_Services ss ON o.ShopID = ss.ShopID AND o.SvcID = ss.SvcID
+            WHERE o.OrderID = ?
+            `,
+            [orderId]
+        );
+
+        if (orderData.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ success: false, message: "Order not found." });
+        }
+
+        const { LndryDtlID, SvcPrice, InvoiceID, DlvryFee, CustID } = orderData[0];
+        const fixedServicePrice = parseFloat(SvcPrice);
+        const deliveryFee = parseFloat(DlvryFee);
+
+        // 1.5. Calculate total cost of Add-Ons
+        const [addonCosts] = await connection.query(
+            `
+            SELECT SUM(a.AddOnPrice) AS totalAddOnCost
+            FROM Order_AddOns oao
+            JOIN Add_Ons a ON oao.AddOnID = a.AddOnID
+            WHERE oao.LndryDtlID = ?
+            `,
+            [LndryDtlID]
+        );
         
-        const [result] = await connection.query(
+        const totalAddOnCost = parseFloat(addonCosts[0].totalAddOnCost) || 0.00;
+
+
+        // 2. Update the weight in Laundry_Details (Kilogram or FinalWeight)
+        const weightColumn = isFinal ? 'FinalWeight' : 'Kilogram';
+        await connection.query(
             `
             UPDATE Laundry_Details
             SET ${weightColumn} = ?
-            WHERE LndryDtlID = (SELECT LndryDtlID FROM Orders WHERE OrderID = ?)
+            WHERE LndryDtlID = ?
             `,
-            [newWeight, orderId]
+            [validatedWeight, LndryDtlID]
         );
 
-        if (result.affectedRows === 0) {
-            return res
-                .status(404)
-                .json({ error: "Order not found or no change made" });
-        }
+        // 3. Recalculate and Update Invoice PayAmount
+        const newPayAmount = fixedServicePrice + totalAddOnCost + deliveryFee;
         
-        // 💡 LOG: Weight Update
-        await logUserActivity(userId, userRole, 'Update Order Details', `Order ${orderId}: ${weightColumn} updated to ${newWeight}`);
+        await connection.query(
+            `
+            UPDATE Invoices
+            SET PayAmount = ?
+            WHERE InvoiceID = ?
+            `,
+            [newPayAmount.toFixed(2), InvoiceID]
+        );
 
-        res
-            .status(200)
-            .json({ success: true, message: "Weight updated successfully" });
+        // 4. INSERT THE MESSAGE (New Logic: Send Structured Invoice)
+        const senderId = userId;      // Staff ID
+        const receiverId = CustID;    // Customer ID
+        const newTotal = newPayAmount.toFixed(2);
+        
+        // Construct the structured JSON invoice data
+        const invoiceJsonData = {
+            type: "INVOICE",
+            orderId: orderId,
+            shopId: orderData[0].ShopID, 
+            newWeight: validatedWeight.toFixed(2),
+            newTotal: newTotal,
+        };
+
+        // Construct the final message text: Readable Prefix + JSON payload
+        const readablePrefix = "Weight updated. Please confirm your order."; 
+        const invoiceJsonString = JSON.stringify(invoiceJsonData);
+        const finalMessageText = `${readablePrefix}\n${invoiceJsonString}`;
+
+
+        // 4a. Find or Create the Conversation (Lowest ID first)
+        const participant1 = senderId < receiverId ? senderId : receiverId;
+        const participant2 = senderId < receiverId ? receiverId : senderId;
+
+        let [[conversation]] = await connection.query(
+            "SELECT ConversationID FROM Conversations WHERE Participant1_ID = ? AND Participant2_ID = ?",
+            [participant1, participant2]
+        );
+
+        let conversationId;
+        if (conversation) {
+            conversationId = conversation.ConversationID;
+        } else {
+            // NOTE: Assumes generateID helper is available
+            conversationId = generateID('CONV'); 
+            await connection.query(
+                "INSERT INTO Conversations (ConversationID, Participant1_ID, Participant2_ID, UpdatedAt) VALUES (?, ?, ?, NOW())",
+                [conversationId, participant1, participant2]
+            );
+        }
+
+        // 4b. Insert the new message
+        // NOTE: Assumes generateID helper is available
+        const newMessageId = generateID('MSG');
+        await connection.query(
+            `INSERT INTO Messages 
+             (MessageID, ConversationID, SenderID, ReceiverID, MessageText, MessageStatus, CreatedAt) 
+             VALUES (?, ?, ?, ?, ?, 'Delivered', NOW())`, // Status 'Delivered' marks it as unread
+            [newMessageId, conversationId, senderId, receiverId, finalMessageText]
+        );
+
+        // 4c. Update conversation timestamp
+        await connection.query(
+            "UPDATE Conversations SET UpdatedAt = NOW() WHERE ConversationID = ?",
+            [conversationId]
+        );
+        
+        // 5. Log activity and Commit
+        await logUserActivity(userId, userRole, 'Update Order Details', `Order ${orderId}: Invoice recalculated and customer notified.`);
+
+        await connection.commit();
+
+        res.status(200).json({ 
+            success: true, 
+            message: "Weight updated, invoice recalculated, and customer notified.",
+            newTotal: newTotal
+        });
+        
     } catch (error) {
-        console.error("Error updating weight:", error);
-        res.status(500).json({ error: "Failed to update weight" });
+        await connection.rollback();
+        console.error("Error during weight update and messaging:", error);
+        res.status(500).json({ success: false, message: "Failed to update weight and send notification." });
     } finally {
         connection.release();
     }

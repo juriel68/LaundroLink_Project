@@ -1,3 +1,4 @@
+//home.tsx of staff
 import React, { useState, useCallback } from "react";
 import {
   View,
@@ -136,8 +137,8 @@ export default function HomeScreen() {
           />
           <StatusCardLink
             icon="close-circle-outline"
-            label="Rejected"
-            count={getOrderStatusCount("Rejected")}
+            label="Cancelled"
+            count={getOrderStatusCount("Cancelled")}
             colors={["#E74C3C", "#A10D0D"]}
             onPress={() =>
               router.push({ pathname: "/home/rejected", params: { shopId } })
