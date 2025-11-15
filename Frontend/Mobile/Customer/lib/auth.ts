@@ -1,6 +1,6 @@
-// lib/auth.ts
+// lib/auth.ts - REVISED for Page Load Maintenance Gating
 
-import { API_URL } from "./api"; // Assuming './api' exports API_URL
+import { API_URL } from "./api"; 
 
 // =================================================================
 // 1. Types for Authentication
@@ -8,159 +8,181 @@ import { API_URL } from "./api"; // Assuming './api' exports API_URL
 
 /**
  * Interface for the detailed user object returned upon successful login
- * (for direct logins and post-OTP verification).
  */
 export interface UserDetails {
-  UserID: string;
-  UserEmail: string;
-  UserRole: 'Customer' | 'Staff' | 'Shop Owner' | 'Admin';
-  picture?: string;
-  ShopID?: string;
-  ShopName?: string;
-  StaffName?: string;
-  StaffPosition?: string;
+    UserID: string;
+    UserEmail: string;
+    UserRole: 'Customer' | 'Staff' | 'Shop Owner' | 'Admin';
+    picture?: string;
+    ShopID?: string;
+    ShopName?: string;
+    StaffName?: string;
+    StaffPosition?: string;
 }
 
 /**
  * Interface for the response from the /login and /verify-otp endpoints.
  */
 export interface LoginResponse {
-  success: boolean;
-  message: string;
-  user?: UserDetails;
-  userId?: string; // Used specifically for the initial login response requiring OTP
-  requiresOTP?: boolean; // Used specifically for the initial login response
+    success: boolean;
+    message: string;
+    user?: UserDetails;
+    userId?: string; 
+    requiresOTP?: boolean; 
 }
 
 /**
  * Interface for the response from password reset endpoints.
  */
 export interface GenericAuthResponse {
-  success: boolean;
-  message: string;
-  email?: string; // Used in forgot-password for confirmation
+    success: boolean;
+    message: string;
+    email?: string; 
 }
 
 // =================================================================
-// 2. Authentication Functions
+// 2. Utility Functions (Maintenance Check)
+// =================================================================
+
+const MAINTENANCE_STATUS_ENDPOINT = `${API_URL}/admin/config/maintenance-status`;
+
+/**
+ * Checks the maintenance status by fetching the status from the backend.
+ * This is designed to be called on page load in index.tsx to gate the app.
+ * * @returns {Promise<boolean>} True if maintenance is active or status is undeterminable (network error), False otherwise.
+ */
+async function checkMaintenanceStatus(): Promise<boolean> {
+    try {
+        const response = await fetch(MAINTENANCE_STATUS_ENDPOINT);
+        
+        // 1. If response is NOT ok (e.g., 503, 500, 403, 404), maintenance is assumed ON (Fail-Safe).
+        if (!response.ok) {
+            // Maintenance is active or server is critically failing. Block access.
+            return true; 
+        }
+
+        // 2. If status is 200 OK, check the JSON body for the explicit flag (Admin Style).
+        try {
+            const data = await response.json();
+            if (typeof data.maintenanceMode === 'boolean' && data.maintenanceMode === true) {
+                 return true; // Maintenance is ACTIVE (Confirmed by JSON)
+            }
+        } catch (e) {
+            // If parsing fails but status was 200, assume OFF to be safe
+        }
+        
+        return false; // Maintenance is INACTIVE
+        
+    } catch (error: any) {
+        // 3. Network error (server unreachable) -> fail-safe block.
+        // For a non-admin user, if we can't confirm it's ON, we treat it as ON to prevent data failure.
+        return true; 
+    }
+}
+
+
+// =================================================================
+// 3. Authentication Functions
 // =================================================================
 
 /**
  * Handles initial email/password login.
- * The backend determines if an OTP is required (for Customers) or if login is direct.
- * * @param email The user's email or phone number (aliased to 'email' in the frontend payload).
- * @param password The user's password.
- * @returns A promise that resolves to the LoginResponse object.
+ * The maintenance check is handled by index.tsx before this function is called.
  */
 export async function handleUserLogin(
-  email: string,
-  password: string
+    email: string,
+    password: string
 ): Promise<LoginResponse> {
-  const response = await fetch(`${API_URL}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    // **CRITICAL FIX**: Ensuring the payload key is 'email' to match backend destructuring
-    body: JSON.stringify({ email, password }), 
-  });
+    
+    // NOTE: Maintenance check removed here.
+    
+    const response = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }), 
+    });
+    
+    if (response.status === 401) {
+        return { success: false, message: 'Invalid credentials' };
+    }
 
-  if (response.status === 401) {
-    return { success: false, message: 'Invalid credentials' };
-  }
-
-  const data: LoginResponse = await response.json();
-  
-  if (!response.ok && !data.success) {
-    throw new Error(data.message || 'Login failed due to a server error.');
-  }
-  
-  return data;
+    const data: LoginResponse = await response.json();
+    
+    if (!response.ok && !data.success) {
+        throw new Error(data.message || 'Login failed due to a server error.');
+    }
+    
+    return data;
 }
 
 /**
- * Verifies the OTP sent to the Customer's email.
- * * @param userId The ID of the user who initiated the OTP process.
- * @param otp The 6-digit code entered by the user.
- * @returns A promise that resolves to the LoginResponse object with the full user details.
+ * Verifies the OTP sent to the Customer's email. (UNCHANGED)
  */
 export async function verifyUserOTP(
-  userId: string,
-  otp: string
+    userId: string,
+    otp: string
 ): Promise<LoginResponse> {
-  const response = await fetch(`${API_URL}/auth/verify-otp`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, otp }),
-  });
+    const response = await fetch(`${API_URL}/auth/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, otp }),
+    });
 
-  const data: LoginResponse = await response.json();
+    const data: LoginResponse = await response.json();
 
-  if (!response.ok && !data.success) {
-    // 400 status likely means Invalid or expired OTP.
-    throw new Error(data.message || 'OTP verification failed.');
-  }
+    if (!response.ok && !data.success) {
+        throw new Error(data.message || 'OTP verification failed.');
+    }
 
-  return data;
+    return data;
 }
 
 /**
- * Initiates the Forgot Password flow, which sends an OTP to the user's email.
- * * @param email The email address for which the password reset is requested.
- * @returns A promise that resolves to a GenericAuthResponse.
+ * Initiates the Forgot Password flow, which sends an OTP to the user's email. (UNCHANGED)
  */
 export async function initiateForgotPassword(
-  email: string
+    email: string
 ): Promise<GenericAuthResponse> {
-  const response = await fetch(`${API_URL}/auth/forgot-password`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ identifier: email }), // Backend expects 'identifier' here
-  });
+    const response = await fetch(`${API_URL}/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: email }), 
+    });
 
-  const data: GenericAuthResponse = await response.json();
-  
-  // The backend intentionally returns 200/success: true even if the user isn't found
-  // to avoid enumerating users. We just ensure we got a response body.
-  if (response.ok) {
-    return data;
-  }
-  
-  throw new Error(data.message || 'Failed to initiate password reset.');
+    const data: GenericAuthResponse = await response.json();
+    
+    if (response.ok) {
+        return data;
+    }
+    
+    throw new Error(data.message || 'Failed to initiate password reset.');
 }
 
 /**
- * Completes the Password Reset process after OTP verification.
- * * @param email The user's email.
- * @param otp The verification code.
- * @param newPassword The new password to set.
- * @returns A promise that resolves to a GenericAuthResponse.
+ * Completes the Password Reset process after OTP verification. (UNCHANGED)
  */
 export async function resetUserPassword(
-  email: string,
-  otp: string,
-  newPassword: string
+    email: string,
+    otp: string,
+    newPassword: string
 ): Promise<GenericAuthResponse> {
-  const response = await fetch(`${API_URL}/auth/reset-password`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, otp, newPassword }),
-  });
+    const response = await fetch(`${API_URL}/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp, newPassword }),
+    });
 
-  const data: GenericAuthResponse = await response.json();
+    const data: GenericAuthResponse = await response.json();
 
-  if (!response.ok && !data.success) {
-    throw new Error(data.message || 'Failed to reset password.');
-  }
-  
-  return data;
+    if (!response.ok && !data.success) {
+        throw new Error(data.message || 'Failed to reset password.');
+    }
+    
+    return data;
 }
 
 /**
  * Handles the Google OAuth login/signup flow.
- * * @param google_id The unique ID from Google.
- * @param email The email from Google.
- * @param name The full name from Google.
- * @param picture The profile picture URL from Google.
- * @returns A promise that resolves to the LoginResponse object with full user details.
  */
 export async function googleLogin(
     google_id: string,
@@ -168,17 +190,23 @@ export async function googleLogin(
     name: string,
     picture: string
 ): Promise<LoginResponse> {
-  const response = await fetch(`${API_URL}/auth/google-login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ google_id, email, name, picture }),
-  });
+    
+    // NOTE: Maintenance check removed here.
 
-  const data: LoginResponse = await response.json();
+    const response = await fetch(`${API_URL}/auth/google-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ google_id, email, name, picture }),
+    });
 
-  if (!response.ok && !data.success) {
-    throw new Error(data.message || 'Google login failed.');
-  }
+    const data = await response.json();
 
-  return data;
+    if (!response.ok && !data.success) {
+        throw new Error(data.message || 'Google login failed.');
+    }
+
+    return data;
 }
+
+// Export the function so index.tsx can use it.
+export { checkMaintenanceStatus };

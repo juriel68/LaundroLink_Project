@@ -12,6 +12,7 @@ export default function RootLayout() {
       <Stack.Screen name="profile" options={{ title: "Profile" }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="+not-found" options={{}} />
+      <Stack.Screen name="maintenance" options={{ headerShown: false }} />
     </Stack>
   );
 }

@@ -449,7 +449,7 @@
                 return;
             }
             try {
-                const response = await fetch(`${API_BASE_URL}/shops/${loggedInUser.ShopID}/details`);
+                const response = await fetch(`${API_BASE_URL}/shops/${loggedInUser.ShopID}/full-details`);
                 if (!response.ok) throw new Error('Failed to fetch shop details');
                 
                 const data = await response.json();

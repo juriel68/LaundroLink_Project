@@ -165,43 +165,6 @@ router.post("/login", async (req, res) => {
     }
 });
 
-// POST /api/auth/verify-otp
-router.post("/verify-otp", async (req, res) => {
-// ... (rest of the /verify-otp route is unchanged) ...
-    try {
-        const { userId, otp } = req.body;
-        if (!userId || !otp) { return res.status(400).json({ success: false, message: "User ID and OTP are required." }); }
-
-        const [otpRows] = await db.query("SELECT * FROM otps WHERE user_id = ? AND otp_code = ? AND expires_at > NOW()", [userId, otp]);
-        if (otpRows.length === 0) { 
-            // 💡 LOG: Failed OTP Verification
-            await logUserActivity(userId, 'Customer', 'OTP Failure', 'Invalid or expired OTP provided');
-            return res.status(400).json({ success: false, message: "Invalid or expired OTP." }); 
-        }
-
-        await db.query("DELETE FROM otps WHERE user_id = ?", [userId]);
-
-        const [users] = await db.query("SELECT * FROM Users WHERE UserID = ?", [userId]);
-        if (users.length === 0) { return res.status(404).json({ success: false, message: "User not found after verification." }); }
-        
-        const userRole = users[0].UserRole; 
-        
-        // 💡 LOG: SUCCESSFUL CUSTOMER LOGIN (after OTP)
-        await logUserActivity(
-            userId, 
-            userRole, 
-            'Login', 
-            'Customer logged in successfully (OTP verified)'
-        );
-
-        res.json({ success: true, message: "Login successful", user: users[0] });
-    } catch (error) {
-        console.error("❌ verify-otp error:", error);
-        res.status(500).json({ success: false, message: "Failed to verify OTP." });
-    }
-});
-
-
 // POST /api/auth/google-login
 router.post("/google-login", async (req, res) => {
     let connection;
@@ -317,6 +280,45 @@ router.post("/google-login", async (req, res) => {
         }
     }
 });
+
+// POST /api/auth/verify-otp
+router.post("/verify-otp", async (req, res) => {
+// ... (rest of the /verify-otp route is unchanged) ...
+    try {
+        const { userId, otp } = req.body;
+        if (!userId || !otp) { return res.status(400).json({ success: false, message: "User ID and OTP are required." }); }
+
+        const [otpRows] = await db.query("SELECT * FROM otps WHERE user_id = ? AND otp_code = ? AND expires_at > NOW()", [userId, otp]);
+        if (otpRows.length === 0) { 
+            // 💡 LOG: Failed OTP Verification
+            await logUserActivity(userId, 'Customer', 'OTP Failure', 'Invalid or expired OTP provided');
+            return res.status(400).json({ success: false, message: "Invalid or expired OTP." }); 
+        }
+
+        await db.query("DELETE FROM otps WHERE user_id = ?", [userId]);
+
+        const [users] = await db.query("SELECT * FROM Users WHERE UserID = ?", [userId]);
+        if (users.length === 0) { return res.status(404).json({ success: false, message: "User not found after verification." }); }
+        
+        const userRole = users[0].UserRole; 
+        
+        // 💡 LOG: SUCCESSFUL CUSTOMER LOGIN (after OTP)
+        await logUserActivity(
+            userId, 
+            userRole, 
+            'Login', 
+            'Customer logged in successfully (OTP verified)'
+        );
+
+        res.json({ success: true, message: "Login successful", user: users[0] });
+    } catch (error) {
+        console.error("❌ verify-otp error:", error);
+        res.status(500).json({ success: false, message: "Failed to verify OTP." });
+    }
+});
+
+
+
 
 // POST /api/auth/forgot-password
 router.post("/forgot-password", async (req, res) => {

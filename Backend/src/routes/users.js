@@ -180,7 +180,7 @@ router.get("/staff/:shopId", async (req, res) => {
                 si.StaffCellNo,
                 si.StaffSalary
                 FROM Staffs s
-            JOIN Staff_Infos si ON s.StaffInfoID = si.StaffInfoID
+            JOIN Staff_Infos si ON s.StaffID = si.StaffID
             WHERE s.ShopID = ?
             ${orderByClause}`,
             [shopId]
@@ -383,9 +383,8 @@ router.put("/staff/:staffId", async (req, res) => {
         // 2. Update the Staff_Infos table
         await connection.query(
             `UPDATE Staff_Infos si 
-             JOIN Staffs s ON si.StaffInfoID = s.StaffInfoID
              SET si.StaffAge = ?, si.StaffAddress = ?, si.StaffCellNo = ?, si.StaffSalary = ?
-             WHERE s.StaffID = ?`,
+             WHERE si.StaffID = ?`,
             [StaffAge, StaffAddress, StaffCellNo, StaffSalary, staffId]
         );
 

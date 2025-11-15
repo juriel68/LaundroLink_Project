@@ -1,4 +1,4 @@
-// index.tsx (Staff) - WITH CONSOLE LOGS
+// index.tsx (Staff) - FULL CODE WITH PAGE LOAD MAINTENANCE CHECK
 
 import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, Alert, SafeAreaView, TextInput, TouchableOpacity, Dimensions, KeyboardAvoidingView, Platform } from "react-native";
@@ -13,7 +13,8 @@ import Animated, {
     Easing,
     interpolate,
 } from 'react-native-reanimated';
-import { login } from "@/lib/auth";// Ensure this path is correct
+// Import login AND the exported checkMaintenanceStatus function
+import { login, checkMaintenanceStatus } from "@/lib/auth"; 
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -47,9 +48,30 @@ const Bubble = ({ index }: { index: number }) => {
 export default function Index() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [isLoading, setIsLoading] = useState(true); // Gating state
     const router = useRouter();
     
     const bubbles = Array.from({ length: 30 }).map((_, i) => <Bubble key={i} index={i} />);
+
+    // 🚀 CRITICAL FIX: Page Load Maintenance Gating Check
+    useEffect(() => {
+        const checkStatusAndRedirect = async () => {
+            // checkMaintenanceStatus returns true if maintenance is ON or unconfirmable
+            const isMaintenanceActive = await checkMaintenanceStatus();
+            
+            if (isMaintenanceActive) {
+                // If maintenance is active, immediately redirect to the maintenance page
+                router.replace("/maintenance");
+            } else {
+                // System is operational, allow form rendering
+                setIsLoading(false);
+            }
+        };
+
+        checkStatusAndRedirect();
+    }, []); 
+    // --- End Page Load Gating Check ---
+
 
     const handleLogin = async () => {
         if (!email || !password) {
@@ -58,25 +80,35 @@ export default function Index() {
         }
 
         try {
-            // 🚀 NEW: Call the centralized login function
+            // Call the centralized login function
             const user = await login(email, password); 
-            
-            // If login throws an error (for invalid credentials or network), 
-            // the catch block will handle it.
             
             if (user) {
                 console.log("Login successful. Navigating to /home/home.");
                 router.replace("/home/home"); 
             } else {
-                 // Should not happen if successful, but here for completeness
-                 Alert.alert("Login Failed", "User data was not returned.");
+                Alert.alert("Login Failed", "User data was not returned.");
             }
         } catch (error: any) {
-            // Handle specific errors thrown by login
             console.error("Login error:", error.message);
-            Alert.alert("Error", error.message || "Unable to connect to the server.");
+            
+            // SIMPLIFIED CATCH: Any error here is a genuine login/network error, 
+            // as maintenance is blocked by the useEffect hook above.
+            Alert.alert("Login Failed", error.message || "Unable to connect to the server.");
         }
     };
+
+    // Show loading spinner or blank screen while checking maintenance status
+    if (isLoading) {
+        return (
+            <LinearGradient
+                colors={['#81D4FA', '#4FC3F7']}
+                style={[styles.background, styles.loadingContainer]}
+            >
+                <Text style={{color: '#fff', fontSize: 20, fontWeight: 'bold'}}>Checking App Status...</Text>
+            </LinearGradient>
+        );
+    }
 
     return (
         <LinearGradient
@@ -131,85 +163,89 @@ export default function Index() {
 }
 
 const styles = StyleSheet.create({
-  background: {
-    flex: 1,
-  },
-  bubblesContainer: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-  },
-  bubble: {
-    position: 'absolute',
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderColor: 'rgba(255, 255, 255, 0.25)',
-    borderWidth: 1,
-  },
-  safeArea: {
-      flex: 1,
-  },
-  contentContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  title: {
-    fontSize: 42,
-    fontWeight: "bold",
-    color: "#fff",
-    marginLeft: 12,
-    textShadowColor: 'rgba(0, 0, 0, 0.2)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#fff',
-    textAlign: 'center',
-    marginBottom: 40,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 12,
-    marginBottom: 16,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  inputIcon: {
-      marginRight: 10,
-  },
-  inputField: {
-    flex: 1,
-    height: 50,
-    fontSize: 16,
-    color: '#616161ff',
-  },
-  loginButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-    paddingVertical: 16,
-    borderRadius: 12,
-    marginTop: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 6,
-  },
-  loginButtonText: {
-    color: '#004d7a',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginRight: 8,
-  },
+    background: {
+        flex: 1,
+    },
+    loadingContainer: {
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    bubblesContainer: {
+        position: 'absolute',
+        top: 0, left: 0, right: 0, bottom: 0,
+    },
+    bubble: {
+        position: 'absolute',
+        backgroundColor: 'rgba(255, 255, 255, 0.15)',
+        borderColor: 'rgba(255, 255, 255, 0.25)',
+        borderWidth: 1,
+    },
+    safeArea: {
+        flex: 1,
+    },
+    contentContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        paddingHorizontal: 24,
+    },
+    titleContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 8,
+    },
+    title: {
+        fontSize: 42,
+        fontWeight: "bold",
+        color: "#fff",
+        marginLeft: 12,
+        textShadowColor: 'rgba(0, 0, 0, 0.2)',
+        textShadowOffset: { width: 0, height: 2 },
+        textShadowRadius: 4,
+    },
+    subtitle: {
+        fontSize: 16,
+        color: '#fff',
+        textAlign: 'center',
+        marginBottom: 40,
+    },
+    inputContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        borderRadius: 12,
+        marginBottom: 16,
+        paddingHorizontal: 12,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.3)',
+    },
+    inputIcon: {
+        marginRight: 10,
+    },
+    inputField: {
+        flex: 1,
+        height: 50,
+        fontSize: 16,
+        color: '#616161ff',
+    },
+    loginButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#fff',
+        paddingVertical: 16,
+        borderRadius: 12,
+        marginTop: 16,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 5,
+        elevation: 6,
+    },
+    loginButtonText: {
+        color: '#004d7a',
+        fontSize: 16,
+        fontWeight: 'bold',
+        marginRight: 8,
+    },
 });
