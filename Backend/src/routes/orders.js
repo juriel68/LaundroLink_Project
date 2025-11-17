@@ -17,18 +17,40 @@ function generateID(prefix) {
     return `${prefix}${random}${hash}`;
 }
 
-// Helper to determine date condition for dashboard queries
 const getDateCondition = (period, alias) => {
     switch (period) {
         case "Today":
             return `DATE(${alias}.OrderCreatedAt) = CURDATE()`;
+        case "Weekly":
+        case "Last 7 Days":
+        default:
+            // This is used by the reports.php frontend for "Last 7 Days"
+            return `YEARWEEK(${alias}.OrderCreatedAt, 1) = YEARWEEK(CURDATE(), 1)`;
+        case "Monthly":
         case "This Month":
             return `YEAR(${alias}.OrderCreatedAt) = YEAR(CURDATE()) AND MONTH(${alias}.OrderCreatedAt) = MONTH(CURDATE())`;
+        case "Yearly":
+        case "This Year":
+            return `YEAR(${alias}.OrderCreatedAt) = YEAR(CURDATE())`;
+    }
+};
+
+// Helper to determine date condition for sales queries
+const getDateConditionForSales = (period, alias) => {
+    switch (period) {
+        case "Weekly":
         case "This Week":
         default:
             return `YEARWEEK(${alias}.OrderCreatedAt, 1) = YEARWEEK(CURDATE(), 1)`;
+        case "Monthly":
+        case "This Month":
+            return `YEAR(${alias}.OrderCreatedAt) = YEAR(CURDATE()) AND MONTH(${alias}.OrderCreatedAt) = MONTH(CURDATE())`;
+        case "Yearly":
+        case "This Year":
+            return `YEAR(${alias}.OrderCreatedAt) = YEAR(CURDATE())`;
     }
 };
+
 
 // =================================================================
 // API Routes: Order Creation
@@ -1053,8 +1075,6 @@ router.post("/summary", async (req, res) => {
 });
 
 
-// POST /api/orders/dashboard-summary
-// Fetches key metrics (Orders, Revenue, New Customers) and chart data.
 router.post("/dashboard-summary", async (req, res) => {
     const { shopId, period = 'Weekly' } = req.body; 
 
@@ -1062,58 +1082,36 @@ router.post("/dashboard-summary", async (req, res) => {
         return res.status(400).json({ error: "Shop ID is required" });
     }
 
-    let groupBy, dateFormat, dateCondition;
-    // ... (omitted switch block for brevity, it is correct)
-    switch (period) {
-        case 'Monthly':
-            groupBy = `DATE_FORMAT(o.OrderCreatedAt, '%Y-%m')`;
-            dateFormat = `'%b'`;
-            dateCondition = `YEAR(o.OrderCreatedAt) = YEAR(CURDATE()) AND MONTH(o.OrderCreatedAt) = MONTH(CURDATE())`;
-            break;
-        case 'Yearly':
-            groupBy = `YEAR(o.OrderCreatedAt)`;
-            dateFormat = `'%Y'`;
-            dateCondition = `YEAR(o.OrderCreatedAt) = YEAR(CURDATE())`;
-            break;
-        case 'Weekly':
-        default:
-            groupBy = `DAYOFWEEK(o.OrderCreatedAt)`;
-            dateFormat = `'%a'`;
-            dateCondition = `YEARWEEK(o.OrderCreatedAt, 1) = YEARWEEK(CURDATE(), 1)`;
-    }
+    // --- Dynamic Date Conditions ---
+    const orderDateCondition = getDateCondition(period, 'o');
+    const chartGroupBy = period === 'Yearly' ? `YEAR(o.OrderCreatedAt)` : 
+                         (period === 'Monthly' ? `DATE_FORMAT(o.OrderCreatedAt, '%Y-%m')` : `DAYOFWEEK(o.OrderCreatedAt)`);
+    const chartDateFormat = period === 'Yearly' ? `'%Y'` : 
+                            (period === 'Monthly' ? `'%b'` : `'%a'`);
 
-
-    let newCustomerDateCondition;
-    // ... (omitted switch block for brevity, it is correct)
-    switch (period) {
-        case 'Monthly':
-            newCustomerDateCondition = `YEAR(first_order_date) = YEAR(CURDATE()) AND MONTH(first_order_date) = MONTH(CURDATE())`;
-            break;
-        case 'Yearly':
-            newCustomerDateCondition = `YEAR(first_order_date) = YEAR(CURDATE())`;
-            break;
-        case 'Weekly':
-        default:
-            newCustomerDateCondition = `YEARWEEK(first_order_date, 1) = YEARWEEK(CURDATE(), 1)`;
-    }
-
+    // Special condition for New Customers (needs to check the user's first order date)
+    const newCustomerDateCondition = period === 'Yearly' ? `YEAR(first_order_date) = YEAR(CURDATE())` : 
+                                     (period === 'Monthly' ? `YEAR(first_order_date) = YEAR(CURDATE()) AND MONTH(first_order_date) = MONTH(CURDATE())` : 
+                                     `YEARWEEK(first_order_date, 1) = YEARWEEK(CURDATE(), 1)`);
 
     try {
         await db.query("SET SESSION group_concat_max_len = 1000000;");
-
+        
+        // This query fetches all KPIs and the chart trend data in one go
         const query = `
             SELECT
-                -- 1. Calculate Total Orders for the period (Placeholder: 1)
-                (SELECT COUNT(*) FROM Orders o WHERE o.ShopID = ? AND ${dateCondition}) AS totalOrders,
+                -- 1. Total Orders for the period
+                (SELECT COUNT(*) FROM Orders o WHERE o.ShopID = ? AND ${orderDateCondition}) AS totalOrders,
                 
-                -- 2. Calculate Total Revenue for the period (Placeholder: 2)
+                -- 2. Total Revenue (Paid Invoices only)
                 (SELECT SUM(i.PayAmount) 
                     FROM Orders o 
                     JOIN Invoices i ON o.OrderID = i.OrderID
-                    WHERE o.ShopID = ? AND ${dateCondition} AND (SELECT s.InvoiceStatus FROM Invoice_Status s WHERE s.InvoiceID = i.InvoiceID ORDER BY s.StatUpdateAt DESC LIMIT 1) = 'Paid'
+                    WHERE o.ShopID = ? AND ${orderDateCondition} 
+                    AND (SELECT s.InvoiceStatus FROM Invoice_Status s WHERE s.InvoiceID = i.InvoiceID ORDER BY s.StatUpdateAt DESC LIMIT 1) = 'Paid'
                 ) AS totalRevenue,
 
-                -- 3. Calculate New Customers for the period (Placeholder: 3)
+                -- 3. New Customers for the period
                 (
                     SELECT COUNT(CustID)
                     FROM (
@@ -1125,28 +1123,28 @@ router.post("/dashboard-summary", async (req, res) => {
                     WHERE ${newCustomerDateCondition} 
                 ) AS newCustomers,
 
-                -- 4. Aggregate chart data into a JSON string (Placeholder: 4)
+                -- 4. Aggregate Sales Trend chart data
                 (
                     SELECT CONCAT('[', 
                         GROUP_CONCAT(
                             JSON_OBJECT('label', label, 'value', revenue) 
-                            ORDER BY sortKey /* Fixed: Uses the alias from the inner query */
+                            ORDER BY sortKey
                         ), 
                     ']')
                     FROM (
                         SELECT
-                            ${groupBy} AS sortKey, /* New: Column for explicit ordering */
-                            DATE_FORMAT(o.OrderCreatedAt, ${dateFormat}) AS label,
+                            ${chartGroupBy} AS sortKey,
+                            DATE_FORMAT(o.OrderCreatedAt, ${chartDateFormat}) AS label,
                             SUM(i.PayAmount) AS revenue
                         FROM Orders o
                         JOIN Invoices i ON o.OrderID = i.OrderID
-                        WHERE o.ShopID = ? AND ${dateCondition} AND (SELECT s.InvoiceStatus FROM Invoice_Status s WHERE s.InvoiceID = i.InvoiceID ORDER BY s.StatUpdateAt DESC LIMIT 1) = 'Paid'
+                        WHERE o.ShopID = ? AND ${orderDateCondition} AND (SELECT s.InvoiceStatus FROM Invoice_Status s WHERE s.InvoiceID = i.InvoiceID ORDER BY s.StatUpdateAt DESC LIMIT 1) = 'Paid'
                         GROUP BY sortKey, label
                     ) AS ChartData
                 ) AS chartData;
         `;
         
-        // Pass shopId for ALL four placeholders
+        // Pass shopId four times for the four subqueries
         const [[results]] = await db.query(query, [shopId, shopId, shopId, shopId]);
         
         const chartDataArray = results.chartData ? JSON.parse(results.chartData) : [];
@@ -1231,5 +1229,78 @@ router.post("/report/top-employees", async (req, res) => {
     }
 });
 
+router.get("/sales/:shopId", async (req, res) => {
+    const { shopId } = req.params;
+    const { period = 'Weekly', limit, offset } = req.query;
+
+    if (!shopId) {
+        return res.status(400).json({ error: "Shop ID is required" });
+    }
+
+    // Use the localized date condition function
+    const dateCondition = getDateConditionForSales(period, 'o'); 
+    
+    // Determine limit/offset for pagination
+    const parsedLimit = parseInt(limit, 10) || 15;
+    const parsedOffset = parseInt(offset, 10) || 0;
+
+    const connection = await db.getConnection();
+    try {
+        // 1. Transaction List Query (Paginated)
+        const transactionsQuery = `
+            SELECT 
+                o.OrderID,
+                i.PayAmount,
+                (SELECT isf.PaidAt FROM Invoice_Status isf WHERE isf.InvoiceID = i.InvoiceID ORDER BY isf.StatUpdateAt DESC LIMIT 1) AS PaidAt
+            FROM 
+                Orders o
+            JOIN 
+                Invoices i ON o.OrderID = i.OrderID
+            WHERE 
+                o.ShopID = ? AND ${dateCondition} 
+                AND (SELECT isf.InvoiceStatus FROM Invoice_Status isf WHERE isf.InvoiceID = i.InvoiceID ORDER BY isf.StatUpdateAt DESC LIMIT 1) = 'Paid'
+            ORDER BY
+                PaidAt DESC
+            LIMIT ? OFFSET ?;
+        `;
+
+        const [transactions] = await connection.query(transactionsQuery, [shopId, parsedLimit, parsedOffset]);
+
+        // 2. Total Count & Summary Query
+        const countQuery = `
+            SELECT 
+                COUNT(o.OrderID) AS totalCount,
+                SUM(i.PayAmount) AS totalSales,
+                COUNT(o.OrderID) AS totalOrders
+            FROM 
+                Orders o
+            JOIN 
+                Invoices i ON o.OrderID = i.OrderID
+            WHERE 
+                o.ShopID = ? AND ${dateCondition} 
+                AND (SELECT isf.InvoiceStatus FROM Invoice_Status isf WHERE isf.InvoiceID = i.InvoiceID ORDER BY isf.StatUpdateAt DESC LIMIT 1) = 'Paid'
+            `;
+        
+        const [countRows] = await connection.query(countQuery, [shopId]);
+        
+        const summary = {
+            totalSales: countRows[0].totalSales || 0,
+            totalOrders: countRows[0].totalOrders || 0
+        };
+        const totalCount = countRows[0].totalCount || 0;
+
+        res.json({
+            summary: summary,
+            transactions: transactions,
+            totalCount: totalCount
+        });
+
+    } catch (error) {
+        console.error("Error fetching sales data:", error);
+        res.status(500).json({ error: "Failed to fetch sales data." });
+    } finally {
+        connection.release();
+    }
+});
 
 export default router;

@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Employees - LaundroLink</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 <style>
     body {
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -15,7 +16,7 @@
         max-width: 1100px;
         margin: 30px auto 40px;
         padding: 25px 40px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
     }
     .title-row {
         display: flex;
@@ -82,7 +83,7 @@
         margin: 30px auto;
         border-collapse: collapse;
         background: white;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
         border-radius: 10px;
         overflow: hidden;
     }
@@ -107,34 +108,93 @@
         background-color: #eef3ff;
     }
 
-    .btn-update, .btn-delete {
+    /* Status Badge */
+    .status-badge {
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+    .status-active { background: #d4edda; color: #155724; }
+    .status-inactive { background: #f8d7da; color: #721c24; }
+
+    /* Action Buttons */
+    .action-buttons {
+        display: flex;
+        gap: 5px; 
+        flex-wrap: wrap; /* Allows wrapping on smaller screens, but tries to keep inline */
+    }
+    
+    .btn-update, .btn-status-toggle {
         border: none;
         border-radius: 6px;
-        padding: 6px 12px;
+        padding: 6px 10px;
         cursor: pointer;
-        font-size: 14px;
+        font-size: 13px;
         transition: 0.3s;
-        margin-right: 5px;
+        color: white;
+        white-space: nowrap;
     }
 
     .btn-update {
         background-color: #004aad;
-        color: white;
     }
 
     .btn-update:hover {
         background-color: #003c8a;
     }
 
-    .btn-delete {
-        background-color: #d9534f;
-        color: white;
+    .btn-status-toggle.deactivate {
+        background-color: #d9534f; /* Red */
     }
 
-    .btn-delete:hover {
+    .btn-status-toggle.deactivate:hover {
         background-color: #b94642;
     }
+    
+    .btn-status-toggle.reactivate {
+        background-color: #28a745; /* Green */
+    }
 
+    .btn-status-toggle.reactivate:hover {
+        background-color: #218838;
+    }
+
+    /* --- Pagination Styles --- */
+    .pagination-controls {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        padding: 15px 5%;
+        gap: 10px;
+        background-color: white;
+        width: 90%;
+        margin: 0 auto;
+        border-radius: 0 0 10px 10px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+        border-top: 1px solid #e0e0e0;
+    }
+    .pagination-controls button {
+        background: #004aad;
+        border: none;
+        color: #fff;
+        padding: 8px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        transition: background 0.2s;
+    }
+    .pagination-controls button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+    }
+    .pagination-controls span {
+        margin: 0 10px;
+        font-weight: 500;
+        font-size: 14px;
+    }
+    
     .popup {
         display: none;
         position: fixed;
@@ -145,6 +205,8 @@
         height: 100%;
         background-color: rgba(0,0,0,0.5);
         overflow-y: auto;
+        justify-content: center;
+        align-items: center;
     }
 
     .popup-content {
@@ -153,6 +215,7 @@
         padding: 25px;
         border-radius: 10px;
         width: 400px;
+        max-width: 90%;
         box-shadow: 0 4px 10px rgba(0,0,0,0.2);
     }
 
@@ -167,7 +230,7 @@
         gap: 10px;
     }
 
-    .popup-content input {
+    .popup-content input, .popup-content select {
         width: 95%;
         padding: 10px;
         border-radius: 6px;
@@ -201,29 +264,8 @@
     .btn-save:hover {
         background-color: #004aad;
     }
-
-    .popup-delete {
-        text-align: center;
-    }
-
-    .popup-delete p {
-        font-size: 16px;
-        color: #333;
-        margin-bottom: 25px;
-    }
-
-    .btn-confirm-delete {
-        background-color: #d9534f;
-        color: white;
-        padding: 8px 15px;
-        border-radius: 6px;
-        border: none;
-        cursor: pointer;
-    }
-
-    .btn-confirm-delete:hover {
-        background-color: #b94642;
-    }
+    
+    /* Removed delete popup styles as delete is removed */
     
 </style>
 </head>
@@ -245,7 +287,7 @@
                         <option value="age">Age (Youngest)</option>
                     </select>
                 </div>
-                <button class="btn-add" id="addEmployeeBtn">+ Add Employee</button>
+                <button class="btn-add" id="addEmployeeBtn"><i class="fas fa-plus"></i> Add Employee</button>
             </div>
         </div>
     </div>
@@ -259,14 +301,22 @@
                 <th>Address</th>
                 <th>Phone Number</th>
                 <th>Salary</th>
+                <th>Status</th> <!-- NEW COLUMN -->
                 <th>Actions</th>
             </tr>
         </thead>
         <tbody id="employee-table-body">
-            </tbody>
+            <tr><td colspan="8" style="text-align:center;">Loading employee data...</td></tr>
+        </tbody>
     </table>
+    
+    <div class="pagination-controls">
+        <button id="prevPageBtn" disabled>Previous</button>
+        <span id="pageInfo">Page 1 of 1</span>
+        <button id="nextPageBtn" disabled>Next</button>
+    </div>
 
-    <div id="addPopup" class="popup">
+    <div id="addPopup" class="popup" style="display: none;">
         <div class="popup-content">
             <h2>Add Employee</h2>
             <form id="addForm">
@@ -283,15 +333,20 @@
         </div>
     </div>
 
-    <div id="updatePopup" class="popup">
+    <div id="updatePopup" class="popup" style="display: none;">
         <div class="popup-content">
             <h2>Update Employee</h2>
             <form id="updateForm">
                 <input type="hidden" id="updateStaffId">
+                <label>Staff Name</label>
                 <input type="text" id="updateName" required>
+                <label>Age</label>
                 <input type="number" id="updateAge">
+                <label>Address</label>
                 <input type="text" id="updateAddress">
+                <label>Phone Number</label>
                 <input type="text" id="updatePhone">
+                <label>Salary</label>
                 <input type="number" step="0.01" id="updateSalary">
                 <div class="popup-buttons">
                     <button type="button" class="btn-cancel" id="updateCancelBtn">Cancel</button>
@@ -301,45 +356,73 @@
         </div>
     </div>
 
-    <div id="deletePopup" class="popup">
-        <div class="popup-content popup-delete">
-            <h2>Confirm Deletion</h2>
-            <p id="deleteMessage">Are you sure?</p>
-            <div class="popup-buttons">
-                <button class="btn-cancel" id="deleteCancelBtn">Cancel</button>
-                <button class="btn-confirm-delete" id="confirmDeleteBtn">Confirm Delete</button>
-            </div>
-        </div>
-    </div>
+    <!-- Removed Delete Confirmation Popup -->
 
     <script type="module">
         import { API_BASE_URL } from '/Web/api.js';
 
+        // --- GLOBAL STATE & ELEMENTS ---
         const tableBody = document.getElementById('employee-table-body');
-        const loggedInUser = JSON.parse(localStorage.getItem('laundroUser'));
         const sortSelect = document.getElementById('sort-select');
-        let currentStaffId = null;
-
+        const prevPageBtn = document.getElementById('prevPageBtn');
+        const nextPageBtn = document.getElementById('nextPageBtn');
+        const pageInfoSpan = document.getElementById('pageInfo');
+        
+        const loggedInUser = JSON.parse(localStorage.getItem('laundroUser'));
+        
         const addPopup = document.getElementById('addPopup');
         const updatePopup = document.getElementById('updatePopup');
-        const deletePopup = document.getElementById('deletePopup');
         const addForm = document.getElementById('addForm');
         const updateForm = document.getElementById('updateForm');
 
-        document.getElementById('addEmployeeBtn').addEventListener('click', () => addPopup.style.display = 'block');
+        let currentStaffId = null;
+        let currentPage = 1;
+        const ROWS_PER_PAGE = 10;
+        let totalEmployees = 0;
+        const COLSPAN = 8; // Updated colspan
+        // -------------------------------
+        
+        document.getElementById('addEmployeeBtn').addEventListener('click', () => addPopup.style.display = 'flex');
         document.getElementById('addCancelBtn').addEventListener('click', () => { addForm.reset(); addPopup.style.display = 'none'; });
         document.getElementById('updateCancelBtn').addEventListener('click', () => updatePopup.style.display = 'none');
-        document.getElementById('deleteCancelBtn').addEventListener('click', () => deletePopup.style.display = 'none');
-        document.getElementById('confirmDeleteBtn').addEventListener('click', handleDelete);
+        
+        // Removed delete button handler logic here
 
+        prevPageBtn.addEventListener('click', () => {
+            if (currentPage > 1) fetchEmployees(sortSelect.value, currentPage - 1);
+        });
+
+        nextPageBtn.addEventListener('click', () => {
+            const totalPages = Math.ceil(totalEmployees / ROWS_PER_PAGE);
+            if (currentPage < totalPages) fetchEmployees(sortSelect.value, currentPage + 1);
+        });
+        
+        const updatePaginationControls = () => {
+            const totalPages = Math.ceil(totalEmployees / ROWS_PER_PAGE);
+            pageInfoSpan.textContent = `Page ${currentPage} of ${totalPages > 0 ? totalPages : 1} (Total: ${totalEmployees})`;
+            prevPageBtn.disabled = currentPage === 1;
+            nextPageBtn.disabled = currentPage >= totalPages;
+        };
+        
         const renderTable = (employees) => {
             tableBody.innerHTML = '';
             if (!employees || employees.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center;">No employees found.</td></tr>';
+                const message = totalEmployees > 0 ? 
+                    'No employees found on this page.' : 
+                    'No employees found.';
+                tableBody.innerHTML = `<tr><td colspan="${COLSPAN}" style="text-align:center;">${message}</td></tr>`;
+                updatePaginationControls(); 
                 return;
             }
 
             employees.forEach(emp => {
+                const isActive = emp.IsActive === 1;
+                const statusText = isActive ? 'Active' : 'Deactivated';
+                const statusClass = isActive ? 'status-active' : 'status-inactive';
+                const buttonClass = isActive ? 'deactivate' : 'reactivate';
+                const buttonText = isActive ? 'Deactivate' : 'Reactivate';
+                const buttonAction = isActive ? 0 : 1;
+                
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${emp.StaffID}</td>
@@ -348,13 +431,19 @@
                     <td>${emp.StaffAddress || 'N/A'}</td>
                     <td>${emp.StaffCellNo || 'N/A'}</td>
                     <td>₱${parseFloat(emp.StaffSalary || 0).toFixed(2)}</td>
+                    <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                     <td>
-                        <button class="btn-update">Update</button>
-                        <button class="btn-delete">Delete</button>
+                        <div class="action-buttons">
+                            <button class="btn-update">Update</button>
+                            <button class="btn-status-toggle ${buttonClass}" data-staff-id="${emp.StaffID}" data-action="${buttonAction}">
+                                ${buttonText}
+                            </button>
+                        </div>
                     </td>
                 `;
                 
                 row.querySelector('.btn-update').addEventListener('click', () => {
+                    // Populate update form fields
                     currentStaffId = emp.StaffID;
                     document.getElementById('updateStaffId').value = emp.StaffID;
                     document.getElementById('updateName').value = emp.StaffName;
@@ -362,36 +451,82 @@
                     document.getElementById('updateAddress').value = emp.StaffAddress;
                     document.getElementById('updatePhone').value = emp.StaffCellNo;
                     document.getElementById('updateSalary').value = emp.StaffSalary;
-                    updatePopup.style.display = 'block';
+                    updatePopup.style.display = 'flex';
                 });
 
-                row.querySelector('.btn-delete').addEventListener('click', () => {
-                    currentStaffId = emp.StaffID;
-                    document.getElementById('deleteMessage').textContent = `Are you sure you want to delete ${emp.StaffName}?`;
-                    deletePopup.style.display = 'block';
-                });
+                row.querySelector('.btn-status-toggle').addEventListener('click', handleStatusToggle);
 
                 tableBody.appendChild(row);
             });
+            updatePaginationControls();
         };
 
-        const fetchEmployees = async (sortBy = 'newest') => {
+        const fetchEmployees = async (sortBy = 'newest', page = 1) => {
             if (!loggedInUser || !loggedInUser.ShopID) {
-                tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Error: Shop ID not found. Please log in again.</td></tr>';
+                tableBody.innerHTML = `<tr><td colspan="${COLSPAN}" style="text-align:center;">Error: Shop ID not found. Please log in again.</td></tr>`;
                 return;
             }
-            tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Loading...</td></tr>';
+            currentPage = page;
+            const offset = (currentPage - 1) * ROWS_PER_PAGE;
+            
+            tableBody.innerHTML = `<tr><td colspan="${COLSPAN}" style="text-align:center;">Loading...</td></tr>`;
+            
             try {
-                const response = await fetch(`${API_BASE_URL}/users/staff/${loggedInUser.ShopID}?sortBy=${sortBy}`);
+                const shopId = loggedInUser.ShopID;
+                
+                // Fetch staff list including IsActive from the backend
+                const response = await fetch(`${API_BASE_URL}/users/staff/${shopId}?sortBy=${sortBy}&limit=${ROWS_PER_PAGE}&offset=${offset}`);
                 if (!response.ok) throw new Error('Failed to fetch employees');
-                const employees = await response.json();
+                
+                const data = await response.json();
+                
+                const employees = data.staff || data; 
+                totalEmployees = data.totalCount || employees.length; 
+
                 renderTable(employees);
+                
             } catch (error) {
                 console.error('Fetch error:', error);
-                tableBody.innerHTML = `<tr><td colspan="7" style="text-align:center;">Error loading employees.</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="${COLSPAN}" style="text-align:center;">Error loading employees.</td></tr>`;
+                totalEmployees = 0;
+                updatePaginationControls();
             }
         };
 
+        // --- NEW STATUS TOGGLE HANDLER ---
+        async function handleStatusToggle(e) {
+            const button = e.target.closest('.btn-status-toggle');
+            const staffId = button.dataset.staffId;
+            const action = parseInt(button.dataset.action); // 1 to Activate, 0 to Deactivate
+            const actionText = action === 1 ? 'Reactivate' : 'Deactivate';
+            const staffName = button.closest('tr').cells[1].textContent;
+
+            if (window.confirm(`Are you sure you want to ${actionText} ${staffName} (${staffId})?`)) {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/users/${staffId}/status`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ IsActive: action })
+                    });
+                    
+                    const result = await response.json();
+
+                    if (response.ok && result.success) {
+                        window.alert(result.message || `Employee ${staffName} successfully ${actionText}d.`);
+                        // Refresh the current table page
+                        fetchEmployees(sortSelect.value, currentPage); 
+                    } else {
+                         window.alert(result.message || `Error toggling status.`);
+                    }
+
+                } catch (error) {
+                    console.error("Status Toggle Error:", error);
+                    window.alert(`Network error: Failed to ${actionText} employee.`);
+                }
+            }
+        }
+        // --- END NEW STATUS TOGGLE HANDLER ---
+        
         addForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const formData = new FormData(addForm);
@@ -410,7 +545,7 @@
                 alert('Employee added successfully!');
                 addForm.reset();
                 addPopup.style.display = 'none';
-                fetchEmployees(sortSelect.value); // Refresh table with current sort
+                fetchEmployees(sortSelect.value, 1); 
             } catch (error) {
                 console.error('Add employee error:', error);
                 alert(`Error: ${error.message}`);
@@ -438,35 +573,20 @@
                 
                 alert('Employee updated successfully!');
                 updatePopup.style.display = 'none';
-                fetchEmployees(sortSelect.value); // Refresh table with current sort
+                fetchEmployees(sortSelect.value, currentPage); 
             } catch (error) {
                 console.error('Update employee error:', error);
                 alert(`Error: ${error.message}`);
             }
         });
 
-        async function handleDelete() {
-            try {
-                const response = await fetch(`${API_BASE_URL}/users/${currentStaffId}`, {
-                    method: 'DELETE'
-                });
-                const result = await response.json();
-                if (!response.ok) throw new Error(result.error || result.message);
-                
-                alert('Employee deleted successfully!');
-                deletePopup.style.display = 'none';
-                fetchEmployees(sortSelect.value); // Refresh table with current sort
-            } catch (error) {
-                console.error('Delete employee error:', error);
-                alert(`Error: ${error.message}`);
-            }
-        }
-
+        // Removed handleDelete as it is now handled by status toggle (for deactivation)
+        
         document.addEventListener('DOMContentLoaded', () => {
             sortSelect.addEventListener('change', () => {
-                fetchEmployees(sortSelect.value);
+                fetchEmployees(sortSelect.value, 1);
             });
-            fetchEmployees(); // Initial load
+            fetchEmployees(); // Initial load (default sort, page 1)
         });
     </script>
 </body>

@@ -215,44 +215,85 @@ router.put("/owner/:id", async (req, res) => {
 // GET /api/users/staff/:shopId (Fetch Staff)
 router.get("/staff/:shopId", async (req, res) => {
     const { shopId } = req.params;
-    const { sortBy } = req.query; 
+    const { sortBy, limit, offset } = req.query; // Added limit and offset
+    
+    // --- 💡 CONSOLE LOG START ---
+    console.log(`\n--- Staff Fetch Request ---`);
+    console.log(`ShopID: ${shopId}`);
+    console.log(`SortBy: ${sortBy}`);
+    console.log(`Pagination: Limit=${limit}, Offset=${offset}`);
+    // --- 💡 CONSOLE LOG END ---
 
+    // Default sorting is by name if no valid sort is provided
     let orderByClause = 'ORDER BY s.StaffName ASC'; 
     switch (sortBy) {
         case 'age':
             orderByClause = 'ORDER BY si.StaffAge ASC';
             break;
         case 'newest':
+            // Assuming StaffID creation reflects date (S1, S2, etc.)
             orderByClause = 'ORDER BY CAST(SUBSTRING(s.StaffID, 2) AS UNSIGNED) DESC';
             break;
         case 'oldest':
             orderByClause = 'ORDER BY CAST(SUBSTRING(s.StaffID, 2) AS UNSIGNED) ASC';
             break;
+        case 'name':
+        default:
+            // Ensures a default order if the query parameter is present but invalid
+            orderByClause = 'ORDER BY s.StaffName ASC';
     }
+    
+    const parsedLimit = parseInt(limit, 10) || 10;
+    const parsedOffset = parseInt(offset, 10) || 0;
 
     try {
-        // NOTE: This endpoint is for Shop Owner staff monitoring, 
-        // it doesn't return general User fields like UserEmail or IsActive.
-        const [staff] = await db.query(
-            `SELECT
+        // 1. Get Total Count (for pagination info)
+        const [countRows] = await db.query(
+            `SELECT COUNT(s.StaffID) AS totalCount FROM Staffs s WHERE s.ShopID = ?`,
+            [shopId]
+        );
+        const totalCount = countRows[0].totalCount;
+        
+        // 2. Get Paginated Staff List
+        const staffQuery = `
+            SELECT
                 s.StaffID,
                 s.StaffName,
+                u.IsActive, -- Fetch IsActive status
                 si.StaffAge,
                 si.StaffAddress,
                 si.StaffCellNo,
                 si.StaffSalary
-                FROM Staffs s
+            FROM Staffs s
             JOIN Staff_Infos si ON s.StaffID = si.StaffID
+            JOIN Users u ON s.StaffID = u.UserID -- Join to Users to get IsActive
             WHERE s.ShopID = ?
-            ${orderByClause}`,
-            [shopId]
+            ${orderByClause}
+            LIMIT ? OFFSET ?`;
+            
+        // --- 💡 CONSOLE LOG SQL ---
+        console.log(`SQL Query: ${staffQuery.replace(/\s+/g, ' ')}`);
+        // --- 💡 CONSOLE LOG SQL END ---
+        
+        const [staff] = await db.query(
+            staffQuery,
+            [shopId, parsedLimit, parsedOffset]
         );
-        res.json(staff);
+        
+        // --- 💡 CONSOLE LOG END ---
+        console.log(`[Result] Found ${staff.length} staff members (Total: ${totalCount}).`);
+        console.log(`--- Staff Fetch Request End ---\n`);
+        // --- 💡 CONSOLE LOG END ---
+        
+        // Returning the list AND the total count
+        res.json({ staff: staff, totalCount: totalCount });
+
     } catch (error) {
         console.error("Fetch staff error:", error);
         res.status(500).json({ error: "Server error while fetching staff." });
     }
 });
+
 
 // POST /api/users/owner (Create Shop Owner)
 router.post("/owner", async (req, res) => {

@@ -9,7 +9,7 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
             margin: 0; 
             background-color: #f8f9fa; 
-            overflow: hidden;
+            overflow: auto; /* Changed to auto to ensure content is visible */
         }
 
         .title-box { 
@@ -231,11 +231,14 @@
             height: 100%; 
             background-color: rgba(0,0,0,0.5); 
             overflow-y: auto; 
+            display: flex; /* Ensure centering works when visible */
+            justify-content: center;
+            align-items: center;
         }
 
         .popup-content { 
             background-color: #fff; 
-            margin: 5% auto; 
+            margin: auto; /* Center vertically and horizontally */
             padding: 30px; 
             border-radius: 12px; 
             width: 420px; 
@@ -305,6 +308,12 @@
             from {opacity: 0; transform: translateY(-10px);} 
             to {opacity: 1; transform: translateY(0);} 
         }
+        
+        @media (max-width: 768px) {
+            .shop-details-container {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
@@ -347,7 +356,7 @@
         </div>
     </div>
 
-    <div id="managePopup" class="popup">
+    <div id="managePopup" class="popup" style="display: none;">
         <div class="popup-content">
             <h2>Manage Shop</h2>
             <form id="manageForm">
@@ -392,6 +401,7 @@
         const ratingStarsEl = document.getElementById('rating-stars');
         const ratingCountEl = document.getElementById('rating-count');
 
+        // --- MAPS DATA FROM API TO HTML ELEMENTS ---
         const updateShopInfo = (details) => {
             shopNameEl.textContent = details.ShopName;
             shopDescrpEl.textContent = details.ShopDescrp;
@@ -443,25 +453,38 @@
             }
         };
 
+        // --- FETCH SHOP DETAILS ---
         const fetchShopDetails = async () => {
-            if (!loggedInUser || !loggedInUser.ShopID) {
-                document.body.innerHTML = '<h1>Error: Could not find your Shop ID. Please log in again.</h1>';
+            // NOTE: Check if ShopID is available in the user object
+            const shopId = loggedInUser?.ShopID;
+            if (!shopId) {
+                document.body.innerHTML = '<h1>Error: Shop Owner account must be linked to a Shop.</h1>';
                 return;
             }
             try {
-                const response = await fetch(`${API_BASE_URL}/shops/${loggedInUser.ShopID}/full-details`);
+                // The API endpoint must return a single object with all details nested.
+                const response = await fetch(`${API_BASE_URL}/shops/${shopId}/full-details-owner`); // Using a new, explicit owner endpoint
                 if (!response.ok) throw new Error('Failed to fetch shop details');
                 
                 const data = await response.json();
-                updateShopInfo(data.details);
-                updateRatingSummary(data.rating);
+                
+                // --- FIX: Extract data from the response structure ---
+                const details = data.details;
+                const rating = data.rating;
+                
+                // Update display fields
+                updateShopInfo(details);
+                updateRatingSummary(rating);
+
             } catch (error) {
                 console.error("Fetch error:", error);
-                document.querySelector('.shop-details-container').innerHTML = `<p style="text-align:center; width:100%;">Error loading shop details.</p>`;
+                document.querySelector('.shop-details-container').innerHTML = `<p style="text-align:center; width:100%;">Error loading shop details. ${error.message}</p>`;
             }
         };
 
+        // --- POPUP/FORM LOGIC ---
         document.getElementById('edit-details-btn').addEventListener('click', () => {
+            // Populate Form Fields
             document.getElementById('shopID').value = loggedInUser.ShopID;
             document.getElementById('shopName').value = shopNameEl.textContent;
             document.getElementById('shopDescrp').value = shopDescrpEl.textContent;
@@ -469,7 +492,8 @@
             document.getElementById('shopPhone').value = shopPhoneEl.textContent;
             document.getElementById('shopHours').value = shopHoursEl.textContent;
             document.getElementById('shopStatus').value = shopStatusEl.textContent;
-            managePopup.style.display = 'block';
+            
+            managePopup.style.display = 'flex';
         });
 
         manageForm.addEventListener('submit', async (e) => {
@@ -491,6 +515,7 @@
                 });
                 const result = await response.json();
                 if (!response.ok) throw new Error(result.error || result.message);
+                
                 alert('Shop updated successfully!');
                 managePopup.style.display = 'none';
                 fetchShopDetails();

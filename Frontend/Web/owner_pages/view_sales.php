@@ -88,10 +88,10 @@
         max-width: 1100px;
         margin: 0 auto 30px auto;
         flex-grow: 1;
-        overflow-y: auto;
         background: white;
         border-radius: 10px;
         box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+        overflow: hidden; /* Contains the table */
     }
 
     table {
@@ -117,6 +117,37 @@
 
     tbody tr:last-child td { 
         border-bottom: none; 
+    }
+    
+    /* --- Pagination Controls --- */
+    .pagination-controls {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        padding: 15px 0;
+        max-width: 1100px;
+        width: 90%;
+        margin: 0 auto;
+        gap: 10px;
+    }
+    .pagination-controls button {
+        background: #004aad;
+        border: none;
+        color: #fff;
+        padding: 8px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        transition: background 0.2s;
+    }
+    .pagination-controls button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+    }
+    .pagination-controls span {
+        margin: 0 10px;
+        font-weight: 500;
+        font-size: 14px;
     }
 
     </style>
@@ -169,17 +200,38 @@
         </table>
     </div>
 
+    <!-- PAGINATION CONTROLS -->
+    <div class="pagination-controls">
+        <button id="prevPageBtn" disabled>Previous</button>
+        <span id="pageInfo">Page 1 of 1</span>
+        <button id="nextPageBtn" disabled>Next</button>
+    </div>
+
     <script type="module">
         import { API_BASE_URL } from '/Web/api.js';
 
+        // --- GLOBAL STATE & ELEMENTS ---
         const tableBody = document.getElementById('sales-table-body');
         const loggedInUser = JSON.parse(localStorage.getItem('laundroUser'));
         
         const totalSalesEl = document.getElementById('total-sales');
         const numSalesEl = document.getElementById('num-sales');
         const avgSaleEl = document.getElementById('avg-sale');
+        const dateFilters = document.querySelectorAll('.date-filters button');
+
+        const prevPageBtn = document.getElementById('prevPageBtn');
+        const nextPageBtn = document.getElementById('nextPageBtn');
+        const pageInfoSpan = document.getElementById('pageInfo');
+        
+        let currentPage = 1;
+        const ROWS_PER_PAGE = 15;
+        let totalTransactions = 0;
+        let currentPeriod = 'Weekly';
+
+        // --- UTILITY FUNCTIONS ---
 
         const formatCurrency = (amount) => `₱${parseFloat(amount || 0).toFixed(2)}`;
+        const COLSPAN = 3;
 
         const updateKpiCards = (summary) => {
             const totalSales = summary.totalSales || 0;
@@ -190,16 +242,28 @@
             numSalesEl.textContent = totalOrders.toLocaleString();
             avgSaleEl.textContent = formatCurrency(avgSale);
         };
+        
+        const updatePaginationControls = () => {
+            const totalPages = Math.ceil(totalTransactions / ROWS_PER_PAGE);
+            pageInfoSpan.textContent = `Page ${currentPage} of ${totalPages > 0 ? totalPages : 1} (Total: ${totalTransactions})`;
+            prevPageBtn.disabled = currentPage === 1;
+            nextPageBtn.disabled = currentPage >= totalPages;
+        };
 
         const renderTable = (transactions) => {
             tableBody.innerHTML = '';
             if (!transactions || transactions.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center;">No sales found for this period.</td></tr>';
+                const message = totalTransactions > 0 ? 
+                    'No sales found on this page.' : 
+                    'No sales found for this period.';
+                tableBody.innerHTML = `<tr><td colspan="${COLSPAN}" style="text-align:center;">${message}</td></tr>`;
                 return;
             }
+            
             transactions.forEach(sale => {
-                const formattedDate = new Date(sale.OrderCreatedAt).toLocaleDateString('en-US', {
-                    year: 'numeric', month: 'short', day: 'numeric'
+                // NOTE: Using PaidAt from the backend response as the transaction date
+                const formattedDate = new Date(sale.PaidAt).toLocaleDateString('en-US', {
+                    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
                 });
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -209,44 +273,82 @@
                 `;
                 tableBody.appendChild(row);
             });
+            updatePaginationControls();
         };
 
-        const fetchSalesData = async (period = 'Weekly') => {
+        // --- MAIN FETCH FUNCTION ---
+
+        const fetchSalesData = async (period = 'Weekly', page = 1) => {
+            currentPeriod = period;
+            currentPage = page;
+
             if (!loggedInUser || !loggedInUser.ShopID) {
                 tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center;">Error: Shop ID not found.</td></tr>';
                 return;
             }
             
+            const limit = ROWS_PER_PAGE;
+            const offset = (currentPage - 1) * limit;
+
             // Show loading state
             tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center;">Loading...</td></tr>';
             updateKpiCards({}); // Reset KPIs
 
             try {
-                const response = await fetch(`${API_BASE_URL}/orders/sales/${loggedInUser.ShopID}?period=${period}`);
+                const params = new URLSearchParams({
+                    period: currentPeriod,
+                    limit: limit,
+                    offset: offset
+                });
+                
+                // Using the new API endpoint structure: /orders/sales/:shopId
+                const apiUrl = `${API_BASE_URL}/orders/sales/${loggedInUser.ShopID}?${params.toString()}`;
+                
+                const response = await fetch(apiUrl);
                 if (!response.ok) throw new Error('Failed to fetch sales data.');
                 
                 const data = await response.json();
-                updateKpiCards(data.summary);
+
+                totalTransactions = data.totalCount || 0; // Capture total count
+                
+                updateKpiCards(data.summary || {});
                 renderTable(data.transactions);
 
             } catch (error) {
                 console.error('Fetch error:', error);
                 tableBody.innerHTML = `<tr><td colspan="3" style="text-align:center;">Error loading sales data.</td></tr>`;
+                totalTransactions = 0;
+                updatePaginationControls();
             }
         };
+        
+        // --- EVENT HANDLERS ---
+        
+        dateFilters.forEach(button => {
+            button.addEventListener('click', () => {
+                dateFilters.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                // Reset to page 1 and fetch new data
+                fetchSalesData(button.dataset.period, 1);
+            });
+        });
+        
+        prevPageBtn.addEventListener('click', () => {
+            if (currentPage > 1) {
+                fetchSalesData(currentPeriod, currentPage - 1);
+            }
+        });
+
+        nextPageBtn.addEventListener('click', () => {
+            const totalPages = Math.ceil(totalTransactions / ROWS_PER_PAGE);
+            if (currentPage < totalPages) {
+                fetchSalesData(currentPeriod, currentPage + 1);
+            }
+        });
 
         document.addEventListener('DOMContentLoaded', () => {
-            const filterButtons = document.querySelectorAll('.date-filters button');
-            filterButtons.forEach(button => {
-                button.addEventListener('click', () => {
-                    filterButtons.forEach(btn => btn.classList.remove('active'));
-                    button.classList.add('active');
-                    fetchSalesData(button.dataset.period);
-                });
-            });
-
             // Initial load
-            fetchSalesData('Weekly');
+            fetchSalesData('Weekly', 1);
         });
     </script>
 

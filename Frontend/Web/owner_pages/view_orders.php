@@ -11,7 +11,7 @@
             background-color: #f8f9fa;
             flex-direction: column;
             height: 100vh;
-            overflow: hidden;
+            overflow: auto; /* Changed to auto to allow scrolling if content overflows */
         }
 
         /* --- Title Box --- */
@@ -144,7 +144,6 @@
             max-width: 1100px;
             margin: 0 auto 30px auto;
             flex-grow: 1;
-            overflow-y: auto;
         }
     
         table {
@@ -200,7 +199,6 @@
         .sort-btn.active { 
             opacity: 1; 
             color: #ffc107; 
-        
         }
         .sort-btn 
         .fa-sort-up, 
@@ -248,6 +246,37 @@
 
         .status-for-delivery { 
             color: #17a2b8; 
+        }
+
+        /* --- Pagination Controls --- */
+        .pagination-controls {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            padding: 15px 0;
+            max-width: 1100px;
+            width: 90%;
+            margin: 0 auto;
+            gap: 10px;
+        }
+        .pagination-controls button {
+            background: #004aad;
+            border: none;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        .pagination-controls button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .pagination-controls span {
+            margin: 0 10px;
+            font-weight: 500;
+            font-size: 14px;
         }
         
     </style>
@@ -314,10 +343,18 @@
             <tbody id="orders-table-body"></tbody>
         </table>
     </div>
+    
+    <!-- PAGINATION CONTROLS -->
+    <div class="pagination-controls">
+        <button id="prevPageBtn" disabled>Previous</button>
+        <span id="pageInfo">Page 1 of 1</span>
+        <button id="nextPageBtn" disabled>Next</button>
+    </div>
 
     <script type="module">
         import { API_BASE_URL } from '/Web/api.js';
 
+        // --- GLOBAL STATE & ELEMENTS ---
         const tableBody = document.getElementById('orders-table-body');
         const loggedInUser = JSON.parse(localStorage.getItem('laundroUser'));
         
@@ -330,9 +367,20 @@
         const customRangePicker = document.getElementById('custom-range-picker');
         const startDateInput = document.getElementById('start-date');
         const endDateInput = document.getElementById('end-date');
-
+        const dateFilters = document.querySelectorAll('.date-filters button');
+        const sortButtons = document.querySelectorAll('.sort-btn');
+        
+        const prevPageBtn = document.getElementById('prevPageBtn');
+        const nextPageBtn = document.getElementById('nextPageBtn');
+        const pageInfoSpan = document.getElementById('pageInfo');
+        
+        const ROWS_PER_PAGE = 15;
+        let currentPage = 1;
+        let totalOrders = 0;
         let currentSortBy = 'OrderCreatedAt';
         let currentSortOrder = 'DESC';
+
+        // --- RENDER & UTILITY FUNCTIONS ---
 
         const updateKpiCards = (summary) => {
             pendingCountEl.textContent = summary.pending || 0;
@@ -342,17 +390,28 @@
             rejectedCountEl.textContent = summary.rejected || 0;
         };
 
+        const updatePaginationControls = () => {
+            const totalPages = Math.ceil(totalOrders / ROWS_PER_PAGE);
+            pageInfoSpan.textContent = `Page ${currentPage} of ${totalPages > 0 ? totalPages : 1} (Total: ${totalOrders})`;
+            prevPageBtn.disabled = currentPage === 1;
+            nextPageBtn.disabled = currentPage >= totalPages;
+        };
+        
         const renderTable = (orders) => {
             tableBody.innerHTML = '';
             if (!orders || orders.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No orders found for this period.</td></tr>';
+                const message = totalOrders > 0 ? 
+                    'No orders found on this page.' : 
+                    'No orders found for this period.';
+                tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center;">${message}</td></tr>`;
                 return;
             }
+            
             orders.forEach(order => {
-                const statusClass = `status-${String(order.OrderStatus || 'pending').toLowerCase().replace(' ', '-')}`;
+                const statusClass = `status-${String(order.OrderStatus || 'pending').toLowerCase().replace(/[\s\/-]/g, '-')}`;
                 const formattedPrice = `₱${parseFloat(order.PayAmount || 0).toFixed(2)}`;
                 const formattedDate = new Date(order.OrderCreatedAt).toLocaleDateString('en-US', {
-                    year: 'numeric', month: 'short', day: 'numeric'
+                    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
                 });
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -365,55 +424,119 @@
                 `;
                 tableBody.appendChild(row);
             });
+            
+            updatePaginationControls();
         };
 
-        const fetchOrderData = async (filter = { period: 'Today' }) => {
+        // --- MAIN FETCH FUNCTION ---
+
+        const fetchOrderData = async (filter = { period: 'Today' }, page = 1) => {
             if (!loggedInUser || !loggedInUser.ShopID) {
                 tableBody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Error: Shop ID not found. Please log in again.</td></tr>';
                 return;
             }
+            
+            currentPage = page;
+            const limit = ROWS_PER_PAGE;
+            const offset = (currentPage - 1) * limit;
+
             tableBody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Loading orders...</td></tr>';
             updateKpiCards({});
             
             try {
-                let apiUrl = `${API_BASE_URL}/orders/overview/${loggedInUser.ShopID}?sortBy=${currentSortBy}&sortOrder=${currentSortOrder}`;
-                if (filter.period) {
-                    apiUrl += `&period=${filter.period}`;
+                let apiUrl = `${API_BASE_URL}/orders/overview/${loggedInUser.ShopID}`;
+                
+                const params = new URLSearchParams({
+                    sortBy: currentSortBy,
+                    sortOrder: currentSortOrder,
+                    limit: limit,
+                    offset: offset
+                });
+
+                // Apply period or custom range filters
+                if (filter.period && filter.period !== 'Custom') {
+                    params.append('period', filter.period);
                 } else if (filter.startDate && filter.endDate) {
-                    apiUrl += `&startDate=${filter.startDate}&endDate=${filter.endDate}`;
+                    params.append('startDate', filter.startDate);
+                    params.append('endDate', filter.endDate);
                 }
+
+                apiUrl += `?${params.toString()}`;
 
                 const response = await fetch(apiUrl);
                 if (!response.ok) throw new Error('Failed to fetch order data.');
+                
                 const data = await response.json();
                 
-                updateKpiCards(data.summary);
-                renderTable(data.orders);
+                // Assuming backend returns { summary: {...}, orders: [...], totalCount: N }
+                const orders = data.orders || [];
+                totalOrders = data.totalCount || orders.length; // Get the total count for pagination
+
+                updateKpiCards(data.summary || {});
+                renderTable(orders);
+                
             } catch (error) {
                 console.error('Fetch error:', error);
                 tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center;">Error loading orders.</td></tr>`;
+                totalOrders = 0;
+                updatePaginationControls();
             }
         };
 
-        document.addEventListener('DOMContentLoaded', () => {
-            const filterButtons = document.querySelectorAll('.date-filters button');
+        // --- EVENT HANDLERS ---
+        
+        // Pagination Handlers
+        prevPageBtn.addEventListener('click', () => {
+            if (currentPage > 1) {
+                const currentFilter = getCurrentFilterState();
+                fetchOrderData(currentFilter, currentPage - 1);
+            }
+        });
+
+        nextPageBtn.addEventListener('click', () => {
+            const totalPages = Math.ceil(totalOrders / ROWS_PER_PAGE);
+            if (currentPage < totalPages) {
+                const currentFilter = getCurrentFilterState();
+                fetchOrderData(currentFilter, currentPage + 1);
+            }
+        });
+        
+        // Returns the current date/period filter state
+        const getCurrentFilterState = () => {
+            const activePeriodBtn = document.querySelector('.date-filters button.active');
+            const period = activePeriodBtn.dataset.period;
             
-            filterButtons.forEach(button => {
+            if (period === 'Custom') {
+                return { 
+                    startDate: startDateInput.value, 
+                    endDate: endDateInput.value 
+                };
+            }
+            return { period };
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            
+            // --- Date Filter Button Logic ---
+            dateFilters.forEach(button => {
                 button.addEventListener('click', () => {
                     const period = button.dataset.period;
                     
                     if (period === 'Custom') {
                         customRangePicker.style.display = 'flex';
+                        // Do not fetch data yet, just set the active filter
                     } else {
                         customRangePicker.style.display = 'none';
-                        fetchOrderData({ period });
+                        // Reset pagination to 1 and fetch new data
+                        fetchOrderData({ period }, 1);
                     }
 
-                    filterButtons.forEach(btn => btn.classList.remove('active'));
+                    dateFilters.forEach(btn => btn.classList.remove('active'));
                     button.classList.add('active');
                 });
             });
 
+            // --- Custom Range Apply Button Logic ---
             document.getElementById('apply-custom-range').addEventListener('click', () => {
                 const startDate = startDateInput.value;
                 const endDate = endDateInput.value;
@@ -422,13 +545,14 @@
                         alert('Start date cannot be after the end date.');
                         return;
                     }
-                    fetchOrderData({ startDate, endDate });
+                    // Reset pagination to 1 and fetch custom range
+                    fetchOrderData({ startDate, endDate }, 1);
                 } else {
                     alert('Please select both a start and end date.');
                 }
             });
 
-            const sortButtons = document.querySelectorAll('.sort-btn');
+            // --- Sorting Logic ---
             sortButtons.forEach(button => {
                 button.addEventListener('click', () => {
                     const sortBy = button.dataset.sort;
@@ -440,13 +564,13 @@
                         currentSortOrder = 'DESC';
                     }
 
-                    sortButtons.forEach(btn => {
-                        btn.classList.remove('active', 'asc', 'desc');
-                        if (btn.dataset.sort === currentSortBy) {
-                            btn.classList.add('active', currentSortOrder.toLowerCase());
-                        }
-                    });
-                    fetchOrderData({ period: document.querySelector('.date-filters button.active').dataset.period });
+                    sortButtons.forEach(btn => btn.classList.remove('active', 'asc', 'desc'));
+                    if (button.dataset.sort === currentSortBy) {
+                        button.classList.add('active', currentSortOrder.toLowerCase());
+                    }
+                    
+                    // Reset pagination to 1 and fetch with new sort/filter
+                    fetchOrderData(getCurrentFilterState(), 1);
                 });
             });
 
