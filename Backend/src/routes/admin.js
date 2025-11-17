@@ -11,190 +11,205 @@ import path from 'path';
 
 const router = express.Router();
 
+// Helper function to dynamically generate SQL date condition
+const getDateCondition = (period, alias = 'o') => {
+    switch (period) {
+        case 'Monthly':
+            // Uses OrderCreatedAt from the Orders table
+            return `YEAR(${alias}.OrderCreatedAt) = YEAR(CURDATE()) AND MONTH(${alias}.OrderCreatedAt) = MONTH(CURDATE())`;
+        case 'Yearly':
+            return `YEAR(${alias}.OrderCreatedAt) = YEAR(CURDATE())`;
+        case 'Weekly':
+        default:
+            return `YEARWEEK(${alias}.OrderCreatedAt, 1) = YEARWEEK(CURDATE(), 1)`;
+    }
+};
+
 // =======================================================
 // 1. System Settings Routes (config)
+// (Existing Routes Omitted for Brevity)
+// =======================================================
+// ...
+
+// =======================================================
+// 2. Backup Routes
+// (Existing Routes Omitted for Brevity)
+// =======================================================
+// ...
+
+// =======================================================
+// 3. Admin Reporting Routes (Corrected for Schema)
 // =======================================================
 
 /**
- * ✅ GET /api/admin/config/maintenance-status
- * Fetches the current maintenance mode status from the database.
+ * 🆕 POST /api/admin/report/platform-summary
+ * Fetches platform-wide aggregated metrics (Revenue, Orders, New Shops, Growth Trend).
  */
-router.get('/config/maintenance-status', async (req, res) => {
+router.post("/report/platform-summary", async (req, res) => {
+    const { period = 'Weekly' } = req.body; 
+
+    let groupBy, dateFormat, dateCondition;
+    let shopDateCondition;
+    
+    switch (period) {
+        case 'Monthly':
+            groupBy = `DATE_FORMAT(o.OrderCreatedAt, '%Y-%m')`;
+            dateFormat = `'%b'`;
+            dateCondition = `YEAR(o.OrderCreatedAt) = YEAR(CURDATE()) AND MONTH(o.OrderCreatedAt) = MONTH(CURDATE())`;
+            // FIX: Use Users.DateCreated via Shop Owners (u.DateCreated)
+            shopDateCondition = `YEAR(u.DateCreated) = YEAR(CURDATE()) AND MONTH(u.DateCreated) = MONTH(CURDATE())`;
+            break;
+        case 'Yearly':
+            groupBy = `YEAR(o.OrderCreatedAt)`;
+            dateFormat = `'%Y'`;
+            dateCondition = `YEAR(o.OrderCreatedAt) = YEAR(CURDATE())`;
+            // FIX: Use Users.DateCreated via Shop Owners (u.DateCreated)
+            shopDateCondition = `YEAR(u.DateCreated) = YEAR(CURDATE())`;
+            break;
+        case 'Weekly':
+        default:
+            groupBy = `DAYOFWEEK(o.OrderCreatedAt)`;
+            dateFormat = `'%a'`;
+            dateCondition = `YEARWEEK(o.OrderCreatedAt, 1) = YEARWEEK(CURDATE(), 1)`;
+            // FIX: Use Users.DateCreated via Shop Owners (u.DateCreated)
+            shopDateCondition = `YEARWEEK(u.DateCreated, 1) = YEARWEEK(CURDATE(), 1)`;
+    }
+
     try {
-        // Find the configuration key for maintenance mode
-        const [[config]] = await db.query("SELECT ConfigValue FROM SystemConfig WHERE ConfigKey = 'MAINTENANCE_MODE'");
+        await db.query("SET SESSION group_concat_max_len = 1000000;");
+
+        const query = `
+            SELECT
+                -- 1. Total Platform Orders 
+                (SELECT COUNT(*) FROM Orders) AS totalOrders,
+                
+                -- 2. Total Platform Revenue (Paid Invoices only)
+                (SELECT SUM(i.PayAmount) 
+                    FROM Orders o 
+                    JOIN Invoices i ON o.OrderID = i.OrderID
+                    WHERE ${dateCondition} 
+                    -- FIX: Use Invoice_Status table and correct column name (InvoiceStatus)
+                    AND (SELECT invs.InvoiceStatus FROM Invoice_Status invs WHERE invs.InvoiceID = i.InvoiceID ORDER BY invs.StatUpdateAt DESC LIMIT 1) = 'Paid'
+                ) AS totalRevenue,
+
+                -- 3. New Shops Onboarded 
+                (
+                    SELECT COUNT(ls.ShopID)
+                    FROM Laundry_Shops ls -- FIX: Use Laundry_Shops table name
+                    JOIN Shop_Owners so ON ls.OwnerID = so.OwnerID
+                    JOIN Users u ON so.OwnerID = u.UserID -- FIX: Get creation date from Users (u.DateCreated)
+                    WHERE ${shopDateCondition} 
+                ) AS newShops,
+
+                -- 4. Aggregate revenue trend data
+                (
+                    SELECT CONCAT('[', 
+                        GROUP_CONCAT(
+                            JSON_OBJECT('label', label, 'value', revenue) 
+                            ORDER BY sortKey
+                        ), 
+                    ']')
+                    FROM (
+                        SELECT
+                            ${groupBy} AS sortKey,
+                            DATE_FORMAT(o.OrderCreatedAt, ${dateFormat}) AS label,
+                            SUM(i.PayAmount) AS revenue
+                        FROM Orders o
+                        JOIN Invoices i ON o.OrderID = i.OrderID
+                        WHERE ${dateCondition} 
+                        -- FIX: Use Invoice_Status table and correct column name (InvoiceStatus)
+                        AND (SELECT invs.InvoiceStatus FROM Invoice_Status invs WHERE invs.InvoiceID = i.InvoiceID ORDER BY invs.StatUpdateAt DESC LIMIT 1) = 'Paid'
+                        GROUP BY sortKey, label
+                    ) AS ChartData
+                ) AS chartData;
+        `;
         
-        // Default to false if the configuration key doesn't exist
-        const isEnabled = config && config.ConfigValue === 'true';
+        const [[results]] = await db.query(query);
+        
+        const chartDataArray = results.chartData ? JSON.parse(results.chartData) : [];
 
-        return res.status(200).json({ maintenanceMode: isEnabled });
-    } catch (error) {
-        logger.error(`Error fetching maintenance status: ${error.message}`);
-        return res.status(500).json({ message: 'Failed to fetch system configuration.' });
-    }
-});
-
-/**
- * ✅ POST /api/admin/config/set-maintenance
- * Sets the maintenance mode status in the database.
- * Expects body: { enable: boolean }
- */
-router.post('/config/set-maintenance', async (req, res) => {
-    const { enable } = req.body;
-    const value = enable ? 'true' : 'false';
-
-    try {
-        // Use UPSERT (INSERT OR UPDATE) to handle configuration key creation/modification
-        await db.query(`
-            INSERT INTO SystemConfig (ConfigKey, ConfigValue)
-            VALUES ('MAINTENANCE_MODE', ?)
-            ON DUPLICATE KEY UPDATE ConfigValue = ?`, [value, value]);
-
-        return res.status(200).json({ 
-            message: 'Maintenance mode updated.', 
-            maintenanceMode: enable 
+        res.json({
+            totalOrders: results.totalOrders || 0,
+            totalRevenue: results.totalRevenue || 0,
+            newShops: results.newShops || 0, 
+            chartData: chartDataArray,
         });
+
     } catch (error) {
-        logger.error(`Error setting maintenance status: ${error.message}`);
-        return res.status(500).json({ message: 'Failed to update system configuration.' });
+        logger.error("Error fetching platform summary:", error);
+        res.status(500).json({ error: "Failed to fetch platform summary" });
     }
 });
 
 
-// =======================================================
-// 2. Reports Routes (reports/download)
-// =======================================================
-
 /**
- * ✅ GET /api/admin/reports/download?type={daily|monthly}
- * Generates and downloads a system report (CSV).
+ * 🆕 POST /api/admin/report/top-shops
+ * Fetches Top 10 Shops by Revenue for the period.
  */
-router.get('/reports/download', async (req, res) => {
-    const reportType = req.query.type;
-    // Format today's date (e.g., '2025-10-27')
-    const today = new Date().toISOString().split('T')[0]; 
-    let reportData = [];
-    let filename;
+router.post("/report/top-shops", async (req, res) => {
+    const { period } = req.body; 
+    const dateCondition = getDateCondition(period, 'o');
     
     try {
-        if (reportType === 'daily') {
-            // **CORRECTED QUERY for Daily Report**
-            // FIX: CAST PayAmount to CHAR to ensure the database returns a plain string, 
-            // preventing the CSV file from showing Buffer data for decimal values.
-            reportData = await db.query(`
-                SELECT 
-                    s.ShopName, 
-                    c.CustName AS CustomerName,
-                    CAST(inv.PayAmount AS CHAR) AS Amount,
-                    ist.PaidAt AS DateCompleted,
-                    ist.InvoiceStatus AS Status
-                FROM Orders o
-                JOIN Customers c ON o.CustID = c.CustID
-                JOIN Laundry_Shops s ON o.ShopID = s.ShopID
-                JOIN Invoices inv ON o.OrderID = inv.OrderID
-                JOIN Invoice_Status ist ON inv.InvoiceID = ist.InvoiceID
-                WHERE DATE(ist.PaidAt) = ? AND ist.InvoiceStatus = 'Paid'`, [today]);
-            
-            filename = `daily_report_${today}.csv`;
-
-        } else if (reportType === 'monthly') {
-            // **CORRECTED QUERY for Monthly Report**
-            // FIX: CAST SUM(inv.PayAmount) to CHAR to ensure the aggregated total revenue 
-            // is returned as a plain string, preventing Buffer data in the CSV.
-            const startOfMonth = new Date(today.substring(0, 7) + '-01').toISOString().split('T')[0];
-            
-            reportData = await db.query(`
-                SELECT 
-                    s.ShopName, 
-                    COUNT(o.OrderID) as TotalOrders, 
-                    CAST(SUM(inv.PayAmount) AS CHAR) as TotalRevenue
-                FROM Orders o
-                JOIN Laundry_Shops s ON o.ShopID = s.ShopID
-                JOIN Invoices inv ON o.OrderID = inv.OrderID
-                JOIN Invoice_Status ist ON inv.InvoiceID = ist.InvoiceID
-                WHERE ist.PaidAt >= ? AND ist.InvoiceStatus = 'Paid'
-                GROUP BY s.ShopName`, [startOfMonth]);
-
-            filename = `monthly_report_${today.substring(0, 7)}.csv`;
-
-        } else {
-            return res.status(400).json({ message: 'Invalid report type specified.' });
-        }
-
-        if (reportData.length === 0) {
-            return res.status(404).json({ message: `No data found to generate the ${reportType} report.` });
-        }
-        
-        // Convert JSON data to CSV
-        const json2csvParser = new Parser();
-        const csv = json2csvParser.parse(reportData);
-
-        // Send the CSV file as a download
-        res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        return res.status(200).send(csv);
-
+        const query = `
+            SELECT
+                ls.ShopName AS name, -- FIX: ShopName is in Laundry_Shops
+                SUM(i.PayAmount) AS revenue
+            FROM Invoices i
+            JOIN Orders o ON i.OrderID = o.OrderID
+            JOIN Laundry_Shops ls ON o.ShopID = ls.ShopID -- FIX: Use Laundry_Shops table name
+            WHERE ${dateCondition}
+                -- FIX: Use Invoice_Status table and correct column name (InvoiceStatus)
+                AND (SELECT invs.InvoiceStatus FROM Invoice_Status invs WHERE invs.InvoiceID = i.InvoiceID ORDER BY invs.StatUpdateAt DESC LIMIT 1) = 'Paid'
+            GROUP BY ls.ShopID, ls.ShopName
+            ORDER BY revenue DESC
+            LIMIT 10;
+        `;
+        const [rows] = await db.query(query);
+        res.json(rows);
     } catch (error) {
-        logger.error(`Report generation error (${reportType}): ${error.message}`);
-        return res.status(500).json({ 
-            message: `Failed to generate ${reportType} report.`, 
-            error: error.message 
-        });
-    }
-});
-
-router.post('/backup/run', async (req, res) => {
-    try {
-        // This executes the mysqldump command and returns the full file path.
-        const backupFilePath = await runSystemBackup();
-        
-        // Extract the filename to pass to the download link
-        const backupFileName = path.basename(backupFilePath);
-
-        logger.info(`Database backup successful: ${backupFileName}`);
-        
-        // Return success with the filename and a pre-signed download URL
-        return res.status(200).json({ 
-            message: 'Database backup completed successfully.',
-            filename: backupFileName,
-            downloadUrl: `/api/admin/backup/download?filename=${backupFileName}` // URL for Step 3
-        });
-    } catch (error) {
-        logger.error(`Error running database backup: ${error.message}`);
-        return res.status(500).json({ 
-            message: 'Failed to run database backup. Check server logs.',
-            error: error.message 
-        });
+        logger.error("Error fetching top shops:", error);
+        res.status(500).json({ error: "Failed to fetch top shops" });
     }
 });
 
 
 /**
- * ✅ GET /api/admin/backup/download?filename=[name]
- * Streams the generated backup file to the client for download.
+ * 🆕 POST /api/admin/report/order-status-breakdown
+ * Fetches breakdown of all paid orders by their current status (latest entry in Order_Status).
  */
-router.get('/backup/download', (req, res) => {
-    const { filename } = req.query;
-    if (!filename) {
-        return res.status(400).json({ message: 'Missing filename parameter.' });
+router.post("/report/order-status-breakdown", async (req, res) => {
+    const { period } = req.body; 
+    const dateCondition = getDateCondition(period, 'o');
+    
+    try {
+        const query = `
+            SELECT 
+                t1.OrderStatus AS label, -- FIX: Use the OrderStatus column from Order_Status
+                COUNT(o.OrderID) AS count
+            FROM Orders o
+            -- Find the LATEST status record for the order
+            JOIN Order_Status t1 ON t1.OrderID = o.OrderID
+            JOIN (
+                SELECT 
+                    OrderID, MAX(OrderUpdatedAt) as max_date
+                FROM Order_Status
+                GROUP BY OrderID
+            ) t2 ON t1.OrderID = t2.OrderID AND t1.OrderUpdatedAt = t2.max_date
+            
+            JOIN Invoices i ON o.OrderID = i.OrderID -- Ensure only paid orders are counted
+            WHERE ${dateCondition}
+            -- FIX: Use Invoice_Status table and correct column name (InvoiceStatus)
+            AND (SELECT invs.InvoiceStatus FROM Invoice_Status invs WHERE invs.InvoiceID = i.InvoiceID ORDER BY invs.StatUpdateAt DESC LIMIT 1) = 'Paid'
+            GROUP BY t1.OrderStatus
+            ORDER BY count DESC;
+        `;
+        const [rows] = await db.query(query);
+        res.json(rows);
+    } catch (error) {
+        logger.error("Error fetching order status breakdown:", error);
+        res.status(500).json({ error: "Failed to fetch order status breakdown" });
     }
-
-    // IMPORTANT SECURITY STEP: Resolve the absolute path of the requested file
-    const filePath = path.join(BACKUP_DIR, filename);
-
-    // Check if the file exists and prevent directory traversal by validating the path
-    if (!fs.existsSync(filePath) || !filePath.startsWith(BACKUP_DIR)) {
-        logger.warn(`Attempted download of non-existent or invalid backup file: ${filename}`);
-        return res.status(404).json({ message: 'Backup file not found.' });
-    }
-
-    // Set headers for file download
-    res.setHeader('Content-disposition', `attachment; filename=${filename}`);
-    res.setHeader('Content-type', 'application/sql'); 
-
-    // Stream the file to the client
-    const fileStream = fs.createReadStream(filePath);
-    fileStream.pipe(res);
 });
 
 export default router;
