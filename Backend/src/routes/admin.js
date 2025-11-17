@@ -2,7 +2,7 @@
 
 import express from "express";
 // Imports the default export (the pool) as 'db' and the named export (runSystemBackup).
-import db, { runSystemBackup } from "../db.js"; 
+import db, { runSystemBackup, BACKUP_DIR } from "../db.js";
 // Imports the default export (systemLogger) from the utils folder.
 import logger from "../utils/logger.js"; 
 import { Parser } from 'json2csv'; 
@@ -143,51 +143,58 @@ router.get('/reports/download', async (req, res) => {
     }
 });
 
-
-// =======================================================
-// 3. Data Security Route (data-security/backup)
-// =======================================================
-
-/**
- * ✅ POST /api/admin/data-security/backup
- * Triggers a full database backup using the utility function.
- */
-router.post('/data-security/backup', async (req, res) => {
+router.post('/backup/run', async (req, res) => {
     try {
-        // 1. Define Backup Parameters
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `laundrolink_backup_${timestamp}.sql`; 
+        // This executes the mysqldump command and returns the full file path.
+        const backupFilePath = await runSystemBackup();
         
-        // Calculate path to a 'backups' folder outside of the 'src' directory
-        // In a deployed environment, ensure this path is writable and secure.
-        const backupPath = path.join(path.dirname(new URL(import.meta.url).pathname), '..', '..', 'backups', filename); 
-        
-        // Ensure the backups directory exists
-        if (!fs.existsSync(path.dirname(backupPath))) {
-            fs.mkdirSync(path.dirname(backupPath), { recursive: true });
-        }
+        // Extract the filename to pass to the download link
+        const backupFileName = path.basename(backupFilePath);
 
-        // 2. Execute the Database Backup Command using the named import
-        const success = await runSystemBackup(backupPath); 
+        logger.info(`Database backup successful: ${backupFileName}`);
         
-        if (!success) {
-             throw new Error("Database backup command failed to execute.");
-        }
-
-        logger.info(`Database backup successful: ${filename}`);
+        // Return success with the filename and a pre-signed download URL
         return res.status(200).json({ 
-            message: 'System backup completed.', 
-            filename: filename 
+            message: 'Database backup completed successfully.',
+            filename: backupFileName,
+            downloadUrl: `/api/admin/backup/download?filename=${backupFileName}` // URL for Step 3
         });
-
     } catch (error) {
-        logger.error(`Backup process error: ${error.message}`);
+        logger.error(`Error running database backup: ${error.message}`);
         return res.status(500).json({ 
-            message: 'Failed to complete system backup.', 
+            message: 'Failed to run database backup. Check server logs.',
             error: error.message 
         });
     }
 });
 
+
+/**
+ * ✅ GET /api/admin/backup/download?filename=[name]
+ * Streams the generated backup file to the client for download.
+ */
+router.get('/backup/download', (req, res) => {
+    const { filename } = req.query;
+    if (!filename) {
+        return res.status(400).json({ message: 'Missing filename parameter.' });
+    }
+
+    // IMPORTANT SECURITY STEP: Resolve the absolute path of the requested file
+    const filePath = path.join(BACKUP_DIR, filename);
+
+    // Check if the file exists and prevent directory traversal by validating the path
+    if (!fs.existsSync(filePath) || !filePath.startsWith(BACKUP_DIR)) {
+        logger.warn(`Attempted download of non-existent or invalid backup file: ${filename}`);
+        return res.status(404).json({ message: 'Backup file not found.' });
+    }
+
+    // Set headers for file download
+    res.setHeader('Content-disposition', `attachment; filename=${filename}`);
+    res.setHeader('Content-type', 'application/sql'); 
+
+    // Stream the file to the client
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+});
 
 export default router;
