@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>LaundroLink Admin Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         body {
             margin: 0;
@@ -61,9 +62,10 @@
         /* --- Dashboard Styles --- */
         .admin-kpi-grid { 
             display: grid; 
-            grid-template-columns: repeat(4, 1fr); 
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); 
             gap: 25px; 
             margin-bottom: 40px; 
+            margin-top: 30px;
         }
         .kpi-card { 
             background: white; 
@@ -71,51 +73,48 @@
             border-radius: 12px; 
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); 
             border-left: 5px solid; 
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .kpi-card:hover {
+            transform: translateY(-5px);
         }
         .kpi-card h3 { 
-            margin: 0 0 5px 0; 
-            font-size: 16px; 
-            color: #6c757d; 
-            font-weight: 500; 
+            margin: 0 0 10px 0; 
+            font-size: 18px; 
+            color: #343a40; 
+            font-weight: 600; 
         }
         .kpi-card p { 
-            margin: 0; 
-            font-size: 36px; 
-            font-weight: 700; 
-            color: #343a40; 
+            margin: 0 0 15px 0; 
+            font-size: 14px; 
+            color: #6c757d;
+        }
+        .kpi-card i {
+            margin-right: 8px;
+        }
+        .kpi-card a {
+            display: inline-block;
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.2s;
         }
         .dashboard-header {
             background: white;
-            padding: 15px 25px;
+            padding: 25px 30px;
             border-radius: 10px;
             margin-bottom: 25px;
             box-shadow: 0px 4px 12px rgba(0,0,0,0.05);
         }
         .dashboard-header h1 {
             margin: 0;
-            font-size: 24px;
+            font-size: 28px;
             color: #0077b6;
         }
-        .chart-container { 
-            background: white; 
-            padding: 25px; 
-            border-radius: 12px; 
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); 
-        }
-        .container-title { 
-            font-size: 20px; 
-            font-weight: 600; 
-            color: #343a40; 
-            margin: 0 0 30px 0; 
-        }
-        .chart-area { 
-            position: relative; 
-            width: 100%; 
-            height: 350px; 
-        }
-        .chart-svg { 
-            width: 100%; 
-            height: 100%; 
+        .dashboard-header p {
+            margin: 5px 0 0 0;
+            color: #6c757d;
+            font-size: 16px;
         }
         /* --- Bubble Animation --- */
         .bubble {
@@ -123,6 +122,7 @@
             border-radius: 50%;
             background: rgba(0, 183, 255, 0.15);
             animation: float 6s infinite ease-in-out;
+            z-index: 0;
         }
         .bubble.small {
             width: 40px; height: 40px;
@@ -144,17 +144,18 @@
         <div>
             <h2>🧺 LaundroLink</h2>
             <nav class="sidebar-nav">
-                <a data-page="dashboard" class="active">Dashboard</a> 
-                <a data-page="manage_users">Manage Users</a>
-                <a data-page="monitor_activity">Monitor System Activity</a>
-                <a data-page="payment_processing">Payment Processing</a>
-                <a data-page="system_settings">System Settings</a>
-                <a data-page="data_security">Data Security</a>
-                <a data-page="reports">Generate Reports</a>
+                <a data-page="dashboard" class="active"><i class="fas fa-home"></i> Dashboard</a> 
+                <a data-page="manage_users"><i class="fas fa-users"></i> Manage Users</a>
+                <a data-page="monitor_activity"><i class="fas fa-desktop"></i> Monitor System Activity</a>
+                <a data-page="payment_processing"><i class="fas fa-dollar-sign"></i> Payment Processing</a>
+                <a data-page="system_settings"><i class="fas fa-cog"></i> System Settings</a>
+                <a data-page="data_security"><i class="fas fa-shield-alt"></i> Data Security</a>
+                <a data-page="reports"><i class="fas fa-file-invoice-dollar"></i> Generate Reports</a>
+                <a data-page="analytics"><i class="fas fa-chart-area"></i> Data Analytics</a>
             </nav>
         </div>
         <div class="logout-link">
-            <a id="logoutButton">Logout</a>
+            <a id="logoutButton"><i class="fas fa-sign-out-alt"></i> Logout</a>
         </div>
     </div>
 
@@ -165,19 +166,17 @@
     <div class="bubble large"></div>
 
     <script type="module">
-    import { API_BASE_URL } from './api.js';
+    // Removed API_BASE_URL import as per request
 
     // --- INITIAL AUTHENTICATION CHECK ---
     const userJSON = localStorage.getItem('laundroUser');
     if (!userJSON) {
         window.location.href = 'index.php';
-        // Prevent further execution if redirecting
         throw new Error('User not logged in or session expired.'); 
     }
     const loggedInUser = JSON.parse(userJSON);
     if (loggedInUser.UserRole !== 'Admin') {
         window.location.href = 'index.php';
-        // Prevent further execution if redirecting
         throw new Error('Access denied. User is not Admin.'); 
     }
     
@@ -185,213 +184,67 @@
     const navLinks = document.querySelectorAll('.sidebar-nav a');
     const logoutButton = document.getElementById('logoutButton');
     
-    // --- ADMIN DASHBOARD FUNCTIONS ---
+    // --- ADMIN DASHBOARD FUNCTIONS (Static Nav Hub) ---
     
     function drawAdminDashboard() {
+        // Static content for the Dashboard page
         const dashboardHtml = `
             <div class="dashboard-header">
-                <h1>Welcome, Admin ${loggedInUser.UserName || ''}!</h1>
-            </div>
-            <div class="admin-kpi-grid">
-                <div class="kpi-card" style="border-color: #007bff;">
-                    <h3>Total Shop Owners</h3>
-                    <p id="totalOwners">...</p>
-                </div>
-                <div class="kpi-card" style="border-color: #28a745;">
-                    <h3>Active Shops (Last 30 Days)</h3>
-                    <p id="activeShops">...</p>
-                </div>
-                <div class="kpi-card" style="border-color: #ffc107;">
-                    <h3>Total Payments Processed</h3>
-                    <p id="totalPayments">...</p>
-                </div>
-                <div class="kpi-card" style="border-color: #17a2b8;">
-                    <h3>Total System Users</h3>
-                    <p id="totalUsers">...</p>
-                </div>
+                <h1>Welcome to the LaundroLink Admin Control Panel!</h1>
+                <p>Use the navigation links in the sidebar or below to manage the platform.</p>
             </div>
             
-            <div class="chart-container">
-                <h3 class="container-title">System Growth (New Users/Shops - Last 12 Months)</h3>
-                <div class="chart-area">
-                    <svg class="chart-svg" id="adminChartSvg"></svg>
+            <div class="admin-kpi-grid">
+                
+                <div class="kpi-card" style="border-color: #007bff;" data-page-nav="reports">
+                    <h3><i class="fas fa-file-invoice-dollar"></i> Generate Reports</h3>
+                    <p>Analyze revenue, orders, and shop performance metrics for specific periods.</p>
+                    <a href="#" style="color:#007bff;">View Operational Reports »</a>
                 </div>
+                
+                <div class="kpi-card" style="border-color: #28a745;" data-page-nav="analytics">
+                    <h3><i class="fas fa-chart-area"></i> Data Analytics</h3>
+                    <p>Access historical growth trends, shop acquisition, and service gap analysis.</p>
+                    <a href="#" style="color:#28a745;">View Strategic Insights »</a>
+                </div>
+                
+                <div class="kpi-card" style="border-color: #ffc107;" data-page-nav="manage_users">
+                    <h3><i class="fas fa-users-cog"></i> Manage Users</h3>
+                    <p>Review and administer accounts for customers, staff, and shop owners.</p>
+                    <a href="#" style="color:#ffc107;">Go to User Management »</a>
+                </div>
+                
+                <div class="kpi-card" style="border-color: #17a2b8;" data-page-nav="system_settings">
+                    <h3><i class="fas fa-cogs"></i> System Settings</h3>
+                    <p>Toggle maintenance mode, manage configuration values, and system parameters.</p>
+                    <a href="#" style="color:#17a2b8;">Configure System »</a>
+                </div>
+                
             </div>
             `;
         contentArea.innerHTML = dashboardHtml;
-        fetchAdminDashboardData();
+        
+        // Add event listeners to the new cards inside the dashboard area
+        document.querySelectorAll('.admin-kpi-grid .kpi-card').forEach(card => {
+            card.addEventListener('click', (e) => {
+                // Only navigate if the click target is the card itself or its children, excluding the <a> tag
+                if (e.target.tagName !== 'A') {
+                    const page = card.getAttribute('data-page-nav');
+                    if (page) loadContent(page);
+                }
+            });
+            // Also ensure the explicit link works
+            const link = card.querySelector('a');
+            if (link) {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    loadContent(card.getAttribute('data-page-nav'));
+                });
+            }
+        });
     }
     
-    async function fetchAdminDashboardData() {
-        document.getElementById('totalOwners').textContent = 'Fetching...';
-        document.getElementById('activeShops').textContent = 'Fetching...';
-        document.getElementById('totalPayments').textContent = 'Fetching...';
-        document.getElementById('totalUsers').textContent = 'Fetching...';
-
-        const chartSvg = document.getElementById('adminChartSvg');
-        if (chartSvg) {
-            chartSvg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#adb5bd" font-family="Segoe UI">Loading data...</text>`;
-        }
-        
-        try {
-            // Fetching data from the consolidated analytics endpoint
-            const response = await fetch(`${API_BASE_URL}/analytics/admin-dashboard-stats`);
-            if (!response.ok) throw new Error('Failed to fetch admin dashboard stats');
-            
-            const data = await response.json();
-            
-            document.getElementById('totalOwners').textContent = data.totalOwners || '0';
-            document.getElementById('activeShops').textContent = data.activeShops || '0';
-            document.getElementById('totalPayments').textContent = data.totalPayments || '0';
-            document.getElementById('totalUsers').textContent = data.totalUsers || '0';
-            
-            drawChart(data.chartData); 
-            
-        } catch (error) {
-            console.error("Admin Dashboard fetch error:", error);
-            document.getElementById('totalOwners').textContent = 'Error';
-            document.getElementById('activeShops').textContent = 'Error';
-            document.getElementById('totalPayments').textContent = 'Error';
-            document.getElementById('totalUsers').textContent = 'Error';
-
-            if (chartSvg) {
-                chartSvg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#dc3545" font-family="Segoe UI">Error loading chart data.</text>`;
-            }
-        }
-    }
-
-    // --- CHART DRAWING FUNCTION (SVG logic) ---
-
-    function drawChart(chartData) {
-        const chartSvg = document.getElementById('adminChartSvg'); 
-        chartSvg.innerHTML = '';
-        if (!chartData || chartData.length === 0) {
-            chartSvg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#adb5bd" font-family="Segoe UI">No growth data for the last 12 months.</text>`;
-            return;
-        }
-        
-        const values = chartData.map(d => d.value);
-        const labels = chartData.map(d => d.label);
-        const maxCount = Math.ceil(Math.max(...values, 1) / 10) * 10 || 10;
-        const svgNS = "http://www.w3.org/2000/svg";
-        const padding = { top: 20, right: 20, bottom: 60, left: 70 };
-        const svgWidth = chartSvg.clientWidth;
-        const svgHeight = chartSvg.clientHeight;
-        const chartWidth = svgWidth - padding.left - padding.right;
-        const chartHeight = svgHeight - padding.top - padding.bottom;
-
-        // Draw grid lines and Y-axis labels
-        const numGridLines = 5;
-        for (let i = 0; i <= numGridLines; i++) {
-            const y = padding.top + (chartHeight / numGridLines) * i;
-            const value = maxCount - (maxCount / numGridLines) * i;
-            // Horizontal grid line
-            const gridLine = document.createElementNS(svgNS, 'line'); 
-            gridLine.setAttribute('x1', padding.left); gridLine.setAttribute('y1', y); 
-            gridLine.setAttribute('x2', svgWidth - padding.right); gridLine.setAttribute('y2', y); 
-            gridLine.setAttribute('stroke', '#5b5e61ff'); gridLine.setAttribute('stroke-dasharray', '3 3'); 
-            chartSvg.appendChild(gridLine);
-            
-            // Y-axis label
-            const yLabel = document.createElementNS(svgNS, 'text'); 
-            yLabel.setAttribute('x', padding.left - 10); yLabel.setAttribute('y', y + 4); 
-            yLabel.setAttribute('text-anchor', 'end'); yLabel.setAttribute('fill', '#1a1b1cff'); 
-            yLabel.setAttribute('font-size', '12'); yLabel.textContent = `${value}`; 
-            chartSvg.appendChild(yLabel);
-        }
-
-        // --- ADD AXIS TITLES ---
-        
-        // Y-Axis Title
-        const yTitle = document.createElementNS(svgNS, 'text');
-        yTitle.setAttribute('transform', `rotate(-90)`);
-        yTitle.setAttribute('x', -(svgHeight / 2));
-        yTitle.setAttribute('y', 20); 
-        yTitle.setAttribute('text-anchor', 'middle');
-        yTitle.setAttribute('fill', '#000000ff');
-        yTitle.setAttribute('font-size', '14');
-        yTitle.setAttribute('font-weight', '600');
-        yTitle.textContent = 'New Users/Shops Count';
-        chartSvg.appendChild(yTitle);
-
-        // X-Axis Title
-        const xTitle = document.createElementNS(svgNS, 'text');
-        xTitle.setAttribute('x', padding.left + chartWidth / 2);
-        xTitle.setAttribute('y', svgHeight - 10); 
-        xTitle.setAttribute('text-anchor', 'middle');
-        xTitle.setAttribute('fill', '#000000ff');
-        xTitle.setAttribute('font-size', '14');
-        xTitle.setAttribute('font-weight', '600');
-        xTitle.textContent = 'Month of Registration (YYYY-MM)';
-        chartSvg.appendChild(xTitle);
-        
-        // --- DRAW LINE AND AREA ---
-        const defs = document.createElementNS(svgNS, 'defs'); 
-        const gradient = document.createElementNS(svgNS, 'linearGradient'); 
-        gradient.id = 'adminAreaGradient'; 
-        gradient.innerHTML = `<stop offset="0%" style="stop-color:#0096c7; stop-opacity:0.4"/><stop offset="100%" style="stop-color:#0096c7; stop-opacity:0"/>`; 
-        defs.appendChild(gradient); 
-        chartSvg.appendChild(defs);
-        
-        const points = values.map((value, index) => {
-            let pointX;
-            
-            if (labels.length > 1) {
-                // Standard calculation for 2 or more points
-                pointX = padding.left + (index / (labels.length - 1)) * chartWidth;
-            } else {
-                // FIX: If only one point, place it in the center
-                pointX = padding.left + chartWidth / 2;
-            }
-
-            return { 
-                x: pointX, 
-                y: padding.top + chartHeight - (value / maxCount) * chartHeight 
-            };
-        });
-        
-        // Logic for drawing the line/area (only runs if labels.length > 1)
-        if (labels.length > 1) {
-            const line = (points) => { 
-                let d = `M ${points[0].x} ${points[0].y}`; 
-                for (let i = 0; i < points.length - 1; i++) { 
-                    const x_mid = (points[i].x + points[i+1].x) / 2; 
-                    const cp_x1 = (x_mid + points[i].x) / 2; 
-                    d += ` C ${cp_x1},${points[i].y} ${cp_x1},${points[i+1].y} ${points[i+1].x},${points[i+1].y}`; 
-                } 
-                return d; 
-            };
-            
-            const areaPath = document.createElementNS(svgNS, 'path'); 
-            areaPath.setAttribute('d', line(points) + ` L ${svgWidth - padding.right} ${svgHeight - padding.bottom} L ${padding.left} ${svgHeight - padding.bottom} Z`); 
-            areaPath.setAttribute('fill', 'url(#adminAreaGradient)');
-            chartSvg.appendChild(areaPath);
-
-            const linePath = document.createElementNS(svgNS, 'path'); 
-            linePath.setAttribute('d', line(points)); 
-            linePath.setAttribute('fill', 'none'); 
-            linePath.setAttribute('stroke', '#0096c7'); 
-            linePath.setAttribute('stroke-width', '3');
-            chartSvg.appendChild(linePath);
-        }
-
-        // Draw circles and x-labels for all points (regardless of count)
-        points.forEach((point, index) => {
-            const circle = document.createElementNS(svgNS, 'circle'); 
-            circle.setAttribute('cx', point.x); circle.setAttribute('cy', point.y); 
-            circle.setAttribute('r', '5'); circle.setAttribute('fill', '#0096c7'); 
-            circle.setAttribute('stroke', 'white'); circle.setAttribute('stroke-width', '2'); 
-            chartSvg.appendChild(circle);
-            
-            const xLabel = document.createElementNS(svgNS, 'text'); 
-            xLabel.setAttribute('x', point.x); xLabel.setAttribute('y', svgHeight - padding.bottom + 20); 
-            xLabel.setAttribute('text-anchor', 'middle'); xLabel.setAttribute('fill', '#000000ff'); 
-            xLabel.setAttribute('font-size', '12'); 
-            // Show only MM part, or the full label if only one point
-            xLabel.textContent = labels[index].replace(/^\d{4}-/, ''); 
-            chartSvg.appendChild(xLabel);
-        });
-    }
+    // Removed fetchAdminDashboardData and drawChart functions
 
     // --- NAVIGATION AND INITIAL LOAD ---
 
@@ -407,7 +260,7 @@
             return;
         }
 
-        const iframePages = ['manage_users', 'monitor_activity', 'payment_processing', 'system_settings', 'data_security', 'reports'];
+        const iframePages = ['manage_users', 'monitor_activity', 'payment_processing', 'system_settings', 'data_security', 'reports', 'analytics'];
         if (iframePages.includes(page)) {
             const iframe = document.createElement('iframe');
             iframe.src = `admin_pages/${page}.php`;
@@ -437,19 +290,12 @@
 
     logoutButton.addEventListener('click', (event) => {
         event.preventDefault();
-        if (confirm('Are you sure you want to logout?')) {
-            localStorage.removeItem('laundroUser');
-            window.location.href = 'index.php';
-        }
+        // Use custom modal or UI instead of confirm()
+        alert('Logging out...'); // Placeholder for custom logout confirmation
+        localStorage.removeItem('laundroUser');
+        window.location.href = 'index.php';
     });
-
-    // Handle messages from iframes (if any are used to navigate)
-    window.addEventListener('message', (event) => {
-        if (event.data.type === 'loadPage') {
-            loadContent(event.data.page);
-        }
-    });
-
+    
     // Initial page load
     loadContent('dashboard'); 
     </script>

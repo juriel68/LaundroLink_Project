@@ -1,0 +1,177 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+import mysql.connector
+import pandas as pd
+from datetime import datetime, timedelta
+
+# ========================
+# 1️⃣ Database Connection
+# ========================
+db_config = {
+    "host": "localhost",
+    "user": "root",
+    "password": "",
+    "database": "laundrolink_db"
+}
+
+try:
+    conn = mysql.connector.connect(**db_config)
+    cursor = conn.cursor(dictionary=True)
+    print("✅ Connected to MySQL database.")
+except mysql.connector.Error as err:
+    print(f"❌ Database connection failed: {err}")
+    exit()
+
+# ===================================================================
+# 2️⃣ Helper: Create Admin Analytics Tables
+# ===================================================================
+def create_admin_analytics_tables(cursor):
+    """
+    Checks for and creates the necessary platform-level analytics tables.
+    """
+    print("🔍 Checking and creating Admin analytics tables if needed...")
+    
+    # 1. Platform_Growth_Metrics: Tracks monthly shop and revenue growth/churn
+    create_growth_table = """
+    CREATE TABLE IF NOT EXISTS Platform_Growth_Metrics (
+        MonthYear CHAR(7) PRIMARY KEY, -- YYYY-MM
+        NewShops INT DEFAULT 0,
+        ChurnedShops INT DEFAULT 0, -- Shops marked inactive/deleted
+        TotalActiveShops INT,
+        MonthlyRevenue DECIMAL(12, 2),
+        AnalyzedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    );
+    """
+    
+    # 2. Service_Gap_Analysis: Identifies high-demand services not widely offered
+    create_gap_table = """
+    CREATE TABLE IF NOT EXISTS Service_Gap_Analysis (
+        SvcName VARCHAR(50) PRIMARY KEY,
+        PlatformOrderCount INT NOT NULL, -- Total demand for the service
+        OfferingShopCount INT NOT NULL, -- Total number of shops offering the service
+        GapScore DECIMAL(10, 2), -- Demand/Supply ratio
+        AnalyzedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    );
+    """
+    
+    try:
+        cursor.execute(create_growth_table)
+        cursor.execute(create_gap_table)
+        print("✅ Admin Analytics tables are ready.")
+    except mysql.connector.Error as err:
+        print(f"❌ Error creating Admin analytics tables: {err}")
+        exit()
+
+# ===================================================================
+# 3️⃣ Analyze Service Gaps
+# ===================================================================
+def analyze_service_gaps(conn, cursor):
+    print("📊 Running Service Gap Analysis...")
+
+    # Step 1: Get total orders per service (Demand)
+    demand_query = """
+    SELECT 
+        s.SvcName, COUNT(o.OrderID) AS PlatformOrderCount
+    FROM Orders o
+    JOIN Services s ON o.SvcID = s.SvcID
+    GROUP BY s.SvcName;
+    """
+    demand_df = pd.read_sql(demand_query, conn)
+
+    # Step 2: Get total count of shops offering each service (Supply)
+    supply_query = """
+    SELECT 
+        s.SvcName, COUNT(ss.ShopID) AS OfferingShopCount
+    FROM Shop_Services ss
+    JOIN Services s ON ss.SvcID = s.SvcID
+    GROUP BY s.SvcName;
+    """
+    supply_df = pd.read_sql(supply_query, conn)
+    
+    # Merge and calculate Gap Score (Demand / Supply)
+    gap_df = pd.merge(demand_df, supply_df, on='SvcName', how='outer').fillna(0)
+    
+    # Calculate Gap Score: Normalize by demand. Prevent division by zero.
+    gap_df['OfferingShopCount'] = gap_df['OfferingShopCount'].replace(0, 1) # Treat 0 as 1 to calculate score
+    gap_df['GapScore'] = (gap_df['PlatformOrderCount'] / gap_df['OfferingShopCount'])
+    
+    gap_df = gap_df.sort_values(by='GapScore', ascending=False)
+
+    # Store in MySQL
+    cursor.execute("TRUNCATE TABLE Service_Gap_Analysis;")
+    for _, row in gap_df.iterrows():
+        cursor.execute("""
+            INSERT INTO Service_Gap_Analysis (SvcName, PlatformOrderCount, OfferingShopCount, GapScore)
+            VALUES (%s, %s, %s, %s)
+        """, (row['SvcName'], int(row['PlatformOrderCount']), int(row['OfferingShopCount']), row['GapScore']))
+
+    conn.commit()
+    print("✅ Service Gap Analysis updated successfully.")
+
+# ===================================================================
+# 4️⃣ Analyze Platform Growth and Churn
+# ===================================================================
+def analyze_platform_growth(conn, cursor):
+    print("📈 Analyzing Platform Growth and Churn...")
+    
+    # --- 1. Monthly Revenue ---
+    revenue_query = """
+    SELECT
+        DATE_FORMAT(o.OrderCreatedAt, '%Y-%m') AS MonthYear,
+        SUM(i.PayAmount) AS MonthlyRevenue
+    FROM Orders o
+    JOIN Invoices i ON o.OrderID = i.OrderID
+    WHERE (SELECT invs.InvoiceStatus FROM Invoice_Status invs WHERE invs.InvoiceID = i.InvoiceID ORDER BY invs.StatUpdateAt DESC LIMIT 1) = 'Paid'
+    GROUP BY MonthYear
+    ORDER BY MonthYear;
+    """
+    revenue_df = pd.read_sql(revenue_query, conn)
+    
+    # --- 2. Monthly New Shops (Using Laundry_Shops.DateCreated) ---
+    
+    # Get all shop registration dates
+    # FIX: Query changed to use Laundry_Shops.DateCreated directly
+    shop_data_query = """
+    SELECT 
+        ShopID, 
+        DATE_FORMAT(DateCreated, '%Y-%m') AS MonthYear
+    FROM Laundry_Shops
+    ORDER BY MonthYear;
+    """
+    shop_df = pd.read_sql(shop_data_query, conn)
+
+    # Calculate New Shops per month
+    new_shops_df = shop_df.groupby('MonthYear').size().reset_index(name='NewShops')
+    
+    # Merge all data
+    growth_df = pd.merge(new_shops_df, revenue_df, on='MonthYear', how='outer').fillna(0)
+    
+    # --- 3. Calculate Cumulative Active Shops ---
+    # NOTE: Since we don't have a definitive "deactivated" timestamp, ChurnedShops will be 0, 
+    # and TotalActiveShops will be cumulative new shops.
+    growth_df['TotalActiveShops'] = growth_df['NewShops'].cumsum()
+    growth_df['ChurnedShops'] = 0 
+
+    # Store in MySQL
+    cursor.execute("TRUNCATE TABLE Platform_Growth_Metrics;")
+    for _, row in growth_df.iterrows():
+        cursor.execute("""
+            INSERT INTO Platform_Growth_Metrics (MonthYear, NewShops, ChurnedShops, TotalActiveShops, MonthlyRevenue)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (row['MonthYear'], int(row['NewShops']), int(row['ChurnedShops']), int(row['TotalActiveShops']), row['MonthlyRevenue']))
+        
+    conn.commit()
+    print("✅ Platform Growth Metrics updated successfully.")
+
+# ===================================================================
+# 5️⃣ Main Execution
+# ===================================================================
+if __name__ == '__main__':
+    create_admin_analytics_tables(cursor)
+    analyze_service_gaps(conn, cursor)
+    analyze_platform_growth(conn, cursor)
+
+    cursor.close()
+    conn.close()
+    print("\n🎯 Admin data analytics processing complete! All platform metrics are live in MySQL.")
