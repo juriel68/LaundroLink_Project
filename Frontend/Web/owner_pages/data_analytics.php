@@ -261,7 +261,7 @@
   </div>
 
   <script type="module">
-    import { API_BASE_URL } from '../api.js'; 
+    import { API_BASE_URL } from '/Web/api.js'; 
 
     const loggedInUser = JSON.parse(window.parent.localStorage.getItem('laundroUser'));
 

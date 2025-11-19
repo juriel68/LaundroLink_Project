@@ -9,7 +9,7 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
             margin: 0; 
             background-color: #f8f9fa; 
-            overflow: auto; /* Changed to auto to ensure content is visible */
+            overflow: auto;
         }
 
         .title-box { 
@@ -126,6 +126,7 @@
             font-weight: 600; 
             transition: all 0.3s ease; 
             width: 100%;
+            margin-top: 5px;
         }
 
         .btn-edit:hover { 
@@ -231,14 +232,14 @@
             height: 100%; 
             background-color: rgba(0,0,0,0.5); 
             overflow-y: auto; 
-            display: flex; /* Ensure centering works when visible */
+            display: flex;
             justify-content: center;
             align-items: center;
         }
 
         .popup-content { 
             background-color: #fff; 
-            margin: auto; /* Center vertically and horizontally */
+            margin: auto;
             padding: 30px; 
             border-radius: 12px; 
             width: 420px; 
@@ -323,11 +324,15 @@
         <p>View and manage your laundry shop's information and customer feedback.</p>
     </div>
 
-    <div class="shop-details-container">
+    <div id="shop-main-content">
+        <p style="text-align:center; margin-top: 50px;">Checking shop status...</p>
+    </div>
+
+    <div class="shop-details-container" id="shop-details-view" style="display:none;">
         <div class="details-column">
             <div class="shop-card">
                 <div class="shop-header">
-                    <h2 class="shop-name" id="shop-name-display">Loading...</h2>
+                    <h2 class="shop-name" id="shop-name-display"></h2>
                     <p class="shop-descrp" id="shop-descrp-display"></p>
                 </div>
                 <div class="details-box">
@@ -338,11 +343,15 @@
                 <div class="status-container">
                     <span class="shop-status" id="shop-status-display"></span>
                 </div>
+                
                 <button class="btn-edit" id="edit-details-btn">Edit Details</button>
+                
+                <button class="btn-edit" id="configure-shop-btn" style="background-color: #1a76d2;">
+                    Configure Services & Pricing
+                </button>
             </div>
         </div>
 
-        <!-- Enhanced Ratings Section -->
         <div class="reviews-column">
             <h2>Ratings</h2>
             <div class="rating-summary">
@@ -354,6 +363,14 @@
                 <div class="rating-breakdown" id="rating-breakdown"></div>
             </div>
         </div>
+    </div>
+    
+    <div id="config-area" style="max-width: 1100px; margin: 0 auto 40px; display: none;">
+        <iframe id="config-iframe" src="configure_shop.php" 
+                style="width: 100%; min-height: 2500px; border: none; background: transparent;"
+                scrolling="no" 
+                frameborder="0">
+        </iframe>
     </div>
 
     <div id="managePopup" class="popup" style="display: none;">
@@ -367,6 +384,12 @@
                 <textarea id="shopDescrp" rows="3" required></textarea>
                 <label>Address</label>
                 <input type="text" id="shopAddress" required>
+                
+                <label>Shop Latitude</label>
+                <input type="number" id="shopLatitude" step="any" required>
+                <label>Shop Longitude</label>
+                <input type="number" id="shopLongitude" step="any" required>
+                
                 <label>Phone Number</label>
                 <input type="text" id="shopPhone" required>
                 <label>Opening Hours</label>
@@ -390,6 +413,11 @@
         const loggedInUser = JSON.parse(localStorage.getItem('laundroUser'));
         const managePopup = document.getElementById('managePopup');
         const manageForm = document.getElementById('manageForm');
+        
+        const shopMainContent = document.getElementById('shop-main-content');
+        const shopDetailsView = document.getElementById('shop-details-view');
+        const configArea = document.getElementById('config-area');
+        const configureShopBtn = document.getElementById('configure-shop-btn'); 
 
         const shopNameEl = document.getElementById('shop-name-display');
         const shopDescrpEl = document.getElementById('shop-descrp-display');
@@ -400,6 +428,12 @@
         const avgRatingScoreEl = document.getElementById('avg-rating-score');
         const ratingStarsEl = document.getElementById('rating-stars');
         const ratingCountEl = document.getElementById('rating-count');
+
+        const shopLatitudeEl = document.getElementById('shopLatitude');
+        const shopLongitudeEl = document.getElementById('shopLongitude');
+        
+        let shopCoordinates = {}; 
+
 
         // --- MAPS DATA FROM API TO HTML ELEMENTS ---
         const updateShopInfo = (details) => {
@@ -415,7 +449,7 @@
         const updateRatingSummary = (rating) => {
             const avg = parseFloat(rating.averageRating || 0);
             const count = parseInt(rating.ratingCount || 0);
-            const breakdown = rating.breakdown || {}; // e.g., {5:10, 4:4, 3:2, 2:1, 1:0}
+            const breakdown = rating.breakdown || {};
 
             if (count === 0) {
                 avgRatingScoreEl.textContent = 'N/A';
@@ -452,39 +486,76 @@
                 `;
             }
         };
+        
+        // --- VIEW MANAGEMENT FUNCTIONS ---
+        const showMainDetailsView = () => {
+            configArea.style.display = 'none';
+            shopDetailsView.style.display = 'grid';
+            document.querySelector('.title-box h1').textContent = 'My Shop Details';
+            document.querySelector('.title-box p').textContent = 'View and manage your laundry shop\'s information and customer feedback.';
+        };
+
+        window.showMainDetailsView = showMainDetailsView;
+        
+        const loadConfigurationView = () => {
+            shopDetailsView.style.display = 'none';
+            configArea.style.display = 'block';
+            document.querySelector('.title-box h1').textContent = 'Shop Configuration';
+            document.querySelector('.title-box p').textContent = 'Set up your services, pricing, and operational options.';
+            
+            // Reload the iframe content to ensure fresh configuration data
+            document.getElementById('config-iframe').src = 'configure_shop.php';
+        };
+
 
         // --- FETCH SHOP DETAILS ---
         const fetchShopDetails = async () => {
-            // NOTE: Check if ShopID is available in the user object
             const shopId = loggedInUser?.ShopID;
+            
             if (!shopId) {
-                document.body.innerHTML = '<h1>Error: Shop Owner account must be linked to a Shop.</h1>';
+                shopDetailsView.style.display = 'none';
+                configArea.style.display = 'none'; 
+                shopMainContent.innerHTML = `
+                    <div class="title-box" style="text-align:center;">
+                        <h1><i class="fas fa-exclamation-triangle"></i> No Shop Linked</h1>
+                        <p>Your Shop Owner account is not yet linked to a laundry shop. Click the button below to create your first shop.</p>
+                        <button class="btn-edit" id="create-shop-btn" style="width:auto; margin-top:20px;">Create My Shop</button>
+                    </div>
+                `;
                 return;
             }
+
+            showMainDetailsView(); 
+            shopMainContent.innerHTML = '';
+
             try {
-                // The API endpoint must return a single object with all details nested.
-                const response = await fetch(`${API_BASE_URL}/shops/${shopId}/full-details-owner`); // Using a new, explicit owner endpoint
+                const response = await fetch(`${API_BASE_URL}/shops/${shopId}/full-details-owner`);
                 if (!response.ok) throw new Error('Failed to fetch shop details');
                 
                 const data = await response.json();
                 
-                // --- FIX: Extract data from the response structure ---
                 const details = data.details;
                 const rating = data.rating;
                 
-                // Update display fields
+                shopCoordinates = {
+                    ShopLatitude: details.ShopLatitude,
+                    ShopLongitude: details.ShopLongitude
+                };
+                
+                delete details.ShopLatitude; 
+                delete details.ShopLongitude;
+
                 updateShopInfo(details);
                 updateRatingSummary(rating);
 
             } catch (error) {
-                console.error("Fetch error:", error);
-                document.querySelector('.shop-details-container').innerHTML = `<p style="text-align:center; width:100%;">Error loading shop details. ${error.message}</p>`;
+                shopDetailsView.style.display = 'none';
+                shopMainContent.innerHTML = `<p style="text-align:center; width:100%;">Error loading shop details. ${error.message}</p>`;
             }
         };
 
-        // --- POPUP/FORM LOGIC ---
+        // --- POPUP/FORM LOGIC: OPEN POPUP FOR EDIT ---
         document.getElementById('edit-details-btn').addEventListener('click', () => {
-            // Populate Form Fields
             document.getElementById('shopID').value = loggedInUser.ShopID;
             document.getElementById('shopName').value = shopNameEl.textContent;
             document.getElementById('shopDescrp').value = shopDescrpEl.textContent;
@@ -493,41 +564,111 @@
             document.getElementById('shopHours').value = shopHoursEl.textContent;
             document.getElementById('shopStatus').value = shopStatusEl.textContent;
             
+            document.getElementById('shopLatitude').value = shopCoordinates.ShopLatitude || '';
+            document.getElementById('shopLongitude').value = shopCoordinates.ShopLongitude || '';
+
+            document.querySelector('#managePopup h2').textContent = 'Manage Shop';
+            document.querySelector('.btn-save').textContent = 'Save Changes';
             managePopup.style.display = 'flex';
         });
 
+        // --- POPUP/FORM LOGIC: OPEN POPUP FOR CREATE ---
+        document.addEventListener('click', (e) => {
+            if (e.target && e.target.id === 'create-shop-btn') {
+                document.getElementById('shopID').value = ''; 
+                document.getElementById('shopName').value = '';
+                document.getElementById('shopDescrp').value = '';
+                document.getElementById('shopAddress').value = '';
+                document.getElementById('shopPhone').value = '';
+                document.getElementById('shopHours').value = '';
+                document.getElementById('shopStatus').value = 'Available';
+                
+                shopLatitudeEl.value = '';
+                shopLongitudeEl.value = '';
+
+                document.querySelector('#managePopup h2').textContent = 'Create New Shop';
+                document.querySelector('.btn-save').textContent = 'Create Shop';
+                managePopup.style.display = 'flex';
+            }
+        });
+
+
+        // --- POPUP/FORM LOGIC: SUBMIT HANDLER ---
         manageForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const shopId = document.getElementById('shopID').value;
-            const data = {
+            const isCreating = !shopId; 
+            
+            const baseData = {
                 ShopName: document.getElementById('shopName').value,
                 ShopDescrp: document.getElementById('shopDescrp').value,
                 ShopAddress: document.getElementById('shopAddress').value,
                 ShopPhone: document.getElementById('shopPhone').value,
                 ShopOpeningHours: document.getElementById('shopHours').value,
-                ShopStatus: document.getElementById('shopStatus').value
+                ShopStatus: document.getElementById('shopStatus').value,
             };
+
+            let url = '';
+            let method = '';
+            let data = {};
+
+            if (isCreating) {
+                data = {
+                    ...baseData,
+                    ShopLatitude: parseFloat(shopLatitudeEl.value),
+                    ShopLongitude: parseFloat(shopLongitudeEl.value),
+                    OwnerID: loggedInUser?.OwnerID 
+                };
+                url = `${API_BASE_URL}/shops/create`;
+                method = 'POST';
+            } else {
+                data = {
+                    ...baseData,
+                    ShopLatitude: parseFloat(shopLatitudeEl.value),
+                    ShopLongitude: parseFloat(shopLongitudeEl.value)
+                };
+                url = `${API_BASE_URL}/shops/${shopId}`;
+                method = 'PUT';
+            }
+
             try {
-                const response = await fetch(`${API_BASE_URL}/shops/${shopId}`, {
-                    method: 'PUT',
+                const response = await fetch(url, {
+                    method: method,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
                 const result = await response.json();
+                
                 if (!response.ok) throw new Error(result.error || result.message);
                 
-                alert('Shop updated successfully!');
+                alert(isCreating ? 'Shop created and linked successfully!' : 'Shop updated successfully!');
                 managePopup.style.display = 'none';
-                fetchShopDetails();
+
+                if (isCreating) {
+                    loggedInUser.ShopID = result.ShopID; 
+                    localStorage.setItem('laundroUser', JSON.stringify(loggedInUser)); 
+                    
+                    fetchShopDetails().then(loadConfigurationView); 
+                } else {
+                    fetchShopDetails(); 
+                }
+
             } catch (error) {
-                console.error("Update error:", error);
                 alert(`Error: ${error.message}`);
             }
         });
 
         document.getElementById('cancelBtn').addEventListener('click', () => { managePopup.style.display = 'none'; });
         window.onclick = (event) => { if (event.target === managePopup) managePopup.style.display = 'none'; };
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            if (configureShopBtn) {
+                configureShopBtn.addEventListener('click', loadConfigurationView);
+            }
+        });
 
+
+        // Initial data load
         fetchShopDetails();
     </script>
 </body>

@@ -1,4 +1,3 @@
-// homepage.tsx
 import Ionicons from "@expo/vector-icons/Ionicons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Stack, useFocusEffect, useRouter } from "expo-router"; 
@@ -7,13 +6,11 @@ import React, { useCallback, useState } from "react";
 import { FlatList, Image, Pressable, StyleSheet, Text, View, ActivityIndicator, Alert, TouchableOpacity } from "react-native";
 
 import { fetchNearbyShops, Shop } from "@/lib/shops"; 
-// 🔑 IMPORT the UserDetails type from your authentication utilities
 import { UserDetails } from "@/lib/auth"; 
 
 
 export default function Homepage() {
   const router = useRouter();
-  // 🎯 Use the imported UserDetails type
   const [user, setUser] = useState<UserDetails | null>(null); 
   const [shops, setShops] = useState<Shop[]>([]); 
   const [isLoading, setIsLoading] = useState(false);
@@ -47,18 +44,25 @@ export default function Homepage() {
       let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const { latitude, longitude } = location.coords;
 
-      // Assuming fetchNearbyShops is defined correctly in "@/lib/shops"
       const fetchedShops = await fetchNearbyShops(latitude, longitude);
-
-      if (fetchedShops.length > 0) {
-        setShops(fetchedShops);
+      
+      // Filter out any potential null/undefined shops returned by a buggy backend query
+      const validShops = fetchedShops.filter(shop => shop && shop.id); 
+      
+      // 🔑 CONSOLE LOG ADDED HERE TO INSPECT DATA
+      console.log('--- FETCHED SHOPS DEBUG ---');
+      console.log('Valid Shops Count:', validShops.length);
+      console.log('First Shop Details (for inspection):', validShops.length > 0 ? validShops[0] : 'N/A');
+      console.log('--- END DEBUG ---');
+      
+      if (validShops.length > 0) {
+        setShops(validShops);
       } else {
         Alert.alert('Info', 'No shops were found near your location.');
         setShops([]);
       }
 
     } catch (error) {
-      console.error("❌ Failed to fetch shops:", error);
       Alert.alert('Error', 'Could not load shops. Check your network connection.');
       setShops([]);
     } finally {
@@ -73,7 +77,7 @@ export default function Homepage() {
         ...item, 
         image: item.image_url 
       } 
-    });
+    } as any);
   }
 
   const navigateToSearch = () => {
@@ -87,7 +91,6 @@ export default function Homepage() {
         const storedUser = await AsyncStorage.getItem("user");
         if (storedUser) {
             const parsedUser: UserDetails = JSON.parse(storedUser);
-            // 🎯 Ensure the User object is correctly stored in state.
             setUser(parsedUser);
         }
 
@@ -152,24 +155,31 @@ export default function Homepage() {
           <FlatList
             data={shops}
             numColumns={2}
-            keyExtractor={(item) => item.id.toString()}
+            keyExtractor={(item, index) => (item?.id ? item.id.toString() : index.toString())}
             contentContainerStyle={styles.shopList}
-            renderItem={({ item }) => (
-              <Pressable 
-                style={styles.shopCard}
-                onPress={() => navigateToShopDetails(item)}
-              >
-                <Image source={{ uri: item.image_url }} style={styles.shopImage} />
-                <Text style={styles.shopName} numberOfLines={1}>{item.name}</Text>
-                <Text style={styles.shopDetails}>{item.distance.toFixed(1)} km{' '}
-                    <Ionicons name="star" size={12} color="#fadb14" />{' '}
-                    {parseFloat(item.rating || '0').toFixed(1)}
-                </Text>
-                <View style={[ styles.badge, { backgroundColor: item.availability === "Available" ? "#4CAF50" : "#FF5252" } ]}>
-                  <Text style={styles.badgeText}>{item.availability || 'Unknown'}</Text>
-                </View>
-              </Pressable>
-            )}
+            renderItem={({ item }) => {
+                if (!item || !item.id) return null; 
+                
+                return (
+                  <Pressable 
+                    style={styles.shopCard}
+                    onPress={() => navigateToShopDetails(item)}
+                  >
+                    <Image 
+                        source={{ uri: item.image_url }} 
+                        style={styles.shopImage} 
+                    />
+                    <Text style={styles.shopName} numberOfLines={1}>{item.name}</Text>
+                    <Text style={styles.shopDetails}>{item.distance.toFixed(1)} km{' '}
+                        <Ionicons name="star" size={12} color="#fadb14" />{' '}
+                        {parseFloat(item.rating || '0').toFixed(1)}
+                    </Text>
+                    <View style={[ styles.badge, { backgroundColor: item.availability === "Available" ? "#4CAF50" : "#FF5252" } ]}>
+                      <Text style={styles.badgeText}>{item.availability || 'Unknown'}</Text>
+                    </View>
+                  </Pressable>
+                );
+            }}
           />
         ) : (
           <View style={styles.emptyContainer}>

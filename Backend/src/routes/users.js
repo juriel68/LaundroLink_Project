@@ -431,13 +431,13 @@ router.post("/staff", async (req, res) => {
         );
 
         await connection.query(
-            `INSERT INTO Staff_Infos (StaffInfoID, StaffID, StaffAge, StaffAddress, StaffCellNo, StaffSalary) VALUES (?, ?, ?, ?, ?, ?)`,
-            [newStaffInfoID, newStaffID, StaffAge, StaffAddress, StaffCellNo, StaffSalary]
+            `INSERT INTO Staffs (StaffID, StaffName, StaffRole, ShopID) VALUES (?, ?, ?, ?)`,
+            [newStaffID, StaffName, 'Staff', ShopID]
         );
 
         await connection.query(
-            `INSERT INTO Staffs (StaffID, StaffName, StaffRole, ShopID) VALUES (?, ?, ?, ?)`,
-            [newStaffID, StaffName, 'Staff', ShopID]
+            `INSERT INTO Staff_Infos (StaffInfoID, StaffID, StaffAge, StaffAddress, StaffCellNo, StaffSalary) VALUES (?, ?, ?, ?, ?, ?)`,
+            [newStaffInfoID, newStaffID, StaffAge, StaffAddress, StaffCellNo, StaffSalary]
         );
 
         await connection.commit();

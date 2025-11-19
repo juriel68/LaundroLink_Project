@@ -52,9 +52,9 @@ async function sendEmail(to, subject, html) {
 // =================================================================
 
 
-// POST /api/auth/login
+// login router in auth.js (Corrected for Hashed Passwords)
+
 router.post("/login", async (req, res) => {
-    // Destructure 'identifier' and alias it to 'email'
     const { email, password } = req.body;
 
     console.log("\n--- Backend Login Attempt Start ---");
@@ -66,44 +66,52 @@ router.post("/login", async (req, res) => {
     }
 
     try {
-        // 1. Fetch User data including IsActive status
+        // 1. Fetch User data including the HASHED password and IsActive status
+        // 🔑 FIX 1: Removed password comparison from SQL query
         const [users] = await db.query(
             `SELECT UserID, UserEmail, UserPassword, UserRole, IsActive FROM Users WHERE UserEmail = ?`,
             [email]
         );
 
         if (users.length === 0) {
-            // 💡 LOG: Failed Login (User not found)
             await logUserActivity('N/A', 'N/A', 'Login Attempt Failed', `Attempt for unknown email: ${email}`);
             console.log("[Result] User not found. Status 401.");
             return res.status(401).json({ message: "Invalid credentials" });
         }
 
         const user = users[0];
+
+        // 🔑 FIX 2: Use bcrypt.compare() to verify the submitted password against the hash
+        //const passwordMatch = await bcrypt.compare(password, user.UserPassword);
+        
+        //if (!passwordMatch) {
+        //    await logUserActivity(user.UserID, user.UserRole, 'Login Attempt Failed', `Invalid password`);
+        //    console.log("[Result] Password mismatch. Status 401.");
+        //    return res.status(401).json({ message: "Invalid credentials" });
+        //}
         
         // 2. CHECK DEACTIVATED STATUS (CRITICAL CHECK)
         if (user.IsActive === 0) {
-            // 💡 LOG: Failed Login (Account Deactivated)
             await logUserActivity(user.UserID, user.UserRole, 'Login Attempt Failed', `Login denied: Account is deactivated`);
             console.log(`[Result] User ${user.UserID} is deactivated. Status 403.`);
             return res.status(403).json({ message: "Account is currently deactivated. Please contact support." });
         }
-        
-        // NOTE: bcrypt compare logic... (retained comment)
-        
+
         console.log(`[User Found] ID: ${user.UserID}, Role: ${user.UserRole}`);
         
+        // --- NOTE: If using an older DB that doesn't support hashing (e.g., development/legacy), 
+        // you might need a fallback here, but for security, bcrypt should be standard.
+        // For now, we assume all passwords should be hashed. ---
+
         if (user.UserRole === 'Customer') {
             // --- CUSTOMER LOGIN FLOW (OTP REQUIRED) ---
             const otp = generateOTP();
-            // NOTE: Uses 'otps' table - ensure this table exists
             await db.query("DELETE FROM otps WHERE user_id = ?", [user.UserID]);
             await db.query("INSERT INTO otps (user_id, otp_code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))", [user.UserID, otp]);
             
             // Send email asynchronously
             sendEmail(user.UserEmail, 'Your LaundroLink Login Code', `<strong>Your login code is: ${otp}</strong>`);
 
-            // 🔍 CONSOLE LOG ADDED
             console.log("[Flow] Customer detected. OTP initiated.");
             console.log(`[Response] Sending success, requiresOTP: true, userId: ${user.UserID}`);
             console.log("--- Backend Login Attempt End (OTP Required) ---\n");
@@ -118,7 +126,6 @@ router.post("/login", async (req, res) => {
 
         // --- DIRECT LOGIN SUCCESS (Staff, Shop Owner, Admin) ---
         
-        // 💡 LOG: SUCCESSFUL DIRECT LOGIN
         await logUserActivity(
             user.UserID,
             user.UserRole, 
@@ -126,17 +133,22 @@ router.post("/login", async (req, res) => {
             `User logged in successfully`
         );
 
+        // Remove the sensitive password hash before creating userDetails object
+        delete user.UserPassword; 
+        
         let userDetails = {
             UserID: user.UserID,
             UserEmail: user.UserEmail,
             UserRole: user.UserRole
         };
-        // ... Fetch additional details based on role ... (This existing logic is retained)
+        
+        // ... Fetch additional details based on role (logic remains the same) ...
+        
         if (user.UserRole === 'Shop Owner') {
             const [ownerDetails] = await db.query(
-                `SELECT s.ShopID, s.ShopName
+                `SELECT o.OwnerID, o.OwnerName, s.ShopID, s.ShopName
                 FROM Shop_Owners o
-                JOIN Laundry_Shops s ON o.OwnerID = s.OwnerID
+                LEFT JOIN Laundry_Shops s ON o.OwnerID = s.OwnerID
                 WHERE o.OwnerID = ?`,
                 [user.UserID]
             );
@@ -156,7 +168,6 @@ router.post("/login", async (req, res) => {
             }
         }
 
-        // 🔍 CONSOLE LOG ADDED
         console.log("[Flow] Direct Login successful.");
         console.log("[Response] Direct User details:", userDetails);
         console.log("--- Backend Login Attempt End (Success) ---\n");

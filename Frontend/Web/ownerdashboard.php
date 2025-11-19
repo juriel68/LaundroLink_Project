@@ -172,7 +172,7 @@
                 <a href="#" class="active" data-page="dashboard">Dashboard</a>
                 <a href="#" data-page="view_orders">Order</a>
                 <a href="#" data-page="manage_employees">Employee</a>
-                <a href="#" data-page="manage_shop">Shop Details</a>
+                <a href="#" data-page="manage_shop">Manage Shop</a>
                 <a href="#" data-page="view_sales">Sales</a>
                 <a href="#" data-page="data_analytics">Data Analytics</a>
                 <a href="#" data-page="reports">Reports</a>
@@ -197,7 +197,7 @@
         function drawDashboard() {
             const dashboardHtml = `
                 <div class="header">
-                    <h2 id="shopNameHeader">Welcome, ${loggedInUser.ShopName || 'Owner'}!</h2>
+                    <h2 id="shopNameHeader">Welcome, ${loggedInUser.OwnerName || 'Owner'}!</h2>
                     <div class="time-filter">
                         <button id="weeklyBtn" class="active">Weekly</button>
                         <button id="monthlyBtn">Monthly</button>

@@ -1,4 +1,4 @@
-// orderdetail.tsx (FINALIZED: Corrected Details, Calculations, and Array Display)
+// orderdetail.tsx 
 
 import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Alert } from "react-native";

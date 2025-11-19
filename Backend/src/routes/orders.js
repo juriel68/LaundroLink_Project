@@ -58,142 +58,116 @@ const getDateConditionForSales = (period, alias) => {
 
 // Creates a new order along with related details, status, and invoice records.
 router.post("/", async (req, res) => {
-    // --- 💡 LOG: Request received and payload content ---
-    console.log("--- START ORDER CREATION PROCESS ---");
-    console.log("Payload received:", req.body);
-    
-    const {
-        CustID, 
-        ShopID, 
-        SvcID,
-        deliveryId, 
-        weight, 
-        instructions, 
-        fabrics, 
-        addons 
-    } = req.body;
+    console.log("--- START ORDER CREATION PROCESS ---");
+    console.log("Payload received:", req.body);
+    
+    const {
+        CustID, 
+        ShopID, 
+        SvcID,
+        deliveryId, // This is DlvryID from Shop_Delivery_Options
+        weight, 
+        instructions, 
+        fabrics,      // Array of FabIDs
+        addons        // Array of AddOnIDs
+    } = req.body;
 
-    // Basic validation
-    if (!CustID || !ShopID || !SvcID || !deliveryId || weight === undefined || !fabrics || fabrics.length === 0) {
-        console.error("Validation failed: Missing required fields.");
-        return res.status(400).json({ success: false, message: "Missing required fields (CustID, ShopID, SvcID, deliveryId, weight, fabrics)." });
-    }
+    if (!CustID || !ShopID || !SvcID || !deliveryId || weight === undefined || !fabrics || fabrics.length === 0) {
+        console.error("Validation failed: Missing required fields.");
+        return res.status(400).json({ success: false, message: "Missing required fields (CustID, ShopID, SvcID, deliveryId, weight, fabrics)." });
+    }
 
-    const connection = await db.getConnection();
-    try {
-        await connection.beginTransaction();
-        console.log("Transaction started successfully.");
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+        console.log("Transaction started successfully.");
 
-        // 🔑 NEW LOGIC: AUTOMATIC STAFF SELECTION
-        console.log("Step 0: Attempting to assign staff...");
-        const [staffs] = await connection.query(
-            `SELECT StaffID
-            FROM Staffs
-            WHERE ShopID = ? AND StaffRole = 'Cashier'
-            ORDER BY StaffID ASC
-            LIMIT 1`,
-            [ShopID]
-        );
+        // Step 0: Assign staff (Logic remains the same)
+        const [staffs] = await connection.query(
+            `SELECT StaffID FROM Staffs WHERE ShopID = ? AND StaffRole = 'Cashier' ORDER BY StaffID ASC LIMIT 1`,
+            [ShopID]
+        );
+        let assignedStaffID = staffs.length > 0 ? staffs[0].StaffID : null;
+        if (!assignedStaffID) console.warn(`No cashier staff found for ShopID ${ShopID}.`);
 
-        let assignedStaffID = null;
-        if (staffs.length > 0) {
-            assignedStaffID = staffs[0].StaffID;
-            console.log(`Staff assigned: ${assignedStaffID}`);
-        } else {
-            console.warn(`No cashier staff found for ShopID ${ShopID}. Order will be unassigned (StaffID is NULL).`);
-        }
-        // END NEW LOGIC
+        // 1. Insert into Laundry_Details (Logic remains the same)
+        const newLndryDtlID = generateID('LD');
+        await connection.query(
+            "INSERT INTO Laundry_Details (LndryDtlID, Kilogram, SpecialInstr) VALUES (?, ?, ?)",
+            [newLndryDtlID, weight, instructions || null]
+        );
 
-        // 1. Insert into Laundry_Details
-        const newLndryDtlID = generateID('LD');
-        console.log(`Step 1: Inserting Laundry_Details with ID ${newLndryDtlID}`);
-        await connection.query(
-            "INSERT INTO Laundry_Details (LndryDtlID, Kilogram, SpecialInstr) VALUES (?, ?, ?)",
-            [newLndryDtlID, weight, instructions || null]
-        );
-
-        // 2. Insert fabric types
-        if (fabrics && fabrics.length > 0) {
-            console.log(`Step 2: Inserting ${fabrics.length} Fabric types.`);
-            const fabricPlaceholders = fabrics.map(() => `(?, ?)`).join(', ');
-            const fabricValues = fabrics.flatMap(fabTypeID => [newLndryDtlID, fabTypeID]);
-            await connection.query(
-                `INSERT INTO Order_Fabrics (LndryDtlID, FabTypeID) VALUES ${fabricPlaceholders}`,
-                fabricValues
-            );
-        } else {
+        // 2. Insert fabrics (uses FabID, FabID from global Fabrics table)
+        if (fabrics && fabrics.length > 0) {
+            console.log(`Step 2: Inserting ${fabrics.length} Fabric IDs.`);
+            const fabricPlaceholders = fabrics.map(() => `(?, ?)`).join(', ');
+            // 🔑 CHANGE 1: Use FabID from the global Fabrics table
+            const fabricValues = fabrics.flatMap(fabId => [newLndryDtlID, fabId]); 
+            await connection.query(
+                `INSERT INTO Order_Fabrics (LndryDtlID, FabID) VALUES ${fabricPlaceholders}`,
+                fabricValues
+            );
+        } else {
             console.log("Step 2: No fabrics to insert.");
         }
 
-        // 3. Insert addons
-        if (addons && Array.isArray(addons) && addons.length > 0) {
-            console.log(`Step 3: Inserting ${addons.length} Add-Ons.`);
-            const addonPlaceholders = addons.map(() => `(?, ?)`).join(', ');
-            const addonValues = addons.flatMap(addonId => [newLndryDtlID, addonId]);
-            await connection.query(
-                `INSERT INTO Order_AddOns (LndryDtlID, AddOnID) VALUES ${addonPlaceholders}`,
-                addonValues
-            );
-        } else {
+        // 3. Insert addons (uses AddOnID from global Add_Ons table)
+        if (addons && Array.isArray(addons) && addons.length > 0) {
+            console.log(`Step 3: Inserting ${addons.length} Add-Ons.`);
+            const addonPlaceholders = addons.map(() => `(?, ?)`).join(', ');
+            // 🔑 CHANGE 2: Use AddOnID from the global Add_Ons table
+            const addonValues = addons.flatMap(addonId => [newLndryDtlID, addonId]);
+            await connection.query(
+                `INSERT INTO Order_AddOns (LndryDtlID, AddOnID) VALUES ${addonPlaceholders}`,
+                addonValues
+            );
+        } else {
             console.log("Step 3: No Add-Ons to insert.");
         }
 
-        // 4. Generate the main OrderID and insert into Orders table
-        const newOrderID = generateID('O');
-        console.log(`Step 4: Inserting main Order with ID ${newOrderID}.`);
-        await connection.query(
-            "INSERT INTO Orders (OrderID, CustID, ShopID, SvcID, StaffID, LndryDtlID, DlvryID, OrderCreatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
-            [newOrderID, CustID, ShopID, SvcID, assignedStaffID, newLndryDtlID, deliveryId]
-        );
+        // 4. Generate the main OrderID and insert into Orders table (Logic remains the same)
+        const newOrderID = generateID('O');
+        await connection.query(
+            "INSERT INTO Orders (OrderID, CustID, ShopID, SvcID, StaffID, LndryDtlID, DlvryID, OrderCreatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
+            [newOrderID, CustID, ShopID, SvcID, assignedStaffID, newLndryDtlID, deliveryId]
+        );
 
-        // 5. Set initial status to 'Pending' in Order_Status
-        const newOrderStatId = generateID('OSD');
-        console.log(`Step 5: Inserting initial Order_Status: 'Pending'`);
-        await connection.query(
-            "INSERT INTO Order_Status (OrderStatID, OrderID, OrderStatus, OrderUpdatedAt) VALUES (?, ?, 'Pending', NOW())",
-            [newOrderStatId, newOrderID]
-        );
+        // 5, 6, 7. Initial Status, Invoice, and Invoice_Status (Logic remains the same)
+        const newOrderStatId = generateID('OSD');
+        await connection.query(
+            "INSERT INTO Order_Status (OrderStatID, OrderID, OrderStatus, OrderUpdatedAt) VALUES (?, ?, 'Pending', NOW())",
+            [newOrderStatId, newOrderID]
+        );
 
-        // 6. Create an initial Invoice record
-        const newInvoiceID = generateID('INV');
-        console.log(`Step 6: Inserting initial Invoice ID ${newInvoiceID} (Amount: 0.00).`);
-        await connection.query(
-            "INSERT INTO Invoices (InvoiceID, OrderID, DlvryFee, PayAmount) VALUES (?, ?, 0.00, 0.00)",
-            [newInvoiceID, newOrderID] 
-        );
+        const newInvoiceID = generateID('INV');
+        await connection.query(
+            "INSERT INTO Invoices (InvoiceID, OrderID, DlvryFee, PayAmount) VALUES (?, ?, 0.00, 0.00)",
+            [newInvoiceID, newOrderID] 
+        );
 
-        // 7. Set initial Invoice_Status
-        const newInvoiceStatID = generateID('IS');
-        console.log(`Step 7: Inserting initial Invoice_Status: 'Draft'`);
-        await connection.query(
-            "INSERT INTO Invoice_Status (InvoiceStatusID, InvoiceID, InvoiceStatus, StatUpdateAt) VALUES (?, ?, 'Draft', NOW())",
-            [newInvoiceStatID, newInvoiceID]
-        );
-        
-        console.log("All insertions complete. Committing transaction...");
-        
-        // 💡 LOG: Successful Order Creation... (omitted for brevity)
-        await logUserActivity(CustID, 'Customer', 'Create Order', `New order created: ${newOrderID} assigned to: ${assignedStaffID}`);
+        const newInvoiceStatID = generateID('IS');
+        await connection.query(
+            "INSERT INTO Invoice_Status (InvoiceStatusID, InvoiceID, InvoiceStatus, StatUpdateAt) VALUES (?, ?, 'Draft', NOW())",
+            [newInvoiceStatID, newInvoiceID]
+        );
+        
+        await logUserActivity(CustID, 'Customer', 'Create Order', `New order created: ${newOrderID} assigned to: ${assignedStaffID}`);
 
+        await connection.commit();
+        res.status(201).json({ 
+            success: true, 
+            message: "Order created successfully with initial details.", 
+            orderId: newOrderID 
+        });
 
-        await connection.commit();
-        console.log("Transaction committed successfully. Sending response.");
-
-        res.status(201).json({ 
-            success: true, 
-            message: "Order created successfully with initial details.", 
-            orderId: newOrderID 
-        });
-
-    } catch (error) {
-        console.error("--- TRANSACTION FAILED. ROLLING BACK. ---");
-        await connection.rollback();
-        console.error("❌ Create order error:", error);
-        res.status(500).json({ success: false, message: "Failed to create order." });
-    } finally {
-        connection.release();
-        console.log("Database connection released. --- END ORDER CREATION PROCESS ---");
-    }
+    } catch (error) {
+        await connection.rollback();
+        console.error("❌ Create order error:", error);
+        res.status(500).json({ success: false, message: "Failed to create order." });
+    } finally {
+        connection.release();
+        console.log("Database connection released. --- END ORDER CREATION PROCESS ---");
+    }
 });
 
 // =================================================================
@@ -389,14 +363,16 @@ router.get("/:orderId", async (req, res) => {
                 s.SvcName AS serviceName,
                 
                 CAST(ss.SvcPrice AS DECIMAL(10, 2)) AS servicePrice, 
-                CAST(ld.Kilogram AS DECIMAL(5, 1)) AS initialWeight, 
+                CAST(ld.Kilogram AS DECIMAL(5, 1)) AS weight, 
                 ld.SpecialInstr AS instructions,
-                do.DlvryName AS deliveryType,
+                
+                -- 🔑 CHANGE 3: Join through Shop_Delivery_Options to Delivery_Types
+                dt.DlvryTypeName AS deliveryType,
+                SDO.DlvryDescription AS deliveryDescription,
                 
                 CAST(i.DlvryFee AS DECIMAL(10, 2)) AS deliveryFee, 
                 CAST(i.PayAmount AS DECIMAL(10, 2)) AS totalAmount,
                 
-                -- 🔑 FIX 1: Join Payment_Methods and select the name
                 PM.MethodName AS paymentMethodName, 
                 
                 (
@@ -414,10 +390,13 @@ router.get("/:orderId", async (req, res) => {
             LEFT JOIN Services s ON o.SvcID = s.SvcID
             LEFT JOIN Shop_Services ss ON o.ShopID = ss.ShopID AND o.SvcID = ss.SvcID
             LEFT JOIN Laundry_Details ld ON o.LndryDtlID = ld.LndryDtlID
-            LEFT JOIN Delivery_Options do ON o.DlvryID = do.DlvryID
+            
+            -- 🔑 CHANGE 4: Update JOIN for Delivery Info
+            LEFT JOIN Shop_Delivery_Options SDO ON o.DlvryID = SDO.DlvryID 
+            LEFT JOIN Delivery_Types dt ON SDO.DlvryTypeID = dt.DlvryTypeID
+            
             LEFT JOIN Rejected_Orders rej ON o.OrderID = rej.OrderID
             LEFT JOIN Invoices i ON o.OrderID = i.OrderID 
-            -- 🔑 FIX 2: Add JOIN to Payment_Methods
             LEFT JOIN Payment_Methods PM ON i.MethodID = PM.MethodID
             WHERE o.OrderID = ?;
         `;
@@ -427,20 +406,26 @@ router.get("/:orderId", async (req, res) => {
             return res.status(404).json({ error: "Order not found" });
         }
         
-        // Fetch Fabrics and Addons (queries remain the same)
+        // Fetch Fabrics (uses FabID from global Fabrics table)
         const [fabrics] = await connection.query(
-            `SELECT ft.FabricType FROM Order_Fabrics ofb 
-             JOIN Fabric_Types ft ON ofb.FabTypeID = ft.FabTypeID
+            `SELECT f.FabName AS FabricType FROM Order_Fabrics ofb 
+             -- 🔑 CHANGE 5: Join Order_Fabrics to the GLOBAL Fabrics table
+             JOIN Fabrics f ON ofb.FabID = f.FabID
              WHERE ofb.LndryDtlID = (SELECT LndryDtlID FROM Orders WHERE OrderID = ?)`,
             [orderId]
         );
 
+        // Fetch Addons (uses AddOnID from global Add_Ons table)
         const [addons] = await connection.query(
             `SELECT 
                 a.AddOnName, 
-                CAST(a.AddOnPrice AS DECIMAL(10, 2)) AS AddOnPrice 
+                -- 🔑 CHANGE 6: Price MUST come from Shop_Add_Ons, not global Add_Ons (which doesn't store price)
+                CAST(SAO.AddOnPrice AS DECIMAL(10, 2)) AS AddOnPrice 
              FROM Order_AddOns oao 
              JOIN Add_Ons a ON oao.AddOnID = a.AddOnID
+             -- Link Order back to Shop to find the configured price
+             JOIN Orders o ON oao.LndryDtlID = o.LndryDtlID
+             JOIN Shop_Add_Ons SAO ON o.ShopID = SAO.ShopID AND a.AddOnID = SAO.AddOnID
              WHERE oao.LndryDtlID = (SELECT LndryDtlID FROM Orders WHERE OrderID = ?)`,
             [orderId]
         );
@@ -662,14 +647,13 @@ router.post("/status", async (req, res) => {
 });
 
 
-//PATCH /api/orders/weight route
+// PATCH /api/orders/weight route (orders.js)
 router.patch("/weight", async (req, res) => {
-    const { orderId, newWeight, isFinal = false, userId, userRole } = req.body; 
+    // 🔑 isFinal flag is still destructured but no longer used for conditional logic
+    const { orderId, newWeight, isFinal = true, userId, userRole } = req.body; 
 
     if (!orderId || newWeight === undefined) {
-        return res
-            .status(400)
-            .json({ error: "Order ID and new weight are required" });
+        return res.status(400).json({ error: "Order ID and new weight are required" });
     }
     
     const validatedWeight = parseFloat(newWeight);
@@ -681,15 +665,12 @@ router.patch("/weight", async (req, res) => {
     try {
         await connection.beginTransaction();
 
-        // 1. Fetch necessary details, INCLUDING CustomerID (CustID)
+        // 1. Fetch necessary details, INCLUDING pricing components
         const [orderData] = await connection.query(
             `
             SELECT 
-                o.LndryDtlID, 
-                o.CustID, 
-                o.ShopID,
-                i.InvoiceID,
-                i.DlvryFee,
+                o.LndryDtlID, o.CustID, o.ShopID, o.SvcID,
+                i.InvoiceID, i.DlvryFee,
                 ss.SvcPrice 
             FROM Orders o
             JOIN Invoices i ON o.OrderID = i.OrderID
@@ -704,26 +685,25 @@ router.patch("/weight", async (req, res) => {
             return res.status(404).json({ success: false, message: "Order not found." });
         }
 
-        const { LndryDtlID, SvcPrice, InvoiceID, DlvryFee, CustID } = orderData[0];
-        const fixedServicePrice = parseFloat(SvcPrice);
+        const { LndryDtlID, CustID, ShopID, SvcPrice, InvoiceID, DlvryFee } = orderData[0];
+        const flatServicePrice = parseFloat(SvcPrice);
         const deliveryFee = parseFloat(DlvryFee);
 
         // 1.5. Calculate total cost of Add-Ons
         const [addonCosts] = await connection.query(
             `
-            SELECT SUM(a.AddOnPrice) AS totalAddOnCost
+            SELECT SUM(SAO.AddOnPrice) AS totalAddOnCost
             FROM Order_AddOns oao
-            JOIN Add_Ons a ON oao.AddOnID = a.AddOnID
+            JOIN Shop_Add_Ons SAO ON SAO.AddOnID = oao.AddOnID AND SAO.ShopID = ?
             WHERE oao.LndryDtlID = ?
             `,
-            [LndryDtlID]
+            [ShopID, LndryDtlID]
         );
         
         const totalAddOnCost = parseFloat(addonCosts[0].totalAddOnCost) || 0.00;
 
-
-        // 2. Update the weight in Laundry_Details (Kilogram or FinalWeight)
-        const weightColumn = isFinal ? 'FinalWeight' : 'Kilogram';
+        // 2. Update the weight in Laundry_Details
+        const weightColumn = 'Kilogram'; // Assuming all updates are to the primary weight field
         await connection.query(
             `
             UPDATE Laundry_Details
@@ -732,10 +712,10 @@ router.patch("/weight", async (req, res) => {
             `,
             [validatedWeight, LndryDtlID]
         );
-
-        // 3. Recalculate and Update Invoice PayAmount
-        const newPayAmount = fixedServicePrice + totalAddOnCost + deliveryFee;
         
+        // 🔑 FIX: ALWAYS CALCULATE AND UPDATE INVOICE PAYAMOUNT
+        const newPayAmount = flatServicePrice + totalAddOnCost + deliveryFee;
+
         await connection.query(
             `
             UPDATE Invoices
@@ -744,28 +724,25 @@ router.patch("/weight", async (req, res) => {
             `,
             [newPayAmount.toFixed(2), InvoiceID]
         );
+        console.log(`[INVOICE] Final PayAmount updated to: ${newPayAmount.toFixed(2)}`);
 
-        // 4. INSERT THE MESSAGE (New Logic: Send Structured Invoice)
-        const senderId = userId;      // Staff ID
-        const receiverId = CustID;    // Customer ID
-        const newTotal = newPayAmount.toFixed(2);
+        // --- Messaging Logic ---
+        const senderId = userId; 
+        const receiverId = CustID; 
         
-        // Construct the structured JSON invoice data
         const invoiceJsonData = {
-            type: "INVOICE",
+            type: "INVOICE_FINALIZED", // Type changed to reflect final action
             orderId: orderId,
-            shopId: orderData[0].ShopID, 
+            shopId: ShopID, 
             newWeight: validatedWeight.toFixed(2),
-            newTotal: newTotal,
+            finalTotal: newPayAmount.toFixed(2), // Include final total in message payload
         };
 
-        // Construct the final message text: Readable Prefix + JSON payload
-        const readablePrefix = "Weight updated. Please confirm your order."; 
+        const readablePrefix = `FINAL weight confirmed: ${validatedWeight.toFixed(2)} kg. The invoice total has been updated.`;
+            
         const invoiceJsonString = JSON.stringify(invoiceJsonData);
         const finalMessageText = `${readablePrefix}\n${invoiceJsonString}`;
 
-
-        // 4a. Find or Create the Conversation (Lowest ID first)
         const participant1 = senderId < receiverId ? senderId : receiverId;
         const participant2 = senderId < receiverId ? receiverId : senderId;
 
@@ -778,7 +755,6 @@ router.patch("/weight", async (req, res) => {
         if (conversation) {
             conversationId = conversation.ConversationID;
         } else {
-            // NOTE: Assumes generateID helper is available
             conversationId = generateID('CONV'); 
             await connection.query(
                 "INSERT INTO Conversations (ConversationID, Participant1_ID, Participant2_ID, UpdatedAt) VALUES (?, ?, ?, NOW())",
@@ -786,37 +762,32 @@ router.patch("/weight", async (req, res) => {
             );
         }
 
-        // 4b. Insert the new message
-        // NOTE: Assumes generateID helper is available
         const newMessageId = generateID('MSG');
         await connection.query(
             `INSERT INTO Messages 
              (MessageID, ConversationID, SenderID, ReceiverID, MessageText, MessageStatus, CreatedAt) 
-             VALUES (?, ?, ?, ?, ?, 'Delivered', NOW())`, // Status 'Delivered' marks it as unread
+             VALUES (?, ?, ?, ?, ?, 'Delivered', NOW())`,
             [newMessageId, conversationId, senderId, receiverId, finalMessageText]
         );
 
-        // 4c. Update conversation timestamp
         await connection.query(
             "UPDATE Conversations SET UpdatedAt = NOW() WHERE ConversationID = ?",
             [conversationId]
         );
         
-        // 5. Log activity and Commit
-        await logUserActivity(userId, userRole, 'Update Order Details', `Order ${orderId}: Invoice recalculated and customer notified.`);
+        await logUserActivity(userId, userRole, 'Update Order Details', `Order ${orderId}: FINAL Weight set to ${validatedWeight} kg. Invoice finalized.`);
 
         await connection.commit();
 
         res.status(200).json({ 
             success: true, 
-            message: "Weight updated, invoice recalculated, and customer notified.",
-            newTotal: newTotal
+            message: "Final weight and invoice saved."
         });
         
     } catch (error) {
         await connection.rollback();
         console.error("Error during weight update and messaging:", error);
-        res.status(500).json({ success: false, message: "Failed to update weight and send notification." });
+        res.status(500).json({ success: false, message: "Failed to update weight and finalize invoice." });
     } finally {
         connection.release();
     }
