@@ -10,7 +10,10 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "This app needs access to your location to pinpoint your address for delivery."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +22,11 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.eijiakaso.laundrolinkapplication",
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -38,7 +45,13 @@
         }
       ],
       "expo-web-browser",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow LaundroLink to use your location to set your address."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

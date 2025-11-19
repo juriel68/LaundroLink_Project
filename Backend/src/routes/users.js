@@ -539,18 +539,17 @@ router.post("/upload", upload.single("file"), async (req, res) => {
     }
 });
 
-// PUT /api/users/:UserID (Profile Update) - Primarily for Customer Profile Updates
-router.put("/:UserID", async (req, res) => {
+// PUT /api/users/:UserID (Customer Profile Update) - ✅ UPDATED FOR NEW SCHEMA
+router.put("/profile/:UserID", async (req, res) => {
     const connection = await db.getConnection();
-    const { UserID } = req.params; // Destructure UserID here
+    const { UserID } = req.params;
     
     try {
         await connection.beginTransaction();
 
         const { name, phone, address, picture } = req.body;
-        if (!UserID) { return res.status(400).json({ success: false, message: "User ID is required." }); }
         
-        // 1. Check if the user is a Customer and get the role for logging
+        // 1. Check Role
         const [userCheck] = await connection.query("SELECT UserRole FROM Users WHERE UserID = ?", [UserID]);
         if (userCheck.length === 0 || userCheck[0].UserRole !== 'Customer') {
              await connection.rollback();
@@ -558,55 +557,37 @@ router.put("/:UserID", async (req, res) => {
         }
         const UserRole = userCheck[0].UserRole;
 
-        // 2. Update Customers table 
+        // 2. Update Customers table (Dynamic SQL construction)
         const customerFieldsToUpdate = [];
         const customerValues = [];
 
         if (name !== undefined) { customerFieldsToUpdate.push("CustName = ?"); customerValues.push(name); }
-        if (phone !== undefined) { customerFieldsToUpdate.push("CustCellNo = ?"); customerValues.push(phone); } 
-        // NOTE: Cust_Addresses table handles addresses for customers, need to adjust logic here if CustAddress is meant to be updated directly on the Customer table. Assuming CustAddress exists on Customers table for this context.
-        // Based on the schema, Cust_Addresses is the separate table, but updating logic below suggests direct update on Customers. Let's adjust to update Cust_Addresses simplifiedly for the main address.
-        if (address !== undefined) { 
-             // We can insert/update a primary address here, but since the frontend only passes one, we stick to the provided structure.
-             // Assume CustAddress is part of the Customers table for simplified update flow if not using Cust_Addresses. 
-             // Since Cust_Addresses is a compound key (CustID, CustAddress), updating logic for a 'main address' is complex here.
-             // Leaving it as it was if intended to be CustCellNo:
-             // if (address !== undefined) { customerFieldsToUpdate.push("CustAddress = ?"); customerValues.push(address); } 
-        } 
+        if (phone !== undefined) { customerFieldsToUpdate.push("CustPhone = ?"); customerValues.push(phone); } 
+        
+        // ✅ FIX: Directly update CustAddress in Customers table
+        if (address !== undefined) { customerFieldsToUpdate.push("CustAddress = ?"); customerValues.push(address); } 
 
         if (customerFieldsToUpdate.length > 0) {
             customerValues.push(UserID);
             const sql = `UPDATE Customers SET ${customerFieldsToUpdate.join(", ")} WHERE CustID = ?`;
             const [result] = await connection.query(sql, customerValues);
-            if (result.affectedRows === 0) { 
-                 await connection.rollback();
-                 return res.status(404).json({ success: false, message: "Customer data not found." }); 
-            }
         }
 
         // 3. Update Cust_Credentials table (Picture)
         if (picture !== undefined) {
-            await connection.query(
-                "UPDATE Cust_Credentials SET picture = ? WHERE CustID = ?", 
-                [picture, UserID]
-            );
+            await connection.query("UPDATE Cust_Credentials SET picture = ? WHERE CustID = ?", [picture, UserID]);
         }
 
         await connection.commit();
-        
-        // 💡 LOG: Customer Profile Update
-        await logUserActivity(
-            UserID, 
-            UserRole, 
-            'Profile Update', 
-            'Customer updated their profile details'
-        );
+        await logUserActivity(UserID, UserRole, 'Profile Update', 'Customer updated their profile details');
 
-        // 4. Fetch the updated user details (joining necessary tables)
+        // 4. Fetch updated user details (Mapping CustAddress to 'address' for frontend)
         const [updatedUserRows] = await db.query(`
             SELECT 
                 u.UserID, u.UserEmail, u.UserRole,
-                c.CustName, c.CustPhone, -- NOTE: CustPhone used instead of CustCellNo
+                c.CustName AS name, 
+                c.CustPhone AS phone, 
+                c.CustAddress AS address, -- ✅ Select Address
                 cc.picture
             FROM Users u
             JOIN Customers c ON u.UserID = c.CustID
@@ -614,7 +595,11 @@ router.put("/:UserID", async (req, res) => {
             WHERE u.UserID = ?`, [UserID]
         );
 
-        res.json({ success: true, message: "Profile updated successfully.", user: updatedUserRows[0] });
+        // Transform the result to match UserDetails interface exactly if needed
+        const userObj = updatedUserRows[0];
+        // Note: The SQL alias AS name/phone/address helps, but we ensure the response structure is clean
+        
+        res.json({ success: true, message: "Profile updated successfully.", user: userObj });
     } catch (error) {
         await connection.rollback();
         console.error("❌ Profile update error:", error);

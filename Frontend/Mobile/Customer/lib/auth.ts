@@ -1,19 +1,27 @@
-// lib/auth.ts - REVISED for Page Load Maintenance Gating
+// lib/auth.ts
 
 import { API_URL } from "./api"; 
 
 // =================================================================
-// 1. Types for Authentication
+// 1. Types for Authentication & User Data
 // =================================================================
 
 /**
- * Interface for the detailed user object returned upon successful login
+ * Interface for the detailed user object.
+ * Matches the response structure from backend/routes/users.js
  */
 export interface UserDetails {
     UserID: string;
     UserEmail: string;
     UserRole: 'Customer' | 'Staff' | 'Shop Owner' | 'Admin';
     picture?: string;
+    
+    // Profile Fields (Mapped from Customers/Staff tables)
+    name?: string;
+    phone?: string;
+    address?: string;
+
+    // Optional Role-Specific Fields
     ShopID?: string;
     ShopName?: string;
     StaffName?: string;
@@ -21,7 +29,7 @@ export interface UserDetails {
 }
 
 /**
- * Interface for the response from the /login and /verify-otp endpoints.
+ * Interface for Login/OTP responses
  */
 export interface LoginResponse {
     success: boolean;
@@ -32,7 +40,7 @@ export interface LoginResponse {
 }
 
 /**
- * Interface for the response from password reset endpoints.
+ * Interface for generic success/fail responses (e.g., Forgot Password)
  */
 export interface GenericAuthResponse {
     success: boolean;
@@ -41,60 +49,53 @@ export interface GenericAuthResponse {
 }
 
 // =================================================================
-// 2. Utility Functions (Maintenance Check)
+// 2. Utility Functions (System Gating)
 // =================================================================
 
 const MAINTENANCE_STATUS_ENDPOINT = `${API_URL}/admin/config/maintenance-status`;
 
 /**
- * Checks the maintenance status by fetching the status from the backend.
- * This is designed to be called on page load in index.tsx to gate the app.
- * * @returns {Promise<boolean>} True if maintenance is active or status is undeterminable (network error), False otherwise.
+ * Checks if the system is in Maintenance Mode.
+ * Called by index.tsx on app load.
  */
 async function checkMaintenanceStatus(): Promise<boolean> {
     try {
         const response = await fetch(MAINTENANCE_STATUS_ENDPOINT);
         
-        // 1. If response is NOT ok (e.g., 503, 500, 403, 404), maintenance is assumed ON (Fail-Safe).
+        // 1. Server Error (500, 503) -> Assume Maintenance ON (Fail-Safe)
         if (!response.ok) {
-            // Maintenance is active or server is critically failing. Block access.
             return true; 
         }
 
-        // 2. If status is 200 OK, check the JSON body for the explicit flag (Admin Style).
+        // 2. Check explicit flag from valid JSON response
         try {
             const data = await response.json();
-            if (typeof data.maintenanceMode === 'boolean' && data.maintenanceMode === true) {
-                 return true; // Maintenance is ACTIVE (Confirmed by JSON)
+            if (data.maintenanceMode === true) {
+                 return true; 
             }
         } catch (e) {
-            // If parsing fails but status was 200, assume OFF to be safe
+            // JSON parse failed but status was 200 -> Assume OFF
         }
         
         return false; // Maintenance is INACTIVE
         
-    } catch (error: any) {
-        // 3. Network error (server unreachable) -> fail-safe block.
-        // For a non-admin user, if we can't confirm it's ON, we treat it as ON to prevent data failure.
+    } catch (error) {
+        // 3. Network Unreachable -> Assume Maintenance ON
         return true; 
     }
 }
 
-
 // =================================================================
-// 3. Authentication Functions
+// 3. Core Authentication Functions
 // =================================================================
 
 /**
- * Handles initial email/password login.
- * The maintenance check is handled by index.tsx before this function is called.
+ * Standard Email/Password Login
  */
 export async function handleUserLogin(
     email: string,
     password: string
 ): Promise<LoginResponse> {
-    
-    // NOTE: Maintenance check removed here.
     
     const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
@@ -116,7 +117,7 @@ export async function handleUserLogin(
 }
 
 /**
- * Verifies the OTP sent to the Customer's email. (UNCHANGED)
+ * Verify OTP (Step 2 of Login)
  */
 export async function verifyUserOTP(
     userId: string,
@@ -138,7 +139,7 @@ export async function verifyUserOTP(
 }
 
 /**
- * Initiates the Forgot Password flow, which sends an OTP to the user's email. (UNCHANGED)
+ * Initiate Forgot Password (Send Email)
  */
 export async function initiateForgotPassword(
     email: string
@@ -159,7 +160,7 @@ export async function initiateForgotPassword(
 }
 
 /**
- * Completes the Password Reset process after OTP verification. (UNCHANGED)
+ * Complete Password Reset (Verify & Change)
  */
 export async function resetUserPassword(
     email: string,
@@ -182,7 +183,7 @@ export async function resetUserPassword(
 }
 
 /**
- * Handles the Google OAuth login/signup flow.
+ * Google Login Wrapper
  */
 export async function googleLogin(
     google_id: string,
@@ -190,8 +191,6 @@ export async function googleLogin(
     name: string,
     picture: string
 ): Promise<LoginResponse> {
-    
-    // NOTE: Maintenance check removed here.
 
     const response = await fetch(`${API_URL}/auth/google-login`, {
         method: 'POST',
@@ -208,5 +207,61 @@ export async function googleLogin(
     return data;
 }
 
-// Export the function so index.tsx can use it.
+
+// Helper to handle response safely
+async function handleResponse(response: Response, actionName: string) {
+    const text = await response.text(); // Get raw text first
+    
+    // 🔍 DEBUG LOGGING: Print what the server actually sent
+    console.log(`[${actionName}] Status:`, response.status);
+    console.log(`[${actionName}] Response:`, text.substring(0, 500)); // Print first 500 chars
+
+    if (!response.ok) {
+        // Try to parse JSON error if possible, otherwise throw text
+        try {
+            const json = JSON.parse(text);
+            throw new Error(json.message || `Server Error: ${response.status}`);
+        } catch (e) {
+            throw new Error(`Server returned HTML/Text instead of JSON. Check console for details.`);
+        }
+    }
+
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        throw new Error(`Invalid JSON response from server.`);
+    }
+}
+
+// --- UPDATED FUNCTIONS ---
+
+export async function updateUserProfile(
+    userId: number | string, 
+    data: { name?: string; phone?: string | null; address?: string | null; picture?: string | null }
+): Promise<any> {
+    const response = await fetch(`${API_URL}/users/profile/${userId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
+    return handleResponse(response, "Update Profile");
+}
+
+export async function updateUserPassword(userId: number | string, newPassword: string): Promise<any> {
+    const response = await fetch(`${API_URL}/users/set-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, newPassword }),
+    });
+    return handleResponse(response, "Update Password");
+}
+
+export async function uploadUserImage(formData: FormData): Promise<any> {
+    const response = await fetch(`${API_URL}/users/upload`, {
+        method: 'POST',
+        body: formData,
+    });
+    return handleResponse(response, "Upload Image");
+}
+
 export { checkMaintenanceStatus };
