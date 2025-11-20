@@ -63,10 +63,14 @@ export interface CustomerOrderDetails {
     customerName: string;
     customerPhone: string;
     customerAddress: string;
+    shopId: string;
     shopName: string;
+    shopAddress: string; //added
+    shopPhone: string; //added
+    invoiceId: string; //added
     serviceName: string;
     servicePrice: number;
-    initialWeight: number; // Current weight (Kilogram column)
+    weight: number;
     instructions: string;
     deliveryType: string;
     deliveryFee: number;
@@ -159,6 +163,30 @@ export async function fetchOrderDetails(
         return null;
     }
 }
+
+export const confirmPayment = async (
+    orderId: string, 
+    methodId: string, // 'M01' for GCash/Paypal, 'M02' for Cash
+    amount: number
+): Promise<boolean> => {
+    try {
+        const response = await fetch(`${API_URL}/orders/payment-confirmation`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId, methodId, amount }),
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to confirm payment');
+        }
+        
+        const data = await response.json();
+        return data.success;
+    } catch (error) {
+        console.error("Error in confirmPayment:", error);
+        return false;
+    }
+};
 
 /**
  * Marks an existing order as 'Cancelled' via the status update route.

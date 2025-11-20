@@ -160,7 +160,7 @@ export default function Activity() {
         const isTracking = currentStatus !== 'Pending' && currentStatus !== 'Cancelled' && currentStatus !== 'Rejected';
         
         const pathname = isTracking 
-            ? "/(tabs)/activity/track_order" // Track My Order (Processing, For Delivery)
+            ? "/(tabs)/activity/receipt" // Track My Order (Processing, For Delivery)
             : "/(tabs)/activity/receipt";    // View Details / History (Pending, Cancelled, Rejected)
 
         router.push({ 

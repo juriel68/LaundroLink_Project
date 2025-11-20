@@ -1,422 +1,267 @@
+// app/payment/invoice.tsx
+
+import React, { useEffect, useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  SafeAreaView,
+} from "react-native";
+import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import * as Print from "expo-print";
-import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import * as Sharing from "expo-sharing";
-import React, { useLayoutEffect } from "react";
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { fetchOrderDetails, CustomerOrderDetails } from "@/lib/orders"; 
 
-export default function Invoice() {
+export default function InvoiceScreen() {
   const router = useRouter();
-  const navigation = useNavigation();
-  const { invoice, amount, status, date } = useLocalSearchParams();
+  const { orderId } = useLocalSearchParams<{ orderId: string }>();
+  const [order, setOrder] = useState<CustomerOrderDetails | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerShown: true,
-      headerStyle: { 
-        backgroundColor: "#89CFF0",
-        borderBottomWidth: 1.5,        
-        borderBottomColor: "#5EC1EF",
-      },
-      headerTintColor: "#000",
-      headerShadowVisible: false,
-      headerTitle: () => <Text style={styles.headerText}>INVOICE</Text>,
-      headerLeft: () => (
-        <TouchableOpacity onPress={() => router.back()} style={{ paddingHorizontal: 15 }}>
-          <Ionicons name="arrow-back" size={24} color="#000" />
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation]);
-
-  const handleDownload = async () => {
-    try {
-      const html = `
-  <html>
-    <head>
-      <style>
-        body {
-          font-family: 'Segoe UI', Arial, sans-serif;
-          padding: 30px;
-          background-color: #f2f7fb;
-          color: #333;
-        }
-        .invoice-container {
-          max-width: 750px;
-          margin: auto;
-          background: #fff;
-          border-radius: 12px;
-          box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-          overflow: hidden;
-        }
-        .header {
-          background: linear-gradient(90deg, #004aad, #5EC1EF);
-          color: white;
-          text-align: center;
-          padding: 25px 20px;
-        }
-        .header h2 {
-          margin: 0;
-          font-size: 28px;
-          letter-spacing: 0.5px;
-        }
-        .section {
-          padding: 20px 30px;
-          border-bottom: 1px solid #eee;
-        }
-        .section:last-child {
-          border-bottom: none;
-        }
-        h3 {
-          color: #004aad;
-          margin-bottom: 12px;
-          border-left: 4px solid #004aad;
-          padding-left: 8px;
-        }
-        p {
-          margin: 4px 0;
-          line-height: 1.5;
-        }
-        .info {
-          display: flex;
-          justify-content: space-between;
-          flex-wrap: wrap;
-        }
-        .info div {
-          width: 48%;
-        }
-        .table {
-          width: 100%;
-          border-collapse: collapse;
-          margin-top: 10px;
-        }
-        .table th {
-          background-color: #e9f3ff;
-          text-align: center;
-          padding: 10px;
-          font-size: 14px;
-          color: #004aad;
-        }
-        .table td {
-          text-align: center;
-          padding: 10px;
-          border-bottom: 1px solid #f0f0f0;
-          font-size: 14px;
-        }
-        .table td.item {
-          text-align: left;
-          font-weight: 500;
-        }
-        .table tr:last-child td {
-          border-bottom: none;
-        }
-        .summary {
-          background-color: #f9fbff;
-          padding: 15px 20px;
-          border-radius: 8px;
-          margin-top: 15px;
-        }
-        .summary-row {
-          display: flex;
-          justify-content: space-between;
-          margin: 6px 0;
-          font-size: 15px;
-        }
-        .summary-row .label {
-          font-weight: 600;
-          color: #444;
-        }
-        .summary-row .value {
-          font-weight: 700;
-          color: #004aad;
-        }
-        .discount {
-          color: #e63946;
-          font-weight: bold;
-        }
-        .footer {
-          text-align: center;
-          padding: 20px;
-          font-size: 13px;
-          color: #555;
-          background-color: #f8faff;
-          border-top: 1px solid #eaeaea;
-        }
-        .footer span {
-          color: #004aad;
-          font-weight: 600;
-        }
-      </style>
-    </head>
-
-    <body>
-      <div class="invoice-container">
-        <div class="header">
-          <h2>LaundroLink Invoice</h2>
-          <p>Professional Laundry & Delivery Service</p>
-        </div>
-
-        <div class="section">
-          <div class="info">
-            <div>
-              <p><b>Invoice #:</b> ${invoice || "INV-2025-0911-001"}</p>
-              <p><b>Invoice Date:</b> ${date || "25 Sept 2025"}</p>
-            </div>
-            <div style="text-align: right;">
-              <p><b>Status:</b> ${status || "Paid"}</p>
-              <p><b>Payment Method:</b> GCash</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="section">
-          <h3>Customer Details</h3>
-          <p>👤 <b>MJ Dimapas</b></p>
-          <p>📞 +63 123 456 789</p>
-          <p>🏠 123 St., Cebu City</p>
-        </div>
-
-        <div class="section">
-          <h3>Order Breakdown</h3>
-          <table class="table">
-            <tr>
-              <th>Item</th><th>Qty</th><th>Price</th><th>Total</th>
-            </tr>
-            <tr>
-              <td class="item">Laundry (Wash & Fold)</td>
-              <td>5 kg</td>
-              <td>₱50/kg</td>
-              <td>₱250</td>
-            </tr>
-            <tr>
-              <td class="item">Service Fee</td>
-              <td>-</td>
-              <td>-</td>
-              <td>₱50</td>
-            </tr>
-            <tr>
-              <td class="item">Delivery Fee</td>
-              <td>-</td>
-              <td>-</td>
-              <td>₱70</td>
-            </tr>
-            <tr>
-              <td class="item discount">Discount Promo</td>
-              <td>-</td>
-              <td>-</td>
-              <td class="discount">-₱20</td>
-            </tr>
-          </table>
-
-          <div class="summary">
-            <div class="summary-row">
-              <span class="label">Subtotal:</span>
-              <span class="value">₱370</span>
-            </div>
-            <div class="summary-row">
-              <span class="label">Discount:</span>
-              <span class="value discount">-₱20</span>
-            </div>
-            <div class="summary-row">
-              <span class="label">Total:</span>
-              <span class="value">${amount || "₱350"}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="footer">
-          💙 Thank you for trusting <span>LaundroLink</span>! <br/>
-          For assistance, contact (123) 456-7890 or visit our app.
-        </div>
-      </div>
-    </body>
-  </html>
-`;
-
-
-      const { uri } = await Print.printToFileAsync({ html });
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri);
-      } else {
-        Alert.alert("PDF Generated", `Saved to: ${uri}`);
+  useEffect(() => {
+    const loadData = async () => {
+      if (orderId) {
+        const data = await fetchOrderDetails(orderId);
+        setOrder(data);
       }
-    } catch (error) {
-      console.error(error);
-      Alert.alert("Error", "Failed to generate invoice PDF");
-    }
-  };
+      setLoading(false);
+    };
+    loadData();
+  }, [orderId]);
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#004aad" />
+        <Text style={{ marginTop: 10, color: "#555" }}>Generating Invoice...</Text>
+      </View>
+    );
+  }
+
+  if (!order) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={{ color: "red" }}>Order not found.</Text>
+      </View>
+    );
+  }
+
+  // 🔑 PREPARE VALUES DIRECTLY FROM BACKEND DATA
+  const serviceFee = parseFloat(order.servicePrice.toString()) || 0;
+  const deliveryFee = parseFloat(order.deliveryFee.toString()) || 0;
+  const totalAmount = parseFloat(order.totalAmount.toString()) || 0;
+  
+  // Calculate Add-ons sum just for the breakdown display
+  const addonsFee = order.addons.reduce((sum, item) => sum + parseFloat(item.price.toString()), 0);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 20 }}>
-      {/* Invoice Info */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.label}>Invoice #:</Text>
-        <Text style={styles.value}>{invoice || "INV-2025-0911-001"}</Text>
-        <Text style={styles.label}>Invoice Date:</Text>
-        <Text style={styles.value}>{date || "25 Sept 2025"}</Text>
-      </View>
+    <SafeAreaView style={styles.container}>
+      <Stack.Screen 
+        options={{ 
+            title: "Review Invoice", 
+            headerShown: true,
+            headerStyle: { backgroundColor: "#87CEFA" }, 
+            headerTintColor: "#000",
+            headerTitleStyle: { fontWeight: "bold" },
+            headerLeft: () => (
+                <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 0, padding: 10 }}>
+                    <Ionicons name="arrow-back" size={24} color="#000" />
+                </TouchableOpacity>
+            ),
+            headerShadowVisible: false, 
+        }} 
+      />
+      
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        
+        {/* --- HEADER CARD --- */}
+        <View style={styles.headerCard}>
+          <View style={styles.shopIcon}>
+            <Ionicons name="storefront" size={32} color="#fff" />
+          </View>
+          <Text style={styles.shopName}>{order.shopName}</Text>
+          <Text style={styles.orderId}>Order ID: #{order.orderId}</Text>
+          
+          <View style={styles.divider} />
+          
+          <View style={styles.headerRow}>
+             <Text style={styles.headerLabel}>Customer:</Text>
+             <Text style={styles.headerValue}>{order.customerName}</Text>
+          </View>
+          <View style={styles.headerRow}>
+             <Text style={styles.headerLabel}>Created At:</Text>
+             <Text style={styles.headerValue}>{new Date(order.createdAt).toLocaleString()}</Text>
+          </View>
+        </View>
 
-      {/* Customer Details */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.subHeader}>Customer Details</Text>
-        <View style={styles.customerRow}>
-          <Ionicons name="person-circle-outline" size={20} color="#004aad" />
-          <Text style={styles.customerText}>MJ Dimpas</Text>
+        {/* --- ORDER DETAILS SECTION --- */}
+        <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Order Details</Text>
+            
+            <DetailRow label="Laundry Weight" value={`${order.weight} kg`} />
+            <DetailRow label="Service Name" value={order.serviceName} />
+            <DetailRow label="Delivery Type" value={order.deliveryType} />
+            
+            <View style={styles.row}>
+                <Text style={styles.label}>Add-Ons</Text>
+                <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                    {order.addons.length > 0 ? (
+                        order.addons.map((addon, index) => (
+                            <Text key={index} style={styles.valueSmall}>• {addon.name}</Text>
+                        ))
+                    ) : (
+                        <Text style={styles.value}>None</Text>
+                    )}
+                </View>
+            </View>
+            
+            <View style={[styles.row, { alignItems: 'flex-start' }]}>
+                <Text style={styles.label}>Special Instructions</Text>
+                <Text style={[styles.value, { maxWidth: '60%', textAlign: 'right' }]}>
+                    {order.instructions || "None"}
+                </Text>
+            </View>
         </View>
-        <View style={styles.customerRow}>
-          <Ionicons name="call-outline" size={20} color="#004aad" />
-          <Text style={styles.customerText}>+63 123 456 789</Text>
-        </View>
-        <View style={styles.customerRow}>
-          <Ionicons name="location-outline" size={20} color="#004aad" />
-          <Text style={styles.customerText}>123 St., Cebu City</Text>
-        </View>
-      </View>
 
-      {/* Order Breakdown */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.subHeader}>Order Breakdown</Text>
-        <View style={[styles.row, styles.tableHeader]}>
-          <Text style={styles.tableItem}>Item</Text>
-          <Text style={styles.tableQty}>Qty</Text>
-          <Text style={styles.tablePrice}>Price</Text>
-          <Text style={styles.tableTotal}>Total</Text>
+        {/* --- PAYMENT DETAILS SECTION --- */}
+        <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Payment Details</Text>
+            
+            <PriceRow label="Service Fee" amount={serviceFee} />
+            <PriceRow label="Add-Ons Fee" amount={addonsFee} />
+            <PriceRow label="Delivery Fee" amount={deliveryFee} />
+            
+            <View style={styles.dividerLine} />
+            
+            <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Total Amount</Text>
+                <Text style={styles.totalValue}>₱{totalAmount.toFixed(2)}</Text>
+            </View>
         </View>
-        <View style={styles.row}>
-          <Text style={styles.tableItem}>Laundry (Wash & Fold)</Text>
-          <Text style={styles.tableQty}>5 kg</Text>
-          <Text style={styles.tablePrice}>₱50/kg</Text>
-          <Text style={styles.tableTotal}>₱250</Text>
-        </View>
-        <View style={styles.row}>
-          <Text style={styles.tableItem}>Service Fee</Text>
-          <Text style={styles.tableQty}>-</Text>
-          <Text style={styles.tablePrice}>-</Text>
-          <Text style={styles.tableTotal}>₱50</Text>
-        </View>
-        <View style={styles.row}>
-          <Text style={styles.tableItem}>Delivery Fee</Text>
-          <Text style={styles.tableQty}>-</Text>
-          <Text style={styles.tablePrice}>-</Text>
-          <Text style={styles.tableTotal}>₱70</Text>
-        </View>
-        <View style={styles.row}>
-          <Text style={[styles.tableItem, styles.discount]}>Discount Promo</Text>
-          <Text style={styles.tableQty}>-</Text>
-          <Text style={styles.tablePrice}>-</Text>
-          <Text style={[styles.tableTotal, styles.discount]}>-₱20</Text>
-        </View>
-      </View>
 
-      {/* Summary */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.subHeader}>Summary</Text>
-        <View style={styles.summaryRow}>
-          <Text style={styles.label}>Subtotal:</Text>
-          <Text style={styles.value}>₱370</Text>
-        </View>
-        <View style={styles.summaryRow}>
-          <Text style={styles.label}>Discount:</Text>
-          <Text style={[styles.value, styles.discount]}>-₱20</Text>
-        </View>
-        <View style={styles.summaryRow}>
-          <Text style={[styles.label, styles.bold]}>Total:</Text>
-          <Text style={[styles.value, styles.bold]}>{amount || "₱350"}</Text>
-        </View>
-      </View>
+      </ScrollView>
 
-      {/* Payment Info */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.subHeader}>Payment</Text>
-        <View style={styles.paymentRow}>
-          <Ionicons name="card-outline" size={20} color="#004aad" />
-          <Text style={styles.paymentText}>GCash</Text>
-        </View>
-        <View style={styles.paymentRow}>
-          <Ionicons name="checkmark-circle-outline" size={20} color={status === "Paid" ? "green" : status === "Cancelled" ? "red" : "orange"} />
-          <Text style={[styles.paymentText, status === "Paid" ? { color: "green", fontWeight: "bold" } : status === "Cancelled" ? { color: "red", fontWeight: "bold" } : { color: "orange", fontWeight: "bold" }]}>
-            {status || "Paid"} ({date || "9 Sept 2025"})
-          </Text>
-        </View>
-      </View>
-
-      {/* Download Button */}
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity style={styles.btn} onPress={handleDownload}>
-          <Ionicons name="download-outline" size={20} color="#fff" />
-          <Text style={styles.btnText}>Download / Share PDF</Text>
+      {/* --- FOOTER BUTTON --- */}
+      <View style={styles.footer}>
+        <TouchableOpacity 
+            style={styles.payButton}
+            onPress={() => {
+                router.push({
+                    pathname: "/(tabs)/payment/pay",
+                    params: { 
+                        orderId: order.orderId,
+                        shopName: order.shopName,
+                        totalAmount: totalAmount.toFixed(2) // 🔑 Use Backend Total
+                    }
+                });
+            }}
+        >
+            <Text style={styles.payButtonText}>Proceed to Payment</Text>
+            <Ionicons name="arrow-forward" size={20} color="#fff" style={{ marginLeft: 5 }} />
         </TouchableOpacity>
       </View>
-
-      {/* Footer */}
-      <Text style={styles.footer}>💙 Thank you for trusting LaundroLink! 💙</Text>
-    </ScrollView>
+    </SafeAreaView>
   );
 }
 
+// --- Helper Components ---
+const DetailRow = ({ label, value }: { label: string, value: string }) => (
+    <View style={styles.row}>
+        <Text style={styles.label}>{label}</Text>
+        <Text style={styles.value}>{value}</Text>
+    </View>
+);
+
+const PriceRow = ({ label, amount }: { label: string, amount: number }) => (
+    <View style={styles.row}>
+        <Text style={styles.label}>{label}</Text>
+        <Text style={styles.price}>₱{amount.toFixed(2)}</Text>
+    </View>
+);
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f4f6f8" },
-  headerText: { fontSize: 20, fontWeight: "bold", color: "#000" },
+  container: { flex: 1, backgroundColor: "#f4f7fa" },
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  scrollContent: { padding: 20, paddingBottom: 100 },
+  
+  // Header Card
+  headerCard: {
+    backgroundColor: "#004aad",
+    borderRadius: 16,
+    padding: 20,
+    alignItems: "center",
+    marginBottom: 20,
+    shadowColor: "#004aad",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  shopIcon: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+    padding: 10,
+    borderRadius: 50,
+    marginBottom: 10,
+  },
+  shopName: { fontSize: 22, fontWeight: "bold", color: "#fff", marginBottom: 4 },
+  orderId: { fontSize: 14, color: "rgba(255,255,255,0.8)", fontWeight: '600' },
+  divider: { width: "100%", height: 1, backgroundColor: "rgba(255,255,255,0.2)", marginVertical: 15 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 5 },
+  headerLabel: { color: "rgba(255,255,255,0.7)", fontSize: 14 },
+  headerValue: { color: "#fff", fontSize: 14, fontWeight: "600" },
 
-  sectionCard: {
-    backgroundColor: "#f0f8ff",
-    padding: 15,
-    marginHorizontal: 10,
-    marginBottom: 12,
-    borderRadius: 12,
+  // Sections
+  section: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
     shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
+  sectionTitle: { fontSize: 16, fontWeight: "700", color: "#004aad", marginBottom: 15, textTransform: "uppercase", letterSpacing: 0.5 },
+  
+  // Rows
+  row: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
+  label: { fontSize: 14, color: "#666" },
+  value: { fontSize: 14, color: "#222", fontWeight: "600" },
+  valueSmall: { fontSize: 13, color: "#444", marginBottom: 2, textAlign: 'right' },
+  price: { fontSize: 14, color: "#222", fontWeight: "600" },
+  
+  // Totals
+  dividerLine: { height: 1, backgroundColor: "#eee", marginVertical: 10 },
+  totalRow: { flexDirection: "row", justifyContent: 'space-between', alignItems: 'center', marginTop: 5 },
+  totalLabel: { fontSize: 16, fontWeight: "bold", color: "#222" },
+  totalValue: { fontSize: 20, fontWeight: "bold", color: "#27ae60" },
 
-  subHeader: { fontWeight: "bold", fontSize: 16, marginBottom: 8, color: "#333" },
-
-  customerRow: { flexDirection: "row", alignItems: "center", marginVertical: 3 },
-  customerText: { fontSize: 14, color: "#333", marginLeft: 8 },
-
-  row: { 
-    flexDirection: "row", 
-    borderBottomWidth: 1, 
-    borderColor: "#eee", 
-    paddingVertical: 8, 
-    alignItems: "center",
-    flexWrap: "wrap",
+  // Footer
+  footer: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#fff",
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
   },
-  tableHeader: { backgroundColor: "#d6e8ff" },
-  tableItem: { flex: 3, fontSize: 14, color: "#333", paddingRight: 5, minWidth: 120 },
-  tableQty: { flex: 1, textAlign: "center", fontSize: 14, minWidth: 40 },
-  tablePrice: { flex: 1, textAlign: "center", fontSize: 14, minWidth: 60 },
-  tableTotal: { flex: 1, textAlign: "center", fontSize: 14, fontWeight: "bold", minWidth: 60 },
-
-  bold: { fontWeight: "bold" },
-  discount: { color: "red", fontWeight: "bold" },
-
-  label: { fontSize: 14, color: "#555", flex: 1 },
-  value: { fontSize: 14, color: "#000", marginBottom: 3, flex: 1, textAlign: "right" },
-
-  summaryRow: { flexDirection: "row", justifyContent: "space-between", marginVertical: 3, alignItems: "center" },
-
-  paymentRow: { flexDirection: "row", alignItems: "center", marginVertical: 5 },
-  paymentText: { fontSize: 14, color: "#333", marginLeft: 8 },
-
-  buttonContainer: { padding: 15, alignItems: "center" },
-  btn: {
+  payButton: {
+    backgroundColor: "#004aad",
     flexDirection: "row",
-    backgroundColor: "#1E90FF",
-    paddingVertical: 12,
-    paddingHorizontal: 25,
-    borderRadius: 25,
-    alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 5,
+    alignItems: "center",
+    paddingVertical: 15,
+    borderRadius: 12,
+    shadowColor: "#004aad",
     shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 5,
   },
-  btnText: { color: "#fff", fontWeight: "bold", marginLeft: 10, fontSize: 15 },
-
-  footer: { textAlign: "center", marginVertical: 20, fontStyle: "italic", color: "#555", fontSize: 13 },
+  payButtonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
 });

@@ -147,6 +147,8 @@ router.get("/:shopId/full-details", async (req, res) => {
             addOns,
             deliveryOptions,
             fabricTypes,
+            paymentMethods,
+
         ] = await Promise.all([
             // 1. Basic Shop Details - RATING SOURCED DIRECTLY
             connection.query(
@@ -189,6 +191,14 @@ router.get("/:shopId/full-details", async (req, res) => {
                   FROM Shop_Fabrics SF JOIN Fabrics F ON SF.FabID = F.FabID WHERE SF.ShopID = ?`,
                 [shopId]
             ),
+
+            // 6. Payment Methods
+            connection.query(
+                `SELECT PM.MethodID as id, PM.MethodName as name
+                  FROM Payment_Methods PM`,
+                []
+            ),
+
         ]);
 
         if (!shopDetails) {
@@ -202,6 +212,7 @@ router.get("/:shopId/full-details", async (req, res) => {
             addOns: addOns[0],
             deliveryOptions: deliveryOptions[0],
             fabricTypes: fabricTypes[0],
+            paymentMethods: paymentMethods[0],
         });
 
     } catch (error) {

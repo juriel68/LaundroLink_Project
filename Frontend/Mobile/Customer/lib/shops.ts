@@ -1,58 +1,58 @@
-// Customer/lib/shops.ts (FINALIZED CODE WITH CRITICAL MAPPING)
+// Customer/lib/shops.ts
 
 import axios from "axios";
 import { API_URL } from "@/lib/api";
 
-// --- SHOP INTERFACES (Matching the required frontend keys) ---
-
-/**
- * Interface for a Shop item returned by the /api/shops/nearby route.
- */
 export interface Shop {
-    id: string; // Corresponds to ShopID
-    name: string; // Corresponds to ShopName
-    address: string; // Corresponds to ShopAddress
-    description: string; // Corresponds to ShopDescrp
-    image_url: string; // Corresponds to ShopImage_url
-    contact: string; // Corresponds to ShopPhone
-    hours: string; // Corresponds to ShopOpeningHours
-    availability: string; // Corresponds to ShopStatus
-    rating: string; // Corresponds to the single ShopRating value
-    distance: number; // Calculated distance (from the nearby route)
+    id: string; 
+    name: string; 
+    address: string; 
+    description: string; 
+    image_url: string; 
+    contact: string; 
+    hours: string; 
+    availability: string; 
+    rating: string; 
+    distance: number; 
 }
 
 /**
  * Interface for Service details.
  */
 export interface Service {
-    id: string; // SvcID
-    name: string; // SvcName
-    price: number; // SvcPrice
-    minLoad: number; // MinLoad
-    maxLoad: number; // MaxLoad
+    id: string; 
+    name: string; 
+    price: number; 
+    minLoad: number; 
+    maxLoad: number; 
 }
 
 /**
  * Interface for Add-On details.
  */
 export interface AddOn {
-    id: string; // AddOnID
-    name: string; // AddOnName
-    price: number; // AddOnPrice
+    id: string; 
+    name: string; 
+    price: number; 
 }
 
 /**
  * Interface for Delivery Option details.
  */
 export interface DeliveryOption {
-    id: string;      // DlvryID 
-    name: string;    // DlvryTypeName
-    description: string; // DlvryDescription (Shop-specific override)
+    id: string;     
+    name: string;   
+    description: string; 
 }
 
 export interface FabricType {
-    id: string; // FabID
-    name: string; // FabName
+    id: string; 
+    name: string; 
+}
+
+export interface PaymentMethod {
+    id: string; 
+    name: string; 
 }
 
 /**
@@ -64,6 +64,7 @@ export interface FullShopDetails {
     addOns: AddOn[];
     deliveryOptions: DeliveryOption[];
     fabricTypes: FabricType[];
+    paymentMethods: PaymentMethod[];
 }
 
 
@@ -121,6 +122,7 @@ export const fetchShopDetails = async (shopId: string): Promise<FullShopDetails 
                 addOns: response.data.addOns || [],
                 deliveryOptions: response.data.deliveryOptions || [], 
                 fabricTypes: response.data.fabricTypes || [], 
+                paymentMethods: response.data.paymentMethods || [],
             };
         }
         

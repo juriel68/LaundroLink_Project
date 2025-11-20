@@ -1,177 +1,185 @@
+// app/(tabs)/payment/pay.tsx
+
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation, useRouter } from "expo-router";
-import React, { useLayoutEffect, useState } from "react";
+import { useNavigation, useRouter, useLocalSearchParams } from "expo-router";
+import React, { useLayoutEffect, useState, useEffect } from "react";
 import {
   ActivityIndicator,
   Image,
-  Modal,
   SafeAreaView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
+  Alert,
+  FlatList
 } from "react-native";
+import { confirmPayment, fetchOrderDetails } from "@/lib/orders"; 
+import { fetchShopDetails, PaymentMethod } from "@/lib/shops"; // 🔑 Import shop fetcher
 
 export default function Payment() {
   const router = useRouter();
   const navigation = useNavigation();
+  
+  // Get params passed from Invoice page
+  const { orderId, totalAmount } = useLocalSearchParams<{ orderId: string, totalAmount: string }>();
+  
   const [loading, setLoading] = useState(false);
-  const [successModal, setSuccessModal] = useState(false);
-  const [modalMessage, setModalMessage] = useState("");
+  const [initializing, setInitializing] = useState(true);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
 
-  const totalAmount = 500.0;
+  const amountValue = parseFloat(totalAmount || "0");
 
   useLayoutEffect(() => {
     navigation.setOptions({
       headerShown: true,
-      headerStyle: {
-        backgroundColor: "#87CEFA",
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 3,
-        elevation: 3,
-      },
+      headerStyle: { backgroundColor: "#87CEFA" },
       headerTintColor: "#000",
-      headerTitle: () => <Text style={styles.headerTitle}>Select Payment Method</Text>,
-      headerLeft: () => (
-        <TouchableOpacity onPress={() => router.back()} style={{ paddingHorizontal: 10 }}>
-          <Ionicons name="arrow-back" size={24} color="#000" />
-        </TouchableOpacity>
-      ),
+      headerTitle: "Select Payment",
     });
   }, [navigation]);
 
-  const handleGCashPayment = () => {
+  // 🔑 NEW: Fetch Shop Payment Methods on Load
+  useEffect(() => {
+    const loadPaymentMethods = async () => {
+        try {
+            // 1. Get Order Details to find the Shop ID
+            const orderData = await fetchOrderDetails(orderId);
+            
+            if (orderData) {
+                // 2. Fetch Shop Details (including payment methods)
+                // Ideally, fetchOrderDetails should return shopId. 
+                // Assuming your CustomerOrderDetails interface (orders.ts) has shopId?
+                // If not, we might need to update orders.ts or rely on the shop fetcher logic.
+                
+                // WORKAROUND: If orderData doesn't have shopId explicitly in frontend type, 
+                // check if your backend returns it.
+                // Based on your previous orders.js, GET /:orderId returns 'shopId'.
+                // So we can cast it:
+                const shopId = (orderData as any).shopId; 
+
+                if (shopId) {
+                    const shopData = await fetchShopDetails(shopId);
+                    if (shopData && shopData.paymentMethods) {
+                        setPaymentMethods(shopData.paymentMethods);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("Failed to load payment methods", error);
+            Alert.alert("Error", "Could not load payment options.");
+        } finally {
+            setInitializing(false);
+        }
+    };
+    loadPaymentMethods();
+  }, [orderId]);
+
+  const handlePaymentSelection = async (methodName: string, methodId: string) => {
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      setModalMessage("✅ Payment Successful via GCash!");
-      setSuccessModal(true);
-    }, 2000);
+    try {
+        const success = await confirmPayment(orderId, methodId, amountValue);
+        if (success) {
+            router.push({
+                pathname: "/payment/receipt",
+                params: { 
+                    orderId: orderId, 
+                    amount: totalAmount, 
+                    method: methodName 
+                }
+            });
+        } else {
+            Alert.alert("Error", "Payment submission failed. Please try again.");
+        }
+    } catch (error) {
+        Alert.alert("Error", "Network error occurred.");
+    } finally {
+        setLoading(false);
+    }
   };
 
-  const handleCODPayment = () => {
-    setModalMessage(
-      `Cash on Delivery selected.\nPlease prepare the exact amount upon pickup. 💵`
-    );
-    setSuccessModal(true);
+  // Helper to get icon based on method name
+  const getPaymentIcon = (name: string) => {
+    const lowerName = name.toLowerCase();
+    if (lowerName.includes('cash')) return <Ionicons name="cash-outline" size={28} color="#2ecc71" style={styles.icon} />;
+    if (lowerName.includes('paypal')) return <Image source={{ uri: "https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_37x23.jpg" }} style={styles.logo} />;
+    if (lowerName.includes('gcash')) return <Image source={{ uri: "https://seeklogo.com/images/G/gcash-logo-E9313395F1-seeklogo.com.png" }} style={styles.logo} />; // Example GCash logo
+    // Default icon
+    return <Ionicons name="card-outline" size={28} color="#004aad" style={styles.icon} />;
   };
 
-  const closeModal = () => {
-    setSuccessModal(false);
-    router.back(); // return to message_pay
-  };
+  if (initializing) {
+      return (
+          <View style={[styles.container, styles.center]}>
+              <ActivityIndicator size="large" color="#004aad" />
+          </View>
+      );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
         <Text style={styles.amountTitle}>Total Amount Due</Text>
-        <Text style={styles.amount}>₱{totalAmount.toFixed(2)}</Text>
+        <Text style={styles.amount}>₱{amountValue.toFixed(2)}</Text>
 
         <Text style={styles.subtitle}>Choose your payment method:</Text>
 
-        {/* GCash Option */}
-        <TouchableOpacity
-          style={[styles.optionCard, loading && { opacity: 0.6 }]}
-          onPress={handleGCashPayment}
-          disabled={loading}
-          activeOpacity={0.7}
-        >
-          <Image
-            source={{
-              uri: "https://tse3.mm.bing.net/th/id/OIP.rEo8KqIw3Wjue1ENEPdZUAHaDt?pid=Api&P=0&h=180",
-            }}
-            style={styles.logo}
-          />
-          <Text style={styles.optionText}>GCash</Text>
-          {loading && <ActivityIndicator style={{ marginLeft: 10 }} color="#1E90FF" />}
-        </TouchableOpacity>
-
-        {/* Cash on Delivery */}
-        <TouchableOpacity
-          style={styles.optionCard}
-          onPress={handleCODPayment}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="cash-outline" size={28} color="#2ecc71" style={styles.icon} />
-          <Text style={styles.optionText}>Cash on Delivery (pickup only)</Text>
-        </TouchableOpacity>
+        {/* 🔑 DYNAMIC LIST OF PAYMENT METHODS */}
+        {paymentMethods.length > 0 ? (
+            <FlatList 
+                data={paymentMethods}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                    <TouchableOpacity
+                        style={[styles.optionCard, loading && { opacity: 0.5 }]}
+                        onPress={() => handlePaymentSelection(item.name, item.id)}
+                        disabled={loading}
+                    >
+                        {getPaymentIcon(item.name)}
+                        <Text style={styles.optionText}>{item.name}</Text>
+                        {loading && <ActivityIndicator style={{ marginLeft: 'auto' }} color="#004aad" />}
+                    </TouchableOpacity>
+                )}
+            />
+        ) : (
+            <Text style={styles.emptyText}>No payment methods available.</Text>
+        )}
+      
       </View>
-
-      {/* Success Modal */}
-      <Modal
-        visible={successModal}
-        animationType="slide"
-        transparent
-        onRequestClose={closeModal}
-      >
-        <View style={styles.modalBackground}>
-          <View style={styles.modalContainer}>
-            <Ionicons name="checkmark-circle-outline" size={64} color="#1E90FF" />
-            <Text style={styles.modalTitle}>{modalMessage}</Text>
-            <Text style={styles.modalAmount}>₱{totalAmount.toFixed(2)}</Text>
-            <TouchableOpacity style={styles.modalButton} onPress={closeModal}>
-              <Text style={styles.modalButtonText}>Done</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f9f9f9" },
-  headerTitle: { fontSize: 18, fontWeight: "bold", color: "#000" },
-  content: { padding: 20 },
-  amountTitle: { fontSize: 16, color: "#555", marginBottom: 5 },
+  center: { justifyContent: 'center', alignItems: 'center' },
+  content: { padding: 20, flex: 1 },
+  amountTitle: { fontSize: 16, color: "#555", marginBottom: 5, textAlign: 'center' },
   amount: {
-    fontSize: 32,
+    fontSize: 36,
     fontWeight: "bold",
-    color: "#1E90FF",
-    marginBottom: 20,
-    textShadowColor: "#aaa",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 1,
+    color: "#004aad",
+    marginBottom: 30,
+    textAlign: 'center',
   },
-  subtitle: { fontSize: 16, fontWeight: "600", marginVertical: 15 },
+  subtitle: { fontSize: 16, fontWeight: "600", marginBottom: 15, color: '#333' },
   optionCard: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#fff",
-    padding: 18,
-    borderRadius: 15,
+    padding: 20,
+    borderRadius: 16,
     marginBottom: 15,
     shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 6,
-    elevation: 4,
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#eee'
   },
-  optionText: { fontSize: 16, fontWeight: "600", marginLeft: 12, color: "#333" },
+  optionText: { fontSize: 18, fontWeight: "600", marginLeft: 15, color: "#333" },
   logo: { width: 40, height: 40, resizeMode: "contain" },
   icon: { marginRight: 5 },
-  modalBackground: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalContainer: {
-    width: "80%",
-    backgroundColor: "#fff",
-    borderRadius: 15,
-    padding: 25,
-    alignItems: "center",
-  },
-  modalTitle: { fontSize: 18, fontWeight: "bold", textAlign: "center", marginVertical: 10 },
-  modalAmount: { fontSize: 24, fontWeight: "bold", color: "#1E90FF", marginBottom: 20 },
-  modalButton: {
-    backgroundColor: "#1E90FF",
-    paddingHorizontal: 25,
-    paddingVertical: 10,
-    borderRadius: 20,
-  },
-  modalButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  emptyText: { textAlign: 'center', color: '#888', marginTop: 20 }
 });

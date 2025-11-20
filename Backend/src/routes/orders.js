@@ -361,7 +361,10 @@ router.get("/:orderId", async (req, res) => {
                 o.OrderCreatedAt AS createdAt,
                 c.CustName AS customerName,
                 c.CustPhone AS customerPhone,
+                ls.shopID AS shopId,
                 ls.ShopName AS shopName,
+                ls.ShopAddress AS shopAddress,
+                ls.ShopPhone AS shopPhone,
                 i.InvoiceID AS invoiceId,
                 c.CustAddress AS customerAddress, 
                 s.SvcName AS serviceName,
@@ -713,9 +716,8 @@ router.post("/delivery-booking", upload.single("proofImage"), async (req, res) =
     }
 });
 
-// PATCH /api/orders/weight route (orders.js)
+// PATCH /api/orders/weight
 router.patch("/weight", async (req, res) => {
-    // 🔑 isFinal flag is still destructured but no longer used for conditional logic
     const { orderId, newWeight, isFinal = true, userId, userRole } = req.body; 
 
     if (!orderId || newWeight === undefined) {
@@ -769,39 +771,31 @@ router.patch("/weight", async (req, res) => {
         const totalAddOnCost = parseFloat(addonCosts[0].totalAddOnCost) || 0.00;
 
         // 2. Update the weight in Laundry_Details
-        const weightColumn = 'Kilogram'; // Assuming all updates are to the primary weight field
         await connection.query(
-            `
-            UPDATE Laundry_Details
-            SET ${weightColumn} = ?
-            WHERE LndryDtlID = ?
-            `,
+            `UPDATE Laundry_Details SET Kilogram = ? WHERE LndryDtlID = ?`,
             [validatedWeight, LndryDtlID]
         );
         
-        // 🔑 FIX: ALWAYS CALCULATE AND UPDATE INVOICE PAYAMOUNT
+        // 3. Calculate and Update Invoice PayAmount
         const newPayAmount = flatServicePrice + totalAddOnCost + deliveryFee;
 
         await connection.query(
-            `
-            UPDATE Invoices
-            SET PayAmount = ?
-            WHERE InvoiceID = ?
-            `,
+            `UPDATE Invoices SET PayAmount = ? WHERE InvoiceID = ?`,
             [newPayAmount.toFixed(2), InvoiceID]
         );
-        console.log(`[INVOICE] Final PayAmount updated to: ${newPayAmount.toFixed(2)}`);
-
+        
         // --- Messaging Logic ---
         const senderId = userId; 
         const receiverId = CustID; 
         
+        // 🔑 KEY UPDATE: Added deliveryFee to the JSON payload
         const invoiceJsonData = {
-            type: "INVOICE_FINALIZED", // Type changed to reflect final action
+            type: "INVOICE_FINALIZED", 
             orderId: orderId,
             shopId: ShopID, 
-            newWeight: validatedWeight.toFixed(2),
-            finalTotal: newPayAmount.toFixed(2), // Include final total in message payload
+            newWeight: validatedWeight.toFixed(1),
+            deliveryFee: deliveryFee.toFixed(2), // ✅ Added Delivery Fee
+            finalTotal: newPayAmount.toFixed(2), 
         };
 
         const readablePrefix = `FINAL weight confirmed: ${validatedWeight.toFixed(2)} kg. The invoice total has been updated.`;
@@ -854,6 +848,59 @@ router.patch("/weight", async (req, res) => {
         await connection.rollback();
         console.error("Error during weight update and messaging:", error);
         res.status(500).json({ success: false, message: "Failed to update weight and finalize invoice." });
+    } finally {
+        connection.release();
+    }
+});
+
+// POST /api/orders/payment-confirmation
+router.post("/payment-confirmation", async (req, res) => {
+    const { orderId, methodId, amount } = req.body;
+
+    if (!orderId || !methodId) {
+        return res.status(400).json({ error: "Missing Order ID or Payment Method." });
+    }
+
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // 1. Update Invoice: Set Payment Method and Amount
+        const [invoiceResult] = await connection.query(
+            `SELECT InvoiceID FROM Invoices WHERE OrderID = ?`, 
+            [orderId]
+        );
+
+        if (invoiceResult.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ error: "Invoice not found." });
+        }
+        const invoiceId = invoiceResult[0].InvoiceID;
+
+        await connection.query(
+            `UPDATE Invoices SET MethodID = ?, PayAmount = ? WHERE InvoiceID = ?`,
+            [methodId, amount, invoiceId]
+        );
+
+        // 2. Insert Invoice Status: 'To Confirm'
+        const newStatId = generateID('IS');
+        await connection.query(
+            `INSERT INTO Invoice_Status (InvoiceStatusID, InvoiceID, InvoiceStatus, StatUpdateAt) 
+             VALUES (?, ?, 'To Confirm', NOW())`,
+            [newStatId, invoiceId]
+        );
+
+        // 3. Log Activity (Optional but good practice)
+        // We can skip strictly required user logging here if userId isn't passed, 
+        // or assume it's a customer action.
+
+        await connection.commit();
+        res.json({ success: true, message: "Payment submitted for confirmation." });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("Payment confirmation error:", error);
+        res.status(500).json({ error: "Failed to submit payment." });
     } finally {
         connection.release();
     }
