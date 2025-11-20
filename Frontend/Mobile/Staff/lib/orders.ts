@@ -1,9 +1,9 @@
-// lib/orders.ts (Updated)
+// lib/orders.ts
 
 import { API_URL } from "./api";
 
 // =================================================================
-// 1. INTERFACES
+// 1. INTERFACES (Kept existing ones)
 // =================================================================
 
 export interface Order {
@@ -28,9 +28,6 @@ export interface AddOnDetail {
     price: string;
 }
 
-/**
- * Interface for full order details.
- */
 export interface OrderDetail {
     orderId: string;
     createdAt: string;
@@ -39,7 +36,6 @@ export interface OrderDetail {
     customerAddress: string;
     serviceName: string;
     servicePrice: string;
-    // 🔑 Assumed property name for weight fetching from the backend
     weight: string; 
     deliveryType: string;
     deliveryFee: string;
@@ -70,18 +66,11 @@ export interface OrderSummaryData {
 // 2. API FUNCTIONS
 // =================================================================
 
-/**
- * Fetches orders for a specific shop from the backend API.
- */
 export const fetchOrders = async (shopId: string): Promise<Order[]> => {
     if (!shopId) return []; 
-    
     try {
         const response = await fetch(`${API_URL}/orders/shop/${shopId}`);
-
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
-        }
+        if (!response.ok) throw new Error('Network response was not ok');
         const orders: Order[] = await response.json();
         return orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     } catch (error) {
@@ -92,13 +81,22 @@ export const fetchOrders = async (shopId: string): Promise<Order[]> => {
 
 /**
  * Updates the main order status.
+ * ✅ UPDATED: Now accepts userId and userRole for backend logging.
  */
-export const updateOrderStatus = async (orderId: string, newStatus: string, reason?: string, note?: string): Promise<boolean> => {
+export const updateOrderStatus = async (
+    orderId: string, 
+    newStatus: string, 
+    userId?: string,     // Added
+    userRole?: string,   // Added
+    reason?: string, 
+    note?: string
+): Promise<boolean> => {
     try {
         const response = await fetch(`${API_URL}/orders/status`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderId, newStatus, reason, note }),
+            // Pass userId and userRole to the body
+            body: JSON.stringify({ orderId, newStatus, userId, userRole, reason, note }),
         });
         if (!response.ok) {
             throw new Error('Failed to update status');
@@ -111,15 +109,10 @@ export const updateOrderStatus = async (orderId: string, newStatus: string, reas
     }
 };
 
-/**
- * Fetches a single order's details.
- */
 export const fetchOrderDetails = async (orderId: string): Promise<OrderDetail | null> => {
     try {
         const response = await fetch(`${API_URL}/orders/${orderId}`);
-        if (!response.ok) {
-            throw new Error('Failed to fetch order details');
-        }
+        if (!response.ok) throw new Error('Failed to fetch order details');
         return await response.json(); 
     } catch (error) {
         console.error("Error in fetchOrderDetails:", error);
@@ -127,10 +120,54 @@ export const fetchOrderDetails = async (orderId: string): Promise<OrderDetail | 
     }
 };
 
-/**
- * Updates the laundry weight.
- * @returns Promise resolving to the success status and message.
- */
+export const submitDeliveryBooking = async (
+    orderId: string,
+    fee: number,
+    total: number, // 🔑 ADDED TOTAL PARAMETER
+    imageUri: string,
+    userId: string,
+    userRole: string
+): Promise<boolean> => {
+    console.log("🚀 [submitDeliveryBooking] Starting...");
+    
+    try {
+        const formData = new FormData();
+        formData.append('orderId', orderId);
+        formData.append('fee', fee.toString());
+        formData.append('total', total.toString()); // 🔑 APPEND TOTAL
+        formData.append('userId', userId);
+        formData.append('userRole', userRole);
+
+        const filename = imageUri.split('/').pop() || 'proof.jpg';
+        const fileType = filename.split('.').pop() === 'png' ? 'image/png' : 'image/jpeg';
+
+        formData.append('proofImage', {
+            uri: imageUri,
+            name: filename,
+            type: fileType,
+        } as any);
+
+        const response = await fetch(`${API_URL}/orders/delivery-booking`, {
+            method: 'POST',
+            body: formData,
+            headers: { 'Accept': 'application/json' },
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            console.error(`❌ Server Error (${response.status}):`, errText);
+            return false;
+        }
+
+        const data = await response.json();
+        return data.success;
+
+    } catch (error: any) {
+        console.error("❌ NETWORK ERROR in submitDeliveryBooking:", error);
+        return false;
+    }
+};
+
 export const updateOrderWeight = async (
     orderId: string, 
     newWeight: number, 
@@ -147,10 +184,7 @@ export const updateOrderWeight = async (
 
         const data: { success: boolean; message: string } = await response.json();
 
-        if (!response.ok) {
-            throw new Error(data.message || 'Failed to update weight');
-        }
-        
+        if (!response.ok) throw new Error(data.message || 'Failed to update weight');
         return data; 
     } catch (error: any) {
         console.error("Error in updateOrderWeight:", error);
@@ -158,9 +192,6 @@ export const updateOrderWeight = async (
     }
 };
 
-/**
- * Updates the processing sub-status.
- */
 export const updateProcessStatus = async (orderId: string, status: string): Promise<boolean> => {
     try {
         const response = await fetch(`${API_URL}/orders/processing-status`, {
@@ -176,10 +207,6 @@ export const updateProcessStatus = async (orderId: string, status: string): Prom
     }
 };
 
-
-/**
- * Fetches the dashboard summary metrics.
- */
 export const fetchOrderSummary = async (shopId: string, dateRange: string): Promise<OrderSummaryData | null> => {
     try {
         const response = await fetch(`${API_URL}/orders/summary`, {

@@ -1,4 +1,4 @@
-//home.tsx of staff
+// home.tsx
 import React, { useState, useCallback } from "react";
 import {
   View,
@@ -53,17 +53,14 @@ export default function HomeScreen() {
     }, [loadOrders])
   );
 
-  // THIS IS THE MODIFIED FUNCTION
   const handleAcceptOrder = async (order: Order) => {
     // First, check if the invoice status is 'Paid'.
     if (order.invoiceStatus !== 'Paid') {
-      // If not paid, show a simple alert with only an "Okay" button and then stop.
       Alert.alert("Unpaid Order", "This order has not been paid yet.");
-      return; // This stops the function from proceeding.
+      return; 
     }
 
-    // If the code reaches this point, the order is paid. Proceed directly.
-    // Optimistically remove the order from the UI for a fast response.
+    // Optimistically update UI
     setOrders((currentOrders) =>
       currentOrders.filter((o) => o.orderId !== order.orderId)
     );
@@ -71,7 +68,6 @@ export default function HomeScreen() {
     const success = await updateOrderStatus(order.orderId, "Processing");
 
     if (!success) {
-      // If the API call fails, show an error and reload the original data.
       Alert.alert("Error", "Failed to update order status. Please try again.");
       loadOrders(); 
     }
@@ -86,7 +82,12 @@ export default function HomeScreen() {
     return orders.filter((o) => o.status === status).length;
   };
 
-  const freshOrders = orders.filter((o) => o.status === "Pending");
+  // ✅ FIXED: Include all pre-processing statuses so they don't disappear
+  const freshOrders = orders.filter((o) => 
+    o.status === "Pending" || 
+    o.status === "To Pick-up" || 
+    o.status === "Delivered In Shop"
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -167,7 +168,7 @@ export default function HomeScreen() {
   );
 }
 
-// --- Helper Components (StatusCardLink and OrderCard) ---
+// --- Helper Components ---
 
 const StatusCardLink = ({
   icon,
@@ -237,6 +238,12 @@ function OrderCard({
       <Text style={styles.orderText}>
         Customer <Text style={{ fontWeight: "bold" }}>{order.customerName}</Text>{" "}
         placed an order.
+        {/* Optional: Display status badge if not Pending */}
+        {order.status !== "Pending" && (
+             <Text style={{ color: '#e67e22', fontWeight: 'bold', fontSize: 12 }}>
+                {'\n'}(Status: {order.status})
+             </Text>
+        )}
       </Text>
 
       <View style={styles.buttonRow}>
@@ -275,19 +282,16 @@ const styles = StyleSheet.create({
     flex: 1, 
     backgroundColor: "#eef4f9" 
   },
-
   logoutButton: { 
     padding: 8, 
     backgroundColor: "rgba(255,255,255,0.15)", 
     borderRadius: 8 
   },
-
   scrollContainer: { 
     paddingHorizontal: 18, 
     paddingTop: 28,   
     paddingBottom: 40 
   },
-
   sectionTitle: {
     fontSize: 22,
     fontWeight: "700",
@@ -296,18 +300,15 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     letterSpacing: 0.3,
   },
-
   statusGrid: { 
     flexDirection: "row", 
     flexWrap: "wrap", 
     marginHorizontal: -8,
   },
-
   statusCardWrapper: { 
     width: "50%", 
     padding: 8 
   },
-
   statusCard: {
     borderRadius: 18,
     padding: 18,
@@ -321,21 +322,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.2)",
   },
-
   statusCardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
     width: "100%",
   },
-
   statusCardLabel: {
     fontSize: 16,
     color: "rgba(255,255,255,0.92)",
     fontWeight: "600",
     letterSpacing: 0.3,
   },
-
   statusCardCount: {
     fontSize: 38,
     fontWeight: "900",
@@ -345,7 +343,6 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 3,
   },
-
   orderCard: {
     backgroundColor: "#ffffff",
     borderRadius: 14,
@@ -359,35 +356,30 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 3,
   },
-
   orderCardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 12,
   },
-
   orderId: {
     fontSize: 13,
     fontWeight: "700",
     color: "#5d6d7e",
     letterSpacing: 0.6,
   },
-
   orderText: {
     fontSize: 16,
     color: "#2c3e50",
     lineHeight: 24,
     marginBottom: 18,
   },
-
   viewDetails: { 
     fontSize: 14, 
     color: "#3498db", 
     fontWeight: "700",
     textDecorationLine: "underline"
   },
-
   noOrdersContainer: {
     alignItems: "center",
     paddingVertical: 60,
@@ -401,27 +393,23 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-
   noOrdersText: {
     textAlign: "center",
     color: "#7f8c8d",
     fontSize: 18,
     fontWeight: "700",
   },
-
   noOrdersSubText: {
     textAlign: "center",
     color: "#95a5a6",
     marginTop: 6,
     fontSize: 14,
   },
-
   buttonRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginHorizontal: -4,
   },
-
   button: {
     flex: 1,
     paddingVertical: 14,
@@ -436,15 +424,12 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-
   acceptBtn: { 
     backgroundColor: "#35B412",
   },
-
   rejectBtn: { 
     backgroundColor: "#A10D0D",
   },
-
   buttonText: { 
     color: "#fff", 
     fontWeight: "700", 

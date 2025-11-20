@@ -1,10 +1,14 @@
 // routes/orders.js
+import multer from 'multer';
+import { cloudinary } from "../config/externalServices.js";
 import express from "express";
 import db from "../db.js";
 // 💡 Import the logger utility
 import { logUserActivity } from '../utils/logger.js'; 
 
 const router = express.Router();
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
 // =================================================================
 // Helper Functions
@@ -84,7 +88,7 @@ router.post("/", async (req, res) => {
 
         // Step 0: Assign staff (Logic remains the same)
         const [staffs] = await connection.query(
-            `SELECT StaffID FROM Staffs WHERE ShopID = ? AND StaffRole = 'Cashier' ORDER BY StaffID ASC LIMIT 1`,
+            `SELECT StaffID FROM Staffs WHERE ShopID = ? AND StaffRole = 'Staff' ORDER BY StaffID ASC LIMIT 1`,
             [ShopID]
         );
         let assignedStaffID = staffs.length > 0 ? staffs[0].StaffID : null;
@@ -359,7 +363,7 @@ router.get("/:orderId", async (req, res) => {
                 c.CustPhone AS customerPhone,
                 ls.ShopName AS shopName,
                 i.InvoiceID AS invoiceId,
-                (SELECT CustAddress FROM Cust_Addresses WHERE CustID = c.CustID LIMIT 1) AS customerAddress, 
+                c.CustAddress AS customerAddress, 
                 s.SvcName AS serviceName,
                 
                 CAST(ss.SvcPrice AS DECIMAL(10, 2)) AS servicePrice, 
@@ -646,6 +650,68 @@ router.post("/status", async (req, res) => {
     }
 });
 
+router.post("/delivery-booking", upload.single("proofImage"), async (req, res) => {
+    console.log("\n--- [POST] /delivery-booking Triggered ---");
+
+    // 🔑 ADDED 'total' to destructuring
+    const { orderId, fee, total, userId, userRole } = req.body;
+
+    if (!orderId || !fee || !total || !req.file) {
+        console.error("❌ Validation Failed: Missing fields.");
+        return res.status(400).json({ success: false, message: "Missing required fields." });
+    }
+
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // 1. Upload Image
+        console.log("⏳ Uploading to Cloudinary...");
+        const b64 = Buffer.from(req.file.buffer).toString("base64");
+        let dataURI = "data:" + req.file.mimetype + ";base64," + b64;
+        const uploadResult = await cloudinary.uploader.upload(dataURI, { 
+            folder: "laundrolink_delivery_proofs" 
+        });
+        const imageUrl = uploadResult.secure_url;
+        console.log("✅ Cloudinary Upload Success:", imageUrl);
+
+        // 2. Update Invoices Table
+        // 🔑 CHANGED: PayAmount = ? (Sets it to the total passed from frontend)
+        console.log(`⏳ Updating Invoice. Fee: ${fee}, Total: ${total}`);
+        const [invoiceResult] = await connection.query(
+            `UPDATE Invoices 
+             SET DlvryFee = ?, DlvryProofImage = ?, PayAmount = ? 
+             WHERE OrderID = ?`,
+            [fee, imageUrl, total, orderId]
+        );
+
+        // 3. Update Order Status
+        const newOrderStatId = generateID('OSD');
+        await connection.query(
+            "INSERT INTO Order_Status (OrderStatID, OrderID, OrderStatus, OrderUpdatedAt) VALUES (?, ?, 'To Pick-up', NOW())",
+            [newOrderStatId, orderId]
+        );
+
+        // 4. Log Activity
+        await logUserActivity(
+            userId, 
+            userRole, 
+            'Delivery Booking', 
+            `Order ${orderId}: Delivery booked. Fee: ${fee}. Total Invoice: ${total}.`
+        );
+
+        await connection.commit();
+        console.log("✅ Transaction Committed.");
+        res.json({ success: true, message: "Delivery booking saved successfully." });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("❌ DELIVERY BOOKING ERROR:", error); 
+        res.status(500).json({ success: false, message: "Failed to save delivery details." });
+    } finally {
+        connection.release();
+    }
+});
 
 // PATCH /api/orders/weight route (orders.js)
 router.patch("/weight", async (req, res) => {
