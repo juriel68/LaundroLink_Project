@@ -24,51 +24,36 @@ export default function OrderDetailScreen() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  
-  // User state for API logging
   const [currentUser, setCurrentUser] = useState<{ UserID: string, UserRole: string } | null>(null);
 
-  // --- 🚚 DELIVERY FLOW STATE ---
-  // 0: Initial -> 1: Booking -> 2: En Route -> 3: Delivered
   const [deliveryStep, setDeliveryStep] = useState(0);
-  
-  // Modal State
   const [isModalVisible, setModalVisible] = useState(false);
   const [pickupFeeInput, setPickupFeeInput] = useState("");
   const [proofImage, setProofImage] = useState<string | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false); 
 
-  // --- Data Fetching ---
   useEffect(() => {
     const loadData = async () => {
       try {
         setLoading(true);
-        
-        // 1. Get User Credentials from Storage
-        // 🔑 FIX: Changed 'user' to 'user_session' to match your auth.ts
         const userStr = await AsyncStorage.getItem('user_session');
         if (userStr) {
             const parsedUser = JSON.parse(userStr);
-            console.log("✅ User Loaded:", parsedUser.UserID);
             setCurrentUser(parsedUser);
-        } else {
-            console.warn("⚠️ No user session found. Features may be disabled.");
         }
 
-        // 2. Get Order Details
         if (orderId) {
           const foundOrder = await fetchOrderDetails(orderId);
           setOrder(foundOrder);
           
-          // 💡 Restore Delivery Step State based on current status
           if (foundOrder) {
              if (foundOrder.status === "To Pick-up") setDeliveryStep(2);
-             if (foundOrder.status === "Delivered In Shop") setDeliveryStep(3);
+             // If status is Delivered In Shop or Processing, we don't need to set step 
+             // because we will hide the UI entirely below.
           }
         }
       } catch (e) {
          console.error("Load error", e);
-         Alert.alert("Error", "Could not load data.");
       } finally {
         setLoading(false);
       }
@@ -76,7 +61,6 @@ export default function OrderDetailScreen() {
     loadData();
   }, [orderId]);
 
-  // --- Calculation Logic ---
   const calculatedSummary = order ? (() => {
     const servicePrice = parseFloat(order.servicePrice?.toString() || '') || 0.00;
     const deliveryFee = parseFloat(order.deliveryFee?.toString() || '') || 0.00;
@@ -91,15 +75,8 @@ export default function OrderDetailScreen() {
     };
   })() : null;
 
-  // --- 🚚 DELIVERY HANDLERS ---
-
-  const handleBookNow = () => {
-    setDeliveryStep(1);
-  };
-
-  const handleOpenModal = () => {
-    setModalVisible(true);
-  };
+  const handleBookNow = () => setDeliveryStep(1);
+  const handleOpenModal = () => setModalVisible(true);
 
   const pickProofImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -112,14 +89,9 @@ export default function OrderDetailScreen() {
       allowsEditing: true,
       quality: 0.7,
     });
-
-    if (!result.canceled && result.assets) {
-      setProofImage(result.assets[0].uri);
-    }
+    if (!result.canceled && result.assets) setProofImage(result.assets[0].uri);
   };
 
-  // 🔑 ACTION 1: Submit Fee + Image -> Updates Status to "To Pick-up"
-  // 🔑 UPDATED SUBMIT FUNCTION
   const submitBookingDetails = async () => {
     if (!pickupFeeInput) { Alert.alert("Missing Info", "Please enter the pick-up fee."); return; }
     if (!proofImage) { Alert.alert("Missing Info", "Please attach a screenshot of the proof."); return; }
@@ -127,25 +99,21 @@ export default function OrderDetailScreen() {
 
     setIsUpdatingStatus(true);
 
-    // 1. Calculate Final Delivery Fee
     const feeValue = parseFloat(pickupFeeInput);
     let finalDeliveryFee = feeValue;
     if (order.deliveryType === "Pick-up & Delivery") {
       finalDeliveryFee = feeValue * 2;
     }
 
-    // 2. Calculate Grand Total (Service + Addons + New Delivery Fee)
     const servicePrice = parseFloat(order.servicePrice?.toString() || '') || 0.00;
     const addOnsTotal = order.addons.reduce((sum, addon) => sum + (parseFloat(addon.price?.toString() || '') || 0.00), 0.00);
-    
-    const grandTotal = servicePrice + addOnsTotal + finalDeliveryFee; // 🔑 NEW CALCULATION
+    const grandTotal = servicePrice + addOnsTotal + finalDeliveryFee;
 
     try {
-        // 3. Call API with the Grand Total
         const success = await submitDeliveryBooking(
             order.orderId,
             finalDeliveryFee,
-            grandTotal, // 🔑 PASSING TOTAL
+            grandTotal,
             proofImage,
             currentUser.UserID,
             currentUser.UserRole
@@ -170,13 +138,8 @@ export default function OrderDetailScreen() {
     }
   };
 
-  // 🔑 ACTION 2: Arrived at Shop -> Updates Status to "Delivered In Shop"
   const handleArrivedAtShop = async () => {
-    if (!currentUser) {
-        Alert.alert("Session Error", "User not logged in.");
-        return;
-    }
-    if (!order) return;
+    if (!currentUser || !order) return;
     
     setIsUpdatingStatus(true);
     try {
@@ -188,7 +151,7 @@ export default function OrderDetailScreen() {
         );
 
         if (success) {
-            setDeliveryStep(3); // Move UI to Final Step
+            setDeliveryStep(3);
             setOrder({...order, status: "Delivered In Shop"});
         } else {
             Alert.alert("Error", "Failed to update status.");
@@ -200,39 +163,21 @@ export default function OrderDetailScreen() {
     }
   };
 
-  // --- Loading and Error Display ---
-  if (loading) {
-    return (
-      <View style={{ flex: 1, backgroundColor: "#f9fcff" }}>
-        <Header title="Loading Order" />
-        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-          <ActivityIndicator size="large" color="#004aad" />
-        </View>
-      </View>
-    );
-  }
-
-  if (!order) {
-    return (
-      <View style={{ flex: 1, backgroundColor: "#f9fcff" }}>
-        <Header title="Order Details" />
-        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-          <Text style={{ color: '#c82333', fontSize: 16 }}>Order not found.</Text>
-        </View>
-      </View>
-    );
-  }
+  if (loading) return <View style={{flex:1, justifyContent:'center', alignItems:'center'}}><ActivityIndicator size="large" color="#004aad"/></View>;
+  if (!order) return <View style={{flex:1, justifyContent:'center', alignItems:'center'}}><Text>Order not found</Text></View>;
 
   const isPickupOrder = order.deliveryType === "Pick-up Only" || order.deliveryType === "Pick-up & Delivery";
+  
+  // 🔑 NEW LOGIC: Only show delivery buttons if status is Pending or To Pick-up
+  // If it is 'Delivered In Shop', 'Processing', 'Completed', etc., hide it.
+  const showDeliveryControls = isPickupOrder && (order.status === "Pending" || order.status === "To Pick-up");
 
-  // --- Rendered Component ---
   return (
     <View style={styles.container}>
       <Header title={`Order #${order.orderId}`} />
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
-        {/* Customer Info */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Customer</Text>
           <Text style={styles.customer}>{order.customerName}</Text>
@@ -240,7 +185,6 @@ export default function OrderDetailScreen() {
           <Text style={styles.subText}>📍 {order.customerAddress || 'Address not provided'}</Text>
         </View>
         
-        {/* Rejection Info */}
         {order.status === "Rejected" && (
           <View style={[styles.section, { borderLeftColor: '#c82333', borderLeftWidth: 4 }]}>
             <Text style={[styles.sectionTitle, { color: "#c82333" }]}>⚠️ Order Rejected</Text>
@@ -249,7 +193,6 @@ export default function OrderDetailScreen() {
           </View>
         )}
 
-        {/* Order Info */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Order & Service</Text>
           <Text style={styles.normalText}><Text style={{ fontWeight: "bold" }}>Service:</Text> {order.serviceName}</Text>
@@ -257,11 +200,10 @@ export default function OrderDetailScreen() {
           <Text style={styles.normalText}><Text style={{ fontWeight: "bold" }}>Current Status:</Text> <Text style={styles.statusText}>{order.status}</Text></Text>
         </View>
 
-        {/* Weight Info */}
         <View style={styles.section}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: 'space-between' }}>
             <Text style={styles.sectionTitle}>Laundry Weight</Text>
-            {order.status === "Pending" || order.status === "Delivered In Shop" && ( 
+            {order.status === "Pending" && ( 
               <TouchableOpacity
                 onPress={() => router.push({ pathname: "/home/editWeight", params: { orderId: order.orderId, prevWeight: order.weight?.toString() },})}
                 style={styles.editIconContainer}
@@ -276,7 +218,6 @@ export default function OrderDetailScreen() {
           )}
         </View>
 
-        {/* Items Info */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Items & Details</Text>
           <Text style={styles.subTextDetail}>Fabrics</Text>
@@ -288,7 +229,6 @@ export default function OrderDetailScreen() {
           ) : ( <Text style={styles.listItem}>No add-ons selected.</Text> )}
         </View>
         
-        {/* Payment Info */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Payment Summary</Text>
           <View style={styles.summaryRow}>
@@ -301,7 +241,6 @@ export default function OrderDetailScreen() {
           </View>
           <View style={styles.summaryRow}>
              <Text style={styles.normalText}>Delivery Fee:</Text>
-             {/* Highlight Green if fee was just set */}
              <Text style={[styles.summaryValue, deliveryStep >= 2 && { color: '#28a745' }]}>₱{calculatedSummary?.deliveryFee}</Text>
           </View>
           <View style={[styles.summaryRow, { marginTop: 10, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 8 }]}>
@@ -310,13 +249,13 @@ export default function OrderDetailScreen() {
           </View>
         </View>
         
-        {/* Delivery Info & Controls */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Delivery Information</Text>
           <Text style={styles.normalText}>Type: {order.deliveryType}</Text>
           <Text style={styles.normalText}>Address: {order.customerAddress}</Text>
           
-          {isPickupOrder && (
+          {/* 🔑 FIX: Use the robust boolean logic we defined */}
+          {showDeliveryControls && (
             <View style={styles.deliveryFlowContainer}>
                 {/* STEP 0: Initial */}
                 {deliveryStep === 0 && (
@@ -349,22 +288,15 @@ export default function OrderDetailScreen() {
                         )}
                     </>
                 )}
-
-                {/* STEP 3: Finished */}
-                {deliveryStep === 3 && (
-                    <Text style={[styles.deliveryMessage, { color: '#27ae60', fontSize: 16 }]}>Successfully delivered in shop</Text>
-                )}
             </View>
           )}
         </View>
       </ScrollView>
 
-      {/* Modal for Fee & Screenshot */}
       <Modal animationType="slide" transparent={true} visible={isModalVisible} onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
             <View style={styles.modalContainer}>
                 <Text style={styles.modalTitle}>Confirm Booking Details</Text>
-                
                 <Text style={styles.label}>Enter Pick-up Fee:</Text>
                 <TextInput 
                     style={styles.input}
@@ -410,14 +342,10 @@ const styles = StyleSheet.create({
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5, },
   summaryValue: { fontWeight: 'bold', color: '#333' },
   editIconContainer: { backgroundColor: "#eaf5ff", padding: 6, borderRadius: 8, },
-  
-  // 🚚 Delivery Flow Styles
   deliveryFlowContainer: { marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#eee', alignItems: 'center' },
   deliveryMessage: { fontSize: 16, fontWeight: '600', color: '#d35400', marginBottom: 10, textAlign: 'center' },
   actionButton: { backgroundColor: '#004aad', paddingVertical: 10, paddingHorizontal: 25, borderRadius: 25, elevation: 2 },
   actionButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
-  
-  // 🖥️ Modal Styles
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   modalContainer: { width: '85%', backgroundColor: '#fff', borderRadius: 15, padding: 20, elevation: 5 },
   modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#004aad', marginBottom: 15, textAlign: 'center' },

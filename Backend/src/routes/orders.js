@@ -366,7 +366,8 @@ router.get("/:orderId", async (req, res) => {
                 ls.ShopAddress AS shopAddress,
                 ls.ShopPhone AS shopPhone,
                 i.InvoiceID AS invoiceId,
-                c.CustAddress AS customerAddress, 
+                c.CustAddress AS customerAddress,
+                s.SvcID AS serviceId,
                 s.SvcName AS serviceName,
                 
                 CAST(ss.SvcPrice AS DECIMAL(10, 2)) AS servicePrice, 
@@ -648,6 +649,75 @@ router.post("/status", async (req, res) => {
         await connection.rollback();
         console.error("Error updating order status:", error);
         res.status(500).json({ error: "Failed to update order status" });
+    } finally {
+        connection.release();
+    }
+});
+
+// POST /api/orders/approve-payment
+router.post("/approve-payment", async (req, res) => {
+    const { orderId, userId, userRole } = req.body;
+
+    if (!orderId) {
+        return res.status(400).json({ success: false, message: "Order ID is required." });
+    }
+
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // 1. Get the Invoice ID linked to this Order
+        const [invoiceResult] = await connection.query(
+            "SELECT InvoiceID FROM Invoices WHERE OrderID = ?", 
+            [orderId]
+        );
+
+        if (invoiceResult.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ success: false, message: "Invoice not found for this order." });
+        }
+        const invoiceId = invoiceResult[0].InvoiceID;
+
+        // 2. Insert Invoice Status = "Paid"
+        // We also set PaidAt to NOW() since the payment is confirmed now
+        const newInvoiceStatID = generateID('IS');
+        await connection.query(
+            `INSERT INTO Invoice_Status 
+             (InvoiceStatusID, InvoiceID, InvoiceStatus, PaidAt, StatUpdateAt) 
+             VALUES (?, ?, 'Paid', NOW(), NOW())`,
+            [newInvoiceStatID, invoiceId]
+        );
+
+        // 3. Insert Order Status = "Processing"
+        const newOrderStatId = generateID('OSD');
+        await connection.query(
+            `INSERT INTO Order_Status 
+             (OrderStatID, OrderID, OrderStatus, OrderUpdatedAt) 
+             VALUES (?, ?, 'Processing', NOW())`,
+            [newOrderStatId, orderId]
+        );
+
+        // 4. Log Activity
+        if (userId) {
+            await logUserActivity(
+                userId, 
+                userRole || 'Staff', 
+                'Confirm Payment', 
+                `Payment confirmed for Order ${orderId}. Status set to Processing.`
+            );
+        }
+
+        await connection.commit();
+        
+        res.json({ 
+            success: true, 
+            message: "Payment confirmed. Order is now Processing." 
+        });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("Approve payment error:", error);
+        res.status(500).json({ success: false, message: "Failed to approve payment." });
     } finally {
         connection.release();
     }

@@ -13,6 +13,7 @@ export default function HomeLayout() {
       <Stack.Screen name="rejectMessage" options={{ headerShown: false }} />
       <Stack.Screen name="updateProcess" options={{ headerShown: false }} />
       <Stack.Screen name="editWeight" options={{ headerShown: false }} />
+      <Stack.Screen name="confirm_payment" options={{ headerShown: false }} />
     </Stack>
   );
 }

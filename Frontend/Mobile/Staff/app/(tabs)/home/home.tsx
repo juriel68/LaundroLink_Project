@@ -1,4 +1,5 @@
-// home.tsx
+// app/home/home.tsx
+
 import React, { useState, useCallback } from "react";
 import {
   View,
@@ -54,13 +55,22 @@ export default function HomeScreen() {
   );
 
   const handleAcceptOrder = async (order: Order) => {
-    // First, check if the invoice status is 'Paid'.
+    // 1. Priority Check: If Payment needs confirmation, go to Confirmation Screen
+    if (order.invoiceStatus === 'To Confirm') {
+        router.push({
+            pathname: "/home/confirm_payment",
+            params: { orderId: order.orderId }
+        });
+        return; 
+    }
+
+    // 2. Check if Paid (Standard flow)
     if (order.invoiceStatus !== 'Paid') {
       Alert.alert("Unpaid Order", "This order has not been paid yet.");
       return; 
     }
 
-    // Optimistically update UI
+    // 3. Optimistically update UI for standard processing
     setOrders((currentOrders) =>
       currentOrders.filter((o) => o.orderId !== order.orderId)
     );
@@ -82,7 +92,6 @@ export default function HomeScreen() {
     return orders.filter((o) => o.status === status).length;
   };
 
-  // ✅ FIXED: Include all pre-processing statuses so they don't disappear
   const freshOrders = orders.filter((o) => 
     o.status === "Pending" || 
     o.status === "To Pick-up" || 
@@ -138,8 +147,8 @@ export default function HomeScreen() {
           />
           <StatusCardLink
             icon="close-circle-outline"
-            label="Cancelled"
-            count={getOrderStatusCount("Cancelled")}
+            label="Rejected"
+            count={getOrderStatusCount("Rejected")}
             colors={["#E74C3C", "#A10D0D"]}
             onPress={() =>
               router.push({ pathname: "/home/rejected", params: { shopId } })
@@ -219,6 +228,9 @@ function OrderCard({
 }) {
   const router = useRouter();
 
+  // 🔑 Common style for all status messages
+  const statusStyle = { color: '#e67e22', fontWeight: 'bold' as 'bold', fontSize: 12 };
+
   return (
     <View style={styles.orderCard}>
       <View style={styles.orderCardHeader}>
@@ -238,9 +250,14 @@ function OrderCard({
       <Text style={styles.orderText}>
         Customer <Text style={{ fontWeight: "bold" }}>{order.customerName}</Text>{" "}
         placed an order.
-        {/* Optional: Display status badge if not Pending */}
-        {order.status !== "Pending" && (
-             <Text style={{ color: '#e67e22', fontWeight: 'bold', fontSize: 12 }}>
+        
+        {/* 🔑 UPDATED STATUS DISPLAY with Unified Style */}
+        {order.invoiceStatus === 'To Confirm' ? (
+             <Text style={statusStyle}>
+                {'\n'}(Status: Please Accept to Confirm Payment)
+             </Text>
+        ) : order.status !== "Pending" && (
+             <Text style={statusStyle}>
                 {'\n'}(Status: {order.status})
              </Text>
         )}

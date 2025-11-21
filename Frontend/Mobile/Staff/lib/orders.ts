@@ -3,9 +3,17 @@
 import { API_URL } from "./api";
 
 // =================================================================
-// 1. INTERFACES (Kept existing ones)
+// 1. UNIFIED INTERFACES
 // =================================================================
 
+export interface AddOnDetail {
+    name: string;
+    price: number; 
+}
+
+/**
+ * Base Order structure for lists.
+ */
 export interface Order {
     orderId: string;
     customerId: string;
@@ -20,29 +28,48 @@ export interface Order {
     invoiceStatus?: string;
     latestProcessStatus?: string | null;
     reason?: string | null; 
-    note?: string | null;  
+    note?: string | null;
+    totalAmount?: number; // Useful for lists
 }
 
-export interface AddOnDetail {
-    name: string;
-    price: string;
-}
-
+/**
+ * Detailed Order structure for single view.
+ * Used by both Staff (OrderDetail) and Customer (CustomerOrderDetails).
+ */
 export interface OrderDetail {
     orderId: string;
     createdAt: string;
+    
+    // Customer Info
     customerName: string;
     customerPhone: string;
     customerAddress: string;
+    
+    // Shop Info
+    shopName?: string;
+    shopAddress?: string;
+    shopPhone?: string;
+    
+    // Invoice Info
+    invoiceId?: string;
+    invoiceStatus?: string;
+    totalAmount?: string | number;
+    proofImage?: string | null;
+    paymentMethodName?: string;
+
+    // Order Details
+    serviceId: string;
     serviceName: string;
-    servicePrice: string;
-    weight: string; 
+    servicePrice: string | number;
+    weight: number; 
     deliveryType: string;
-    deliveryFee: string;
+    deliveryFee: string | number;
     status: string;
     reason?: string | null; 
     note?: string | null;
     instructions?: string | null;
+    
+    // Arrays
     fabrics: string[]; 
     addons: AddOnDetail[];
 }
@@ -62,9 +89,16 @@ export interface OrderSummaryData {
     }[];
 }
 
+export interface OrderProcessStep {
+    status: string;
+    time: string;   
+}
+
 // =================================================================
 // 2. API FUNCTIONS
 // =================================================================
+
+// --- GENERAL FETCHERS ---
 
 export const fetchOrders = async (shopId: string): Promise<Order[]> => {
     if (!shopId) return []; 
@@ -79,39 +113,10 @@ export const fetchOrders = async (shopId: string): Promise<Order[]> => {
     }
 };
 
-/**
- * Updates the main order status.
- * ✅ UPDATED: Now accepts userId and userRole for backend logging.
- */
-export const updateOrderStatus = async (
-    orderId: string, 
-    newStatus: string, 
-    userId?: string,     // Added
-    userRole?: string,   // Added
-    reason?: string, 
-    note?: string
-): Promise<boolean> => {
-    try {
-        const response = await fetch(`${API_URL}/orders/status`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            // Pass userId and userRole to the body
-            body: JSON.stringify({ orderId, newStatus, userId, userRole, reason, note }),
-        });
-        if (!response.ok) {
-            throw new Error('Failed to update status');
-        }
-        const data = await response.json();
-        return data.success;
-    } catch (error) {
-        console.error("Error in updateOrderStatus:", error);
-        return false;
-    }
-};
-
 export const fetchOrderDetails = async (orderId: string): Promise<OrderDetail | null> => {
     try {
         const response = await fetch(`${API_URL}/orders/${orderId}`);
+        if (response.status === 404) return null;
         if (!response.ok) throw new Error('Failed to fetch order details');
         return await response.json(); 
     } catch (error) {
@@ -120,21 +125,70 @@ export const fetchOrderDetails = async (orderId: string): Promise<OrderDetail | 
     }
 };
 
+export const fetchOrderSummary = async (shopId: string, dateRange: string): Promise<OrderSummaryData | null> => {
+    try {
+        const response = await fetch(`${API_URL}/orders/summary`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ shopId, dateRange }),
+        });
+        if (!response.ok) throw new Error("Failed to fetch order summary");
+        return await response.json();
+    } catch (error) {
+        console.error("Error in fetchOrderSummary:", error);
+        return null;
+    }
+};
+
+export const fetchProcessHistory = async (orderId: string): Promise<OrderProcessStep[]> => {
+    try {
+        const response = await fetch(`${API_URL}/orders/${orderId}/process-history`);
+        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+        return await response.json();
+    } catch (error) {
+        console.error(`Error fetching process history:`, error);
+        return [];
+    }
+};
+
+// --- ACTIONS (UPDATE/POST) ---
+
+export const updateOrderStatus = async (
+    orderId: string, 
+    newStatus: string, 
+    userId?: string, 
+    userRole?: string, 
+    reason?: string, 
+    note?: string
+): Promise<boolean> => {
+    try {
+        const response = await fetch(`${API_URL}/orders/status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId, newStatus, userId, userRole, reason, note }),
+        });
+        if (!response.ok) throw new Error('Failed to update status');
+        const data = await response.json();
+        return data.success;
+    } catch (error) {
+        console.error("Error in updateOrderStatus:", error);
+        return false;
+    }
+};
+
 export const submitDeliveryBooking = async (
     orderId: string,
     fee: number,
-    total: number, // 🔑 ADDED TOTAL PARAMETER
+    total: number, 
     imageUri: string,
     userId: string,
     userRole: string
 ): Promise<boolean> => {
-    console.log("🚀 [submitDeliveryBooking] Starting...");
-    
     try {
         const formData = new FormData();
         formData.append('orderId', orderId);
         formData.append('fee', fee.toString());
-        formData.append('total', total.toString()); // 🔑 APPEND TOTAL
+        formData.append('total', total.toString()); 
         formData.append('userId', userId);
         formData.append('userRole', userRole);
 
@@ -207,17 +261,23 @@ export const updateProcessStatus = async (orderId: string, status: string): Prom
     }
 };
 
-export const fetchOrderSummary = async (shopId: string, dateRange: string): Promise<OrderSummaryData | null> => {
+/**
+ * Staff Action: Approve Payment (Sets Invoice='Paid', Order='Processing')
+ */
+export const approvePayment = async (orderId: string, userId?: string, userRole?: string): Promise<boolean> => {
     try {
-        const response = await fetch(`${API_URL}/orders/summary`, {
+        const response = await fetch(`${API_URL}/orders/approve-payment`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ shopId, dateRange }),
+            body: JSON.stringify({ orderId, userId, userRole }),
         });
-        if (!response.ok) throw new Error("Failed to fetch order summary");
-        return await response.json();
+
+        if (!response.ok) throw new Error('Failed to approve payment');
+        
+        const data = await response.json();
+        return data.success;
     } catch (error) {
-        console.error("Error in fetchOrderSummary:", error);
-        return null;
+        console.error("Error in approvePayment:", error);
+        return false;
     }
 };
