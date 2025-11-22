@@ -73,7 +73,7 @@
             border-radius: 12px; 
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); 
             border-left: 5px solid; 
-            cursor: pointer;
+            cursor: pointer; 
             transition: transform 0.2s;
         }
         .kpi-card:hover {
@@ -96,7 +96,7 @@
         .kpi-card a {
             display: inline-block;
             text-decoration: none;
-            font-weight: 600;
+            font-weight: 600; 
             transition: color 0.2s;
         }
         .dashboard-header {
@@ -166,8 +166,6 @@
     <div class="bubble large"></div>
 
     <script type="module">
-    // Removed API_BASE_URL import as per request
-
     // --- INITIAL AUTHENTICATION CHECK ---
     const userJSON = localStorage.getItem('laundroUser');
     if (!userJSON) {
@@ -187,7 +185,6 @@
     // --- ADMIN DASHBOARD FUNCTIONS (Static Nav Hub) ---
     
     function drawAdminDashboard() {
-        // Static content for the Dashboard page
         const dashboardHtml = `
             <div class="dashboard-header">
                 <h1>Welcome to the LaundroLink Admin Control Panel!</h1>
@@ -227,13 +224,11 @@
         // Add event listeners to the new cards inside the dashboard area
         document.querySelectorAll('.admin-kpi-grid .kpi-card').forEach(card => {
             card.addEventListener('click', (e) => {
-                // Only navigate if the click target is the card itself or its children, excluding the <a> tag
                 if (e.target.tagName !== 'A') {
                     const page = card.getAttribute('data-page-nav');
                     if (page) loadContent(page);
                 }
             });
-            // Also ensure the explicit link works
             const link = card.querySelector('a');
             if (link) {
                 link.addEventListener('click', (e) => {
@@ -244,8 +239,6 @@
         });
     }
     
-    // Removed fetchAdminDashboardData and drawChart functions
-
     // --- NAVIGATION AND INITIAL LOAD ---
 
     async function loadContent(page) {
@@ -265,7 +258,7 @@
             const iframe = document.createElement('iframe');
             iframe.src = `admin_pages/${page}.php`;
             iframe.style.width = '100%';
-            iframe.style.height = '90vh';
+            iframe.style.height = '85vh'; // Adjusted height slightly for better fit
             iframe.style.border = 'none';
             iframe.style.borderRadius = '12px';
             iframe.style.boxShadow = '0 5px 15px rgba(0, 0, 0, 0.05)';
@@ -290,10 +283,10 @@
 
     logoutButton.addEventListener('click', (event) => {
         event.preventDefault();
-        // Use custom modal or UI instead of confirm()
-        alert('Logging out...'); // Placeholder for custom logout confirmation
-        localStorage.removeItem('laundroUser');
-        window.location.href = 'index.php';
+        if (confirm('Are you sure you want to logout?')) {
+            localStorage.removeItem('laundroUser');
+            window.location.href = 'index.php';
+        }
     });
     
     // Initial page load

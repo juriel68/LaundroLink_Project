@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "laundrolinkapplication",
-    "slug": "laundrolinkapplication",
+    "name": "CustomerApp",
+    "slug": "CustomerApp",
     "owner": "eijiakaso",
     "version": "1.0.0",
     "orientation": "portrait",

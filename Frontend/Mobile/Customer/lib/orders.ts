@@ -74,7 +74,8 @@ export interface CustomerOrderDetails {
     instructions: string;
     deliveryType: string;
     deliveryFee: number;
-    status: string; 
+    orderStatus: string; 
+    invoiceStatus: string;
     fabrics: string[];
     addons: AddOnDetail[];
     totalAmount: number;

@@ -74,19 +74,22 @@
     </div>
 
     <script type="module">
-        // Import the base URL from your shared module
-        import { API_BASE_URL } from '/Web/api.js';
+        // 🔑 FIX: Correct relative path to api.js
+        import { API_BASE_URL } from '../api.js';
 
         const maintenanceCheckbox = document.getElementById('maintenanceMode');
         
-        // Define endpoints using the imported base URL
+        // Define endpoints
         const STATUS_ENDPOINT = `${API_BASE_URL}/admin/config/maintenance-status`;
         const SET_ENDPOINT = `${API_BASE_URL}/admin/config/set-maintenance`;
 
-        // --- 1. Load Initial Setting ---
+        // --- 1. Retrieve Current User ID ---
+        const loggedInUser = JSON.parse(localStorage.getItem('laundroUser'));
+        const userId = loggedInUser ? loggedInUser.UserID : null;
+
+        // --- 2. Load Initial Setting ---
         async function loadSettings() {
             try {
-                // Fetch current status using the GET endpoint
                 const response = await fetch(STATUS_ENDPOINT);
                 
                 if (!response.ok) {
@@ -95,7 +98,6 @@
                 
                 const data = await response.json();
                 
-                // Response body is expected to be: { maintenanceMode: boolean }
                 if (typeof data.maintenanceMode === 'boolean') {
                     maintenanceCheckbox.checked = data.maintenanceMode;
                 }
@@ -106,56 +108,55 @@
             }
         }
 
-        // --- 2. Update Setting in Backend ---
+        // --- 3. Update Setting in Backend with Logging ---
         async function updateMaintenanceMode(isEnabled) {
             try {
-                // Post new status to the POST endpoint
                 const response = await fetch(SET_ENDPOINT, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        // Add Authorization header here for a real admin panel
                     },
-                    // Body matches expected format: { enable: boolean }
-                    body: JSON.stringify({ enable: isEnabled })
+                    // 🔑 UPDATED: Send userId in body so backend can log the activity
+                    body: JSON.stringify({ 
+                        enable: isEnabled,
+                        userId: userId 
+                    })
                 });
 
                 const data = await response.json();
 
                 if (response.ok) {
                     alert(data.message);
-                    return true; // Update successful
+                    return true; 
                 } else { 
                     alert(`Failed to update setting: ${data.message}`);
-                    return false; // Update failed
+                    return false; 
                 }
             } catch (error) {
                 console.error("Update failed:", error);
                 alert("Error connecting to backend or saving setting.");
-                return false; // Update failed
+                return false; 
             }
         }
 
-        // --- 3. Event Listener with Confirmation ---
+        // --- 4. Event Listener ---
         maintenanceCheckbox.addEventListener('change', async () => {
             const newStatus = maintenanceCheckbox.checked;
             let shouldProceed = true;
 
             if (newStatus) {
-                // Confirmation required for activation
                 shouldProceed = confirm("Are you sure you want to ACTIVATE App Maintenance Mode? This will affect all users.");
             } 
             
             if (shouldProceed) {
-                // Attempt to update the backend
                 const success = await updateMaintenanceMode(newStatus);
                 
-                // If backend update failed, revert the checkbox state.
+                // If backend update failed, revert UI state
                 if (!success) {
                     maintenanceCheckbox.checked = !newStatus; 
                 }
             } else {
-                // User cancelled the confirm dialog, revert the checkbox state
+                // User cancelled, revert UI state
                 maintenanceCheckbox.checked = !newStatus;
             }
         });

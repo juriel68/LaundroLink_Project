@@ -130,7 +130,7 @@ export default function HomeScreen() {
           <StatusCardLink
             icon="car-outline"
             label="For Delivery"
-            count={getOrderStatusCount("For Delivery")}
+            count={getOrderStatusCount("Out for Delivery")}
             colors={["#F8C471", "#F5B041"]}
             onPress={() =>
               router.push({ pathname: "/home/forDelivery", params: { shopId } })

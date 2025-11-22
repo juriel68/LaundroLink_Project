@@ -4,12 +4,9 @@ import bcrypt from "bcryptjs";
 import db from "../db.js";
 import { cloudinary } from "../config/externalServices.js"; 
 import multer from 'multer'; 
-
-// 💡 IMPORT THE LOGGER UTILITY
 import { logUserActivity } from '../utils/logger.js'; 
 
 const router = express.Router();
-// Set up multer storage in memory to easily pass to Cloudinary
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
@@ -20,7 +17,6 @@ const upload = multer({ storage: storage });
 // GET /api/users - Fetch all users (general)
 router.get("/", async (req, res) => {
     try {
-        // 💡 ADD IsActive to the select statement
         const [rows] = await db.query("SELECT UserID, UserEmail, UserRole, DateCreated, IsActive FROM Users");
         res.json(rows);
     } catch (error) {
@@ -33,7 +29,6 @@ router.put("/:id", async (req, res) => {
     const userId = req.params.id;
     const { UserEmail } = req.body; 
     
-    // 1. Fetch current User Role (needed for logging)
     const [userCheck] = await db.query(
         "SELECT UserRole FROM Users WHERE UserID = ?", [userId]
     );
@@ -41,9 +36,8 @@ router.put("/:id", async (req, res) => {
     if (userCheck.length === 0) {
         return res.status(404).json({ success: false, message: "User not found." });
     }
-    const UserRole = userCheck[0].UserRole; // Fetch the actual role
+    const UserRole = userCheck[0].UserRole; 
 
-    // Check if the role is sensitive (Admin or Shop Owner)
     if (UserRole === 'Admin' || UserRole === 'Shop Owner') {
         return res.status(403).json({ success: false, message: "Use the dedicated owner/admin endpoints for sensitive updates." });
     }
@@ -58,14 +52,7 @@ router.put("/:id", async (req, res) => {
             return res.status(403).json({ success: false, message: "User role prevents direct update on this endpoint." });
         }
 
-        // 💡 LOG: User Email Update
-        await logUserActivity(
-            userId, 
-            UserRole, 
-            'User Update', 
-            `Updated User ID ${userId} email to ${UserEmail}`
-        );
-
+        await logUserActivity(userId, UserRole, 'User Update', `Updated User ID ${userId} email to ${UserEmail}`);
         res.json({ success: true, message: `${UserRole} email updated successfully.` });
 
     } catch (error) {
@@ -74,10 +61,10 @@ router.put("/:id", async (req, res) => {
     }
 });
 
-// 🆕 PUT /api/users/:id/status - Update user Active/Deactive status
+// PUT /api/users/:id/status - Update user Active/Deactive status
 router.put("/:id/status", async (req, res) => {
     const userId = req.params.id;
-    const { IsActive } = req.body; // Expects 1 (Activate) or 0 (Deactivate)
+    const { IsActive } = req.body; 
     let connection;
 
     if (IsActive === undefined || (IsActive !== 0 && IsActive !== 1)) {
@@ -88,7 +75,6 @@ router.put("/:id/status", async (req, res) => {
         connection = await db.getConnection();
         await connection.beginTransaction();
 
-        // 1. Fetch User Role for logging and check if user exists
         const [userCheck] = await connection.query("SELECT UserRole FROM Users WHERE UserID = ?", [userId]);
 
         if (userCheck.length === 0) {
@@ -98,7 +84,6 @@ router.put("/:id/status", async (req, res) => {
         const UserRole = userCheck[0].UserRole; 
         const statusAction = IsActive === 1 ? 'Reactivated' : 'Deactivated';
 
-        // 2. Update the IsActive status
         const [result] = await connection.query(
             "UPDATE Users SET IsActive = ? WHERE UserID = ?",
             [IsActive, userId]
@@ -110,44 +95,25 @@ router.put("/:id/status", async (req, res) => {
         }
 
         await connection.commit();
-        
-        // 💡 LOG: Status Toggle
-        await logUserActivity(
-            userId, 
-            UserRole, 
-            `User Status Change`, 
-            `${UserRole} ${userId} ${statusAction}`
-        );
-
+        await logUserActivity(userId, UserRole, `User Status Change`, `${UserRole} ${userId} ${statusAction}`);
         res.json({ success: true, message: `User ${userId} successfully ${statusAction}.` });
 
     } catch (error) {
-        if (connection) {
-            await connection.rollback();
-        }
+        if (connection) await connection.rollback();
         console.error("Update user status transaction error:", error);
         res.status(500).json({ success: false, message: error.message || "Failed to update user status." });
     } finally {
-        if (connection) {
-            connection.release();
-        }
+        if (connection) connection.release();
     }
 });
 
 
-// NEW ROUTE: GET /api/users/owners 
+// GET /api/users/owners 
 router.get("/owners", async (req, res) => {
     try {
         const [rows] = await db.query(`
-            SELECT 
-                u.UserID, 
-                u.UserEmail, 
-                u.UserRole, 
-                u.DateCreated,
-                u.IsActive, -- 💡 ADD IsActive
-                so.OwnerName,
-                so.OwnerPhone,
-                so.OwnerAddress
+            SELECT u.UserID, u.UserEmail, u.UserRole, u.DateCreated, u.IsActive, 
+                   so.OwnerName, so.OwnerPhone, so.OwnerAddress
             FROM Users u
             JOIN Shop_Owners so ON u.UserID = so.OwnerID
             WHERE u.UserRole = 'Shop Owner'
@@ -160,132 +126,88 @@ router.get("/owners", async (req, res) => {
 });
 
 
-// PUT /api/users/owner/:id - Update Shop Owner details (Users & Shop_Owners tables)
+// PUT /api/users/owner/:id - Update Shop Owner details
 router.put("/owner/:id", async (req, res) => {
     const userId = req.params.id;
     const { UserEmail, OwnerName, OwnerPhone, OwnerAddress } = req.body;
-    const UserRole = 'Shop Owner'; // Explicitly set the role for logging
+    const UserRole = 'Shop Owner';
     let connection;
 
     try {
-        // 1. Start Transaction
         connection = await db.getConnection();
         await connection.beginTransaction();
 
-        // 2. Update Users table (only email)
+        // 🔒 Check if new email is taken by SOMEONE ELSE
+        if (UserEmail) {
+             const [emailCheck] = await connection.query(
+                 "SELECT UserID FROM Users WHERE UserEmail = ? AND UserID != ?", 
+                 [UserEmail, userId]
+             );
+             if (emailCheck.length > 0) {
+                 await connection.rollback();
+                 return res.status(409).json({ success: false, message: "Email address is already in use." });
+             }
+        }
+
+        // Update Users table
         await connection.query(
             "UPDATE Users SET UserEmail = ? WHERE UserID = ? AND UserRole = 'Shop Owner'",
             [UserEmail, userId]
         );
 
-        // 3. Update Shop_Owners table
+        // Update Shop_Owners table
         await connection.query(
             "UPDATE Shop_Owners SET OwnerName = ?, OwnerPhone = ?, OwnerAddress = ? WHERE OwnerID = ?",
             [OwnerName, OwnerPhone, OwnerAddress, userId]
         );
 
-        // 4. Commit Transaction
         await connection.commit();
-        
-        // 💡 LOG: Shop Owner Update
-        await logUserActivity(
-            userId, 
-            UserRole, 
-            'Owner Update', 
-            `Shop Owner ${OwnerName} details updated`
-        );
-
+        await logUserActivity(userId, UserRole, 'Owner Update', `Shop Owner ${OwnerName} details updated`);
 
         res.json({ success: true, message: "Shop Owner details updated successfully." });
 
     } catch (error) {
-        // If anything fails, rollback
-        if (connection) {
-            await connection.rollback();
-        }
+        if (connection) await connection.rollback();
         console.error("Update Shop Owner details transaction error:", error);
         res.status(500).json({ success: false, message: error.message || "Failed to update details." });
     } finally {
-        if (connection) {
-            connection.release();
-        }
+        if (connection) connection.release();
     }
 });
 
 // GET /api/users/staff/:shopId (Fetch Staff)
 router.get("/staff/:shopId", async (req, res) => {
     const { shopId } = req.params;
-    const { sortBy, limit, offset } = req.query; // Added limit and offset
+    const { sortBy, limit, offset } = req.query; 
     
-    // --- 💡 CONSOLE LOG START ---
-    console.log(`\n--- Staff Fetch Request ---`);
-    console.log(`ShopID: ${shopId}`);
-    console.log(`SortBy: ${sortBy}`);
-    console.log(`Pagination: Limit=${limit}, Offset=${offset}`);
-    // --- 💡 CONSOLE LOG END ---
-
-    // Default sorting is by name if no valid sort is provided
     let orderByClause = 'ORDER BY s.StaffName ASC'; 
     switch (sortBy) {
-        case 'age':
-            orderByClause = 'ORDER BY si.StaffAge ASC';
-            break;
-        case 'newest':
-            // Assuming StaffID creation reflects date (S1, S2, etc.)
-            orderByClause = 'ORDER BY CAST(SUBSTRING(s.StaffID, 2) AS UNSIGNED) DESC';
-            break;
-        case 'oldest':
-            orderByClause = 'ORDER BY CAST(SUBSTRING(s.StaffID, 2) AS UNSIGNED) ASC';
-            break;
-        case 'name':
-        default:
-            // Ensures a default order if the query parameter is present but invalid
-            orderByClause = 'ORDER BY s.StaffName ASC';
+        case 'age': orderByClause = 'ORDER BY si.StaffAge ASC'; break;
+        case 'newest': orderByClause = 'ORDER BY CAST(SUBSTRING(s.StaffID, 2) AS UNSIGNED) DESC'; break;
+        case 'oldest': orderByClause = 'ORDER BY CAST(SUBSTRING(s.StaffID, 2) AS UNSIGNED) ASC'; break;
+        case 'name': default: orderByClause = 'ORDER BY s.StaffName ASC';
     }
     
     const parsedLimit = parseInt(limit, 10) || 10;
     const parsedOffset = parseInt(offset, 10) || 0;
 
     try {
-        // 1. Get Total Count (for pagination info)
         const [countRows] = await db.query(
             `SELECT COUNT(s.StaffID) AS totalCount FROM Staffs s WHERE s.ShopID = ?`,
             [shopId]
         );
         const totalCount = countRows[0].totalCount;
         
-        // 2. Get Paginated Staff List
         const staffQuery = `
-            SELECT
-                s.StaffID,
-                s.StaffName,
-                u.IsActive, -- Fetch IsActive status
-                si.StaffAge,
-                si.StaffAddress,
-                si.StaffCellNo,
-                si.StaffSalary
+            SELECT s.StaffID, s.StaffName, u.IsActive, si.StaffAge, si.StaffAddress, si.StaffCellNo, si.StaffSalary
             FROM Staffs s
             JOIN Staff_Infos si ON s.StaffID = si.StaffID
-            JOIN Users u ON s.StaffID = u.UserID -- Join to Users to get IsActive
+            JOIN Users u ON s.StaffID = u.UserID
             WHERE s.ShopID = ?
             ${orderByClause}
             LIMIT ? OFFSET ?`;
             
-        // --- 💡 CONSOLE LOG SQL ---
-        console.log(`SQL Query: ${staffQuery.replace(/\s+/g, ' ')}`);
-        // --- 💡 CONSOLE LOG SQL END ---
-        
-        const [staff] = await db.query(
-            staffQuery,
-            [shopId, parsedLimit, parsedOffset]
-        );
-        
-        // --- 💡 CONSOLE LOG END ---
-        console.log(`[Result] Found ${staff.length} staff members (Total: ${totalCount}).`);
-        console.log(`--- Staff Fetch Request End ---\n`);
-        // --- 💡 CONSOLE LOG END ---
-        
-        // Returning the list AND the total count
+        const [staff] = await db.query(staffQuery, [shopId, parsedLimit, parsedOffset]);
         res.json({ staff: staff, totalCount: totalCount });
 
     } catch (error) {
@@ -298,7 +220,7 @@ router.get("/staff/:shopId", async (req, res) => {
 // POST /api/users/owner (Create Shop Owner)
 router.post("/owner", async (req, res) => {
     const { UserEmail, UserPassword, OwnerName, OwnerPhone, OwnerAddress } = req.body;
-    const UserRole = 'Shop Owner'; // Explicitly set the role for logging
+    const UserRole = 'Shop Owner';
     let newOwnerID = '';
 
     if (!UserEmail || !UserPassword || !OwnerName) {
@@ -318,7 +240,7 @@ router.post("/owner", async (req, res) => {
             return res.status(409).json({ message: "An account with this email already exists." });
         }
         
-        // ID GENERATION: O1, O2, O3... 
+        // ID GENERATION: O1, O2...
         const [lastOwner] = await connection.query(
             `SELECT UserID FROM Users WHERE UserID LIKE 'O%' ORDER BY CAST(SUBSTRING(UserID, 2) AS UNSIGNED) DESC LIMIT 1`
         );
@@ -329,17 +251,14 @@ router.post("/owner", async (req, res) => {
             const lastIdNumber = parseInt(lastId.substring(1)); 
             nextOwnerIdNumber = lastIdNumber + 1; 
         }
-        newOwnerID = `O${nextOwnerIdNumber}`; // Assign the ID here
+        newOwnerID = `O${nextOwnerIdNumber}`; 
 
-        // Insert into User table
         const hashedPassword = await bcrypt.hash(UserPassword, 10);
         await connection.query(
-            // NOTE: IsActive defaults to 1 per the SQL schema, so no need to explicitly insert it
             `INSERT INTO Users (UserID, UserEmail, UserPassword, UserRole) VALUES (?, ?, ?, ?)`,
             [newOwnerID, UserEmail, hashedPassword, UserRole] 
         );
 
-        // Insert into Shop_Owners table
         await connection.query(
             `INSERT INTO Shop_Owners (OwnerID, OwnerName, OwnerPhone, OwnerAddress) VALUES (?, ?, ?, ?)`,
             [newOwnerID, OwnerName, OwnerPhone, OwnerAddress]
@@ -347,14 +266,7 @@ router.post("/owner", async (req, res) => {
 
         await connection.commit(); 
         
-        // 💡 LOG: Shop Owner Creation
-        await logUserActivity(
-            newOwnerID, 
-            UserRole, 
-            'Shop Owner Creation', 
-            `New Shop Owner account created: ${newOwnerID}`
-        );
-
+        await logUserActivity(newOwnerID, UserRole, 'Shop Owner Creation', `New Shop Owner account created: ${newOwnerID}`);
 
         res.status(201).json({ success: true, message: 'Shop Owner created successfully!', userId: newOwnerID });
 
@@ -369,20 +281,16 @@ router.post("/owner", async (req, res) => {
 
 // POST /api/users/staff (Create Staff Member)
 router.post("/staff", async (req, res) => {
-    const { 
-        ShopID, StaffName, StaffAge, 
-        StaffAddress, StaffCellNo, StaffSalary 
-    } = req.body;
-    
+    const { ShopID, StaffName, StaffAge, StaffAddress, StaffCellNo, StaffSalary } = req.body;
     let newStaffID = '';
     let newUserEmail = '';
-    const UserRole = 'Staff'; // Explicitly set the role for logging
+    const UserRole = 'Staff';
 
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
 
-        // --- 1. ID GENERATION: S1, S2, S3... --- 
+        // 1. ID GENERATION: S1, S2...
         const [lastStaff] = await connection.query(
             `SELECT StaffID FROM Staffs WHERE StaffID LIKE 'S%' ORDER BY CAST(SUBSTRING(StaffID, 2) AS UNSIGNED) DESC LIMIT 1`
         );
@@ -395,9 +303,8 @@ router.post("/staff", async (req, res) => {
         }
         newStaffID = `S${nextIdNumber}`; 
         
-        // --- 2. Generate the new Email and Password --- 
+        // 2. Generate Email/Pass
         const firstName = StaffName.split(' ')[0].toLowerCase();
-
         const [existingUsers] = await connection.query(
             `SELECT UserEmail FROM Users WHERE UserEmail REGEXP ?`,
             [`^${firstName}[0-9]+$`] 
@@ -408,24 +315,19 @@ router.post("/staff", async (req, res) => {
             const match = user.UserEmail.match(/\d+$/);
             if (match) {
                 const number = parseInt(match[0], 10);
-                if (number > maxNumber) {
-                    maxNumber = number;
-                }
+                if (number > maxNumber) maxNumber = number;
             }
         });
 
         const newEmailNumber = maxNumber + 1; 
         newUserEmail = `${firstName}${newEmailNumber}`; 
-        const newUserPassword = newUserEmail; // Plaintext password
+        const newUserPassword = newUserEmail; 
 
-        // HASH THE PASSWORD
         const hashedPassword = await bcrypt.hash(newUserPassword, 10);
-        
-        // --- 3. Perform the Inserts ---
         const newStaffInfoID = 'SI' + String(Date.now()).slice(-6);
 
+        // 3. Insert
         await connection.query(
-            // NOTE: IsActive defaults to 1 per the SQL schema, so no need to explicitly insert it
             `INSERT INTO Users (UserID, UserEmail, UserPassword, UserRole) VALUES (?, ?, ?, 'Staff')`,
             [newStaffID, newUserEmail, hashedPassword] 
         );
@@ -441,15 +343,7 @@ router.post("/staff", async (req, res) => {
         );
 
         await connection.commit();
-        
-        // 💡 LOG: Staff Creation
-        await logUserActivity(
-            newStaffID, 
-            UserRole, 
-            'Staff Creation', 
-            `New staff member created: ${StaffName} (${newUserEmail})`
-        );
-
+        await logUserActivity(newStaffID, UserRole, 'Staff Creation', `New staff: ${StaffName} (${newUserEmail})`);
 
         res.status(201).json({ success: true, message: 'Staff member created successfully!', staffId: newStaffID });
 
@@ -475,31 +369,18 @@ router.put("/staff/:staffId", async (req, res) => {
     try {
         await connection.beginTransaction();
 
-        // 1. Update the Staffs table
         await connection.query(
             `UPDATE Staffs SET StaffName = ? WHERE StaffID = ?`,
             [StaffName, staffId]
         );
 
-        // 2. Update the Staff_Infos table
         await connection.query(
-            `UPDATE Staff_Infos si 
-             SET si.StaffAge = ?, si.StaffAddress = ?, si.StaffCellNo = ?, si.StaffSalary = ?
-             WHERE si.StaffID = ?`,
+            `UPDATE Staff_Infos si SET si.StaffAge = ?, si.StaffAddress = ?, si.StaffCellNo = ?, si.StaffSalary = ? WHERE si.StaffID = ?`,
             [StaffAge, StaffAddress, StaffCellNo, StaffSalary, staffId]
         );
 
         await connection.commit();
-        
-        // 💡 LOG: Staff Update
-        await logUserActivity(
-            staffId, 
-            UserRole, 
-            'Staff Update', 
-            `Staff member ${staffId} updated details`
-        );
-
-
+        await logUserActivity(staffId, UserRole, 'Staff Update', `Staff member ${staffId} updated details`);
         res.json({ success: true, message: 'Staff member updated successfully.' });
 
     } catch (error) {
@@ -511,35 +392,23 @@ router.put("/staff/:staffId", async (req, res) => {
     }
 });
 
-
-// ❌ REMOVED: DELETE /api/users/:userId (Old Deletion route)
-// 💡 Replaced by: PUT /api/users/:id/status (Deactivate/Reactivate)
-
-// --- ROUTES MOVED FROM auth.js ---
-
-// POST /api/users/upload (Image Upload) - No change needed, no logging here.
+// POST /api/users/upload (Image Upload)
 router.post("/upload", upload.single("file"), async (req, res) => {
     try {
-        if (!req.file) { 
-            return res.status(400).json({ success: false, message: "No file uploaded." }); 
-        }
+        if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded." }); 
+        
         const b64 = Buffer.from(req.file.buffer).toString("base64");
-        let dataURI = "data:" + req.file.mimetype + ";base64," + b64;
-        const result = await cloudinary.uploader.upload(dataURI, { 
-            folder: "laundrolink_profiles" 
-        });
-        res.json({ 
-            success: true, 
-            message: "Image uploaded successfully.", 
-            url: result.secure_url 
-        });
+        const dataURI = "data:" + req.file.mimetype + ";base64," + b64;
+        const result = await cloudinary.uploader.upload(dataURI, { folder: "laundrolink_profiles" });
+        
+        res.json({ success: true, message: "Image uploaded successfully.", url: result.secure_url });
     } catch (error) {
         console.error("❌ Image upload error:", error);
         res.status(500).json({ success: false, message: "Failed to upload image." });
     }
 });
 
-// PUT /api/users/:UserID (Customer Profile Update) - ✅ UPDATED FOR NEW SCHEMA
+// PUT /api/users/:UserID (Customer Profile Update)
 router.put("/profile/:UserID", async (req, res) => {
     const connection = await db.getConnection();
     const { UserID } = req.params;
@@ -549,57 +418,40 @@ router.put("/profile/:UserID", async (req, res) => {
 
         const { name, phone, address, picture } = req.body;
         
-        // 1. Check Role
         const [userCheck] = await connection.query("SELECT UserRole FROM Users WHERE UserID = ?", [UserID]);
         if (userCheck.length === 0 || userCheck[0].UserRole !== 'Customer') {
              await connection.rollback();
-             return res.status(403).json({ success: false, message: "Access denied or user not a Customer." });
+             return res.status(403).json({ success: false, message: "Access denied." });
         }
         const UserRole = userCheck[0].UserRole;
 
-        // 2. Update Customers table (Dynamic SQL construction)
         const customerFieldsToUpdate = [];
         const customerValues = [];
 
         if (name !== undefined) { customerFieldsToUpdate.push("CustName = ?"); customerValues.push(name); }
         if (phone !== undefined) { customerFieldsToUpdate.push("CustPhone = ?"); customerValues.push(phone); } 
-        
-        // ✅ FIX: Directly update CustAddress in Customers table
         if (address !== undefined) { customerFieldsToUpdate.push("CustAddress = ?"); customerValues.push(address); } 
 
         if (customerFieldsToUpdate.length > 0) {
             customerValues.push(UserID);
             const sql = `UPDATE Customers SET ${customerFieldsToUpdate.join(", ")} WHERE CustID = ?`;
-            const [result] = await connection.query(sql, customerValues);
+            await connection.query(sql, customerValues);
         }
 
-        // 3. Update Cust_Credentials table (Picture)
         if (picture !== undefined) {
             await connection.query("UPDATE Cust_Credentials SET picture = ? WHERE CustID = ?", [picture, UserID]);
         }
 
         await connection.commit();
-        await logUserActivity(UserID, UserRole, 'Profile Update', 'Customer updated their profile details');
+        await logUserActivity(UserID, UserRole, 'Profile Update', 'Customer updated profile');
 
-        // 4. Fetch updated user details (Mapping CustAddress to 'address' for frontend)
         const [updatedUserRows] = await db.query(`
-            SELECT 
-                u.UserID, u.UserEmail, u.UserRole,
-                c.CustName AS name, 
-                c.CustPhone AS phone, 
-                c.CustAddress AS address, -- ✅ Select Address
-                cc.picture
-            FROM Users u
-            JOIN Customers c ON u.UserID = c.CustID
-            LEFT JOIN Cust_Credentials cc ON u.UserID = cc.CustID
+            SELECT u.UserID, u.UserEmail, u.UserRole, c.CustName AS name, c.CustPhone AS phone, c.CustAddress AS address, cc.picture
+            FROM Users u JOIN Customers c ON u.UserID = c.CustID LEFT JOIN Cust_Credentials cc ON u.UserID = cc.CustID
             WHERE u.UserID = ?`, [UserID]
         );
 
-        // Transform the result to match UserDetails interface exactly if needed
-        const userObj = updatedUserRows[0];
-        // Note: The SQL alias AS name/phone/address helps, but we ensure the response structure is clean
-        
-        res.json({ success: true, message: "Profile updated successfully.", user: userObj });
+        res.json({ success: true, message: "Profile updated.", user: updatedUserRows[0] });
     } catch (error) {
         await connection.rollback();
         console.error("❌ Profile update error:", error);
@@ -613,28 +465,15 @@ router.put("/profile/:UserID", async (req, res) => {
 router.post("/set-password", async (req, res) => {
     try {
         const { userId, newPassword } = req.body;
-        if (!userId || !newPassword) { return res.status(400).json({ success: false, message: "User ID and new password are required." }); }
+        if (!userId || !newPassword) return res.status(400).json({ success: false, message: "Missing fields." });
         
-        // 1. Fetch User Role before updating (needed for logging)
         const [userRows] = await db.query("SELECT UserRole FROM Users WHERE UserID = ?", [userId]);
+        if (userRows.length === 0) return res.status(404).json({ success: false, message: "User not found." });
         
-        if (userRows.length === 0) { return res.status(404).json({ success: false, message: "User not found." }); }
-        
-        const UserRole = userRows[0].UserRole; // Get the role
-
         const hashedPassword = await bcrypt.hash(newPassword, 10);
-        const [result] = await db.query("UPDATE Users SET UserPassword = ? WHERE UserID = ?", [hashedPassword, userId]);
+        await db.query("UPDATE Users SET UserPassword = ? WHERE UserID = ?", [hashedPassword, userId]);
         
-        if (result.affectedRows === 0) { return res.status(404).json({ success: false, message: "User not found." }); }
-        
-        // 💡 LOG: Password Set/Change
-        await logUserActivity(
-            userId, 
-            UserRole, 
-            'Password Change', 
-            'User set or updated their account password'
-        );
-
+        await logUserActivity(userId, userRows[0].UserRole, 'Password Change', 'User set/updated password');
         res.json({ success: true, message: "Password updated successfully." });
     } catch (error) {
         console.error("❌ Set password error:", error);

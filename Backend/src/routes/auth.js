@@ -3,30 +3,24 @@ import express from "express";
 import bcrypt from "bcryptjs";
 import db from "../db.js";
 import { sgMail } from "../config/externalServices.js";
-
-// 💡 IMPORT THE LOGGER UTILITY
 import { logUserActivity } from '../utils/logger.js'; 
 
 const router = express.Router();
 
 // =================================================================
-// Helper Functions (retained for context)
+// Helper Functions
 // =================================================================
 
-function generateOTP() { return Math.floor(100000 + Math.random() * 900000).toString(); }
-
-function splitName(fullName) {
-    const nameParts = (fullName || '').trim().split(' ');
-    const firstName = nameParts.shift() || 'User';
-    const lastName = nameParts.join(' ') || firstName;
-    return { firstName, lastName };
+function generateOTP() { 
+    return Math.floor(100000 + Math.random() * 900000).toString(); 
 }
 
+// 💡 RESTORED: Original Sequential ID Generation for Customers (C1, C2, etc.)
 async function generateNewCustID(connection) {
     const [rows] = await connection.query(
-    `SELECT MAX(CAST(SUBSTRING(CustID, 2) AS UNSIGNED)) AS last_id_number
-    FROM Customers
-    WHERE CustID LIKE 'C%'`
+        `SELECT MAX(CAST(SUBSTRING(CustID, 2) AS UNSIGNED)) AS last_id_number
+         FROM Customers
+         WHERE CustID LIKE 'C%'`
     );
     let nextIdNumber = (rows.length > 0 && rows[0].last_id_number !== null) ? rows[0].last_id_number + 1 : 1;
     return 'C' + nextIdNumber.toString();
@@ -35,7 +29,7 @@ async function generateNewCustID(connection) {
 async function sendEmail(to, subject, html) {
     const msg = {
         to: to,
-        from: 'dimpasmj@gmail.com',
+        from: 'dimpasmj@gmail.com', // Ensure this is verified in SendGrid
         subject: subject,
         html: html,
     };
@@ -51,9 +45,6 @@ async function sendEmail(to, subject, html) {
 // API Routes: Authentication
 // =================================================================
 
-
-// login router in auth.js (Corrected for Hashed Passwords)
-
 router.post("/login", async (req, res) => {
     const { email, password } = req.body;
 
@@ -61,61 +52,57 @@ router.post("/login", async (req, res) => {
     console.log(`[Input] Attempting login for email: ${email}`);
 
     if (!email || !password) {
-        console.log("[Result] Missing email/password. Status 400.");
         return res.status(400).json({ message: "Email and password are required" });
     }
 
     try {
-        // 1. Fetch User data including the HASHED password and IsActive status
-        // 🔑 FIX 1: Removed password comparison from SQL query
+        // 1. Fetch User data
         const [users] = await db.query(
             `SELECT UserID, UserEmail, UserPassword, UserRole, IsActive FROM Users WHERE UserEmail = ?`,
             [email]
         );
 
         if (users.length === 0) {
-            await logUserActivity('N/A', 'N/A', 'Login Attempt Failed', `Attempt for unknown email: ${email}`);
-            console.log("[Result] User not found. Status 401.");
+            await logUserActivity('N/A', 'N/A', 'Login Failed', `Unknown email: ${email}`);
             return res.status(401).json({ message: "Invalid credentials" });
         }
 
         const user = users[0];
 
-        // 🔑 FIX 2: Use bcrypt.compare() to verify the submitted password against the hash
-        //const passwordMatch = await bcrypt.compare(password, user.UserPassword);
+        // 2. Password Validation (Hybrid: Hashed OR Plain Text for Seed Data)
+        let passwordMatch = false;
         
-        //if (!passwordMatch) {
-        //    await logUserActivity(user.UserID, user.UserRole, 'Login Attempt Failed', `Invalid password`);
-        //    console.log("[Result] Password mismatch. Status 401.");
-        //    return res.status(401).json({ message: "Invalid credentials" });
-        //}
+        // First, try to compare as a Bcrypt hash
+        const isHash = user.UserPassword && (user.UserPassword.startsWith('$2a$') || user.UserPassword.startsWith('$2b$'));
         
-        // 2. CHECK DEACTIVATED STATUS (CRITICAL CHECK)
+        if (isHash) {
+            passwordMatch = await bcrypt.compare(password, user.UserPassword);
+        } else {
+            // Fallback: Check plain text (Only for your Initial Data like 'mj1')
+            passwordMatch = (password === user.UserPassword);
+        }
+
+        if (!passwordMatch) {
+            await logUserActivity(user.UserID, user.UserRole, 'Login Failed', `Invalid password`);
+            return res.status(401).json({ message: "Invalid credentials" });
+        }
+        
+        // 3. Check Active Status
         if (user.IsActive === 0) {
-            await logUserActivity(user.UserID, user.UserRole, 'Login Attempt Failed', `Login denied: Account is deactivated`);
-            console.log(`[Result] User ${user.UserID} is deactivated. Status 403.`);
-            return res.status(403).json({ message: "Account is currently deactivated. Please contact support." });
+            await logUserActivity(user.UserID, user.UserRole, 'Login Denied', `Account deactivated`);
+            return res.status(403).json({ message: "Account is deactivated. Contact support." });
         }
 
         console.log(`[User Found] ID: ${user.UserID}, Role: ${user.UserRole}`);
-        
-        // --- NOTE: If using an older DB that doesn't support hashing (e.g., development/legacy), 
-        // you might need a fallback here, but for security, bcrypt should be standard.
-        // For now, we assume all passwords should be hashed. ---
 
+        // --- CUSTOMER FLOW (OTP) ---
         if (user.UserRole === 'Customer') {
-            // --- CUSTOMER LOGIN FLOW (OTP REQUIRED) ---
             const otp = generateOTP();
             await db.query("DELETE FROM otps WHERE user_id = ?", [user.UserID]);
             await db.query("INSERT INTO otps (user_id, otp_code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))", [user.UserID, otp]);
             
-            // Send email asynchronously
-            sendEmail(user.UserEmail, 'Your LaundroLink Login Code', `<strong>Your login code is: ${otp}</strong>`);
+            sendEmail(user.UserEmail, 'LaundroLink Login Code', `<strong>Your login code is: ${otp}</strong>`);
 
-            console.log("[Flow] Customer detected. OTP initiated.");
-            console.log(`[Response] Sending success, requiresOTP: true, userId: ${user.UserID}`);
-            console.log("--- Backend Login Attempt End (OTP Required) ---\n");
-            
             return res.json({
                 success: true,
                 message: "Credentials valid, sending OTP.",
@@ -124,17 +111,10 @@ router.post("/login", async (req, res) => {
             });
         }
 
-        // --- DIRECT LOGIN SUCCESS (Staff, Shop Owner, Admin) ---
-        
-        await logUserActivity(
-            user.UserID,
-            user.UserRole, 
-            'Login',
-            `User logged in successfully`
-        );
+        // --- STAFF/ADMIN/OWNER FLOW (Direct Login) ---
+        await logUserActivity(user.UserID, user.UserRole, 'Login', `Direct login success`);
 
-        // Remove the sensitive password hash before creating userDetails object
-        delete user.UserPassword; 
+        delete user.UserPassword; // Hide hash
         
         let userDetails = {
             UserID: user.UserID,
@@ -142,35 +122,23 @@ router.post("/login", async (req, res) => {
             UserRole: user.UserRole
         };
         
-        // ... Fetch additional details based on role (logic remains the same) ...
-        
+        // Fetch Role-Specific Details
         if (user.UserRole === 'Shop Owner') {
             const [ownerDetails] = await db.query(
                 `SELECT o.OwnerID, o.OwnerName, s.ShopID, s.ShopName
-                FROM Shop_Owners o
-                LEFT JOIN Laundry_Shops s ON o.OwnerID = s.OwnerID
-                WHERE o.OwnerID = ?`,
-                [user.UserID]
+                 FROM Shop_Owners o LEFT JOIN Laundry_Shops s ON o.OwnerID = s.OwnerID
+                 WHERE o.OwnerID = ?`, [user.UserID]
             );
-            if (ownerDetails.length > 0) {
-                userDetails = { ...userDetails, ...ownerDetails[0] };
-            }
+            if (ownerDetails.length > 0) userDetails = { ...userDetails, ...ownerDetails[0] };
+
         } else if (user.UserRole === 'Staff') {
             const [staffDetails] = await db.query(
                 `SELECT sh.ShopID, sh.ShopName, s.StaffName, s.StaffRole
-                FROM Staffs s
-                JOIN Laundry_Shops sh ON s.ShopID = sh.ShopID
-                WHERE s.StaffID = ?`,
-                [user.UserID]
+                 FROM Staffs s JOIN Laundry_Shops sh ON s.ShopID = sh.ShopID
+                 WHERE s.StaffID = ?`, [user.UserID]
             );
-            if (staffDetails.length > 0) {
-                userDetails = { ...userDetails, ...staffDetails[0] };
-            }
+            if (staffDetails.length > 0) userDetails = { ...userDetails, ...staffDetails[0] };
         }
-
-        console.log("[Flow] Direct Login successful.");
-        console.log("[Response] Direct User details:", userDetails);
-        console.log("--- Backend Login Attempt End (Success) ---\n");
 
         res.json({
             success: true,
@@ -179,23 +147,16 @@ router.post("/login", async (req, res) => {
         });
 
     } catch (error) {
-        console.error("❌ Login error (Catch Block):", error);
-        console.log("--- Backend Login Attempt End (Error) ---\n");
-        res.status(500).json({ error: "Server error, please try again later" });
+        console.error("❌ Login error:", error);
+        res.status(500).json({ error: "Server error" });
     }
 });
 
-// POST /api/auth/google-login
 router.post("/google-login", async (req, res) => {
     let connection;
     try {
         const { google_id, email, name, picture } = req.body;
-        
-        // 🚀 CONSOLE LOG ADDED HERE FOR DEBUGGING
-        console.log("--- Google Login Debug ---");
-        console.log(`Email: ${email}`);
-        console.log(`Received Picture URL: ${picture}`);
-        console.log("--------------------------");
+        console.log(`--- Google Login: ${email} ---`);
 
         if (!google_id || !email || !name) { 
             return res.status(400).json({ success: false, message: "Missing Google data" }); 
@@ -204,263 +165,187 @@ router.post("/google-login", async (req, res) => {
         connection = await db.getConnection();
         await connection.beginTransaction();
 
-        // Check for existing user by google_id OR UserEmail
-        // 1. Fetch user including IsActive status
+        // Check for existing user
         const [existingUser] = await connection.query(
             "SELECT T1.*, T2.google_id, T2.picture FROM Users T1 LEFT JOIN Cust_Credentials T2 ON T1.UserID = T2.CustID WHERE T2.google_id = ? OR T1.UserEmail = ?", 
             [google_id, email]
         );
         
         let user;
-        let isNewUser = existingUser.length === 0; 
         
-        if (isNewUser) {
+        if (existingUser.length === 0) {
+            // --- NEW USER ---
+            // 💡 USING SEQUENTIAL GENERATION: C1, C2...
             const newCustID = await generateNewCustID(connection);
         
-            // 1. Insert into Users table (IsActive defaults to 1)
+            // 1. Users Table
             await connection.query(
                 "INSERT INTO Users (UserID, UserEmail, UserPassword, UserRole) VALUES (?, ?, ?, ?)",
                 [newCustID, email, null, 'Customer']
             );
             
-            // 2. Insert into Customers table
+            // 2. Customers Table
             await connection.query(
                 "INSERT INTO Customers (CustID, CustName) VALUES (?, ?)",
                 [newCustID, name]
             );
 
-            // 3. Insert into Cust_Credentials table
+            // 3. Cust_Credentials Table
             await connection.query(
-                `INSERT INTO Cust_Credentials
-                (CustID, google_id, is_verified, picture)
-                VALUES (?, ?, ?, ?)`,
-                [newCustID, google_id, 1, picture] 
+                `INSERT INTO Cust_Credentials (CustID, google_id, is_verified, picture) VALUES (?, ?, 1, ?)`,
+                [newCustID, google_id, picture] 
             );
 
             await connection.commit();
             
+            // Fetch the new full user object
             const [newUser] = await db.query("SELECT * FROM Users WHERE UserID = ?", [newCustID]);
             user = newUser[0];
             
-            // 💡 LOG: NEW USER SIGN-UP
-            await logUserActivity(
-                newCustID, 
-                'Customer', 
-                'Sign-up', 
-                'User created a new account via Google'
-            );
+            await logUserActivity(newCustID, 'Customer', 'Sign-up', 'User created via Google');
             
         } else {
+            // --- EXISTING USER ---
             user = existingUser[0];
 
-            // CRITICAL CHECK: Account Deactivated?
             if (user.IsActive === 0) {
                 await connection.rollback();
-                await logUserActivity(user.UserID, user.UserRole, 'Login Attempt Failed', `Google Login denied: Account is deactivated`);
-                return res.status(403).json({ success: false, message: "Account is currently deactivated. Please contact support." });
+                return res.status(403).json({ success: false, message: "Account is deactivated." });
             }
             
-            // 1. Update/insert Google details if missing or changed
+            // Update Google Info if changed
             if (!user.google_id || user.picture !== picture) { 
-                
-                // 🚀 CONSOLE LOG ADDED HERE TO CHECK IF UPDATE IS TRIGGERED
-                console.log(`Picture update triggered for UserID: ${user.UserID}. New Picture URL: ${picture}`);
-
                 const [updateResult] = await connection.query(
                     "UPDATE Cust_Credentials SET google_id = ?, picture = ?, is_verified = 1 WHERE CustID = ?", 
                     [google_id, picture, user.UserID]
                 );
                 
+                // If user exists in Users but not Cust_Credentials (legacy edge case), insert credential
                 if (updateResult.affectedRows === 0) {
-                    // This handles the edge case where the user exists in Users/Customers but not Cust_Credentials
                     await connection.query(
-                        `INSERT INTO Cust_Credentials
-                         (CustID, google_id, is_verified, picture)
-                         VALUES (?, ?, ?, ?)`, 
-                         [user.UserID, google_id, 1, picture]
+                        `INSERT INTO Cust_Credentials (CustID, google_id, is_verified, picture) VALUES (?, ?, 1, ?)`, 
+                        [user.UserID, google_id, picture]
                     );
                 }
             }
-            
             await connection.commit();
-            
-            // 💡 LOG: SUCCESSFUL GOOGLE LOGIN (Existing User)
-            await logUserActivity(
-                user.UserID, 
-                user.UserRole, 
-                'Login', 
-                'User logged in successfully via Google'
-            );
+            await logUserActivity(user.UserID, user.UserRole, 'Login', 'Google Login Success');
         }
         
-        // Final response uses the combined user object
         return res.json({ success: true, message: "Google login successful", user: user });
+
     } catch (error) {
-        if (connection) {
-            await connection.rollback();
-        }
+        if (connection) await connection.rollback();
         console.error("❌ Google login error:", error);
-        res.status(500).json({ success: false, message: "Server error during Google login" });
+        res.status(500).json({ success: false, message: "Server error" });
     } finally {
-        if (connection) {
-            connection.release();
-        }
+        if (connection) connection.release();
     }
 });
 
-// POST /api/auth/verify-otp
 router.post("/verify-otp", async (req, res) => {
     try {
         const { userId, otp } = req.body;
-        if (!userId || !otp) { return res.status(400).json({ success: false, message: "User ID and OTP are required." }); }
+        if (!userId || !otp) return res.status(400).json({ success: false, message: "Missing User ID or OTP." });
 
         const [otpRows] = await db.query("SELECT * FROM otps WHERE user_id = ? AND otp_code = ? AND expires_at > NOW()", [userId, otp]);
+        
         if (otpRows.length === 0) { 
-            // 💡 LOG: Failed OTP Verification
-            await logUserActivity(userId, 'Customer', 'OTP Failure', 'Invalid or expired OTP provided');
+            await logUserActivity(userId, 'Customer', 'OTP Failure', 'Invalid/Expired OTP');
             return res.status(400).json({ success: false, message: "Invalid or expired OTP." }); 
         }
 
+        // Clear OTP
         await db.query("DELETE FROM otps WHERE user_id = ?", [userId]);
 
-        // Fetch user data again, including IsActive
         const [users] = await db.query("SELECT * FROM Users WHERE UserID = ?", [userId]);
-        if (users.length === 0) { return res.status(404).json({ success: false, message: "User not found after verification." }); }
+        if (users.length === 0) return res.status(404).json({ success: false, message: "User not found." });
         
-        const userRole = users[0].UserRole; 
-        
-        // CRITICAL CHECK: Account Deactivated?
         if (users[0].IsActive === 0) {
-            await logUserActivity(userId, userRole, 'Login Attempt Failed', `OTP Verified, but login denied: Account is deactivated`);
-            return res.status(403).json({ success: false, message: "Account is currently deactivated. Please contact support." });
+            return res.status(403).json({ success: false, message: "Account is deactivated." });
         }
         
-        // 💡 LOG: SUCCESSFUL CUSTOMER LOGIN (after OTP)
-        await logUserActivity(
-            userId, 
-            userRole, 
-            'Login', 
-            'Customer logged in successfully (OTP verified)'
-        );
-
+        await logUserActivity(userId, users[0].UserRole, 'Login', 'OTP Verified Success');
         res.json({ success: true, message: "Login successful", user: users[0] });
+
     } catch (error) {
         console.error("❌ verify-otp error:", error);
         res.status(500).json({ success: false, message: "Failed to verify OTP." });
     }
 });
 
-
-
-
-// POST /api/auth/forgot-password
 router.post("/forgot-password", async (req, res) => {
     try {
         const { identifier } = req.body;
-        if (!identifier) return res.status(400).json({ success: false, message: "Email is required" }); 
+        if (!identifier) return res.status(400).json({ success: false, message: "Email required" }); 
         
-        // Fetch user data including IsActive status
         const [users] = await db.query("SELECT UserID, UserEmail, UserRole, IsActive FROM Users WHERE UserEmail = ?", [identifier]);
         
         if (users.length === 0) {
-            // 💡 LOG: Failed Password Reset Attempt (User not found)
-            await logUserActivity('N/A', 'N/A', 'Password Reset Attempt Failed', `Attempt for unknown email: ${identifier}`);
-            return res.json({ success: true, message: "If an account with this email exists, an OTP will be sent." });
+            // Security: Don't reveal user doesn't exist, but log it
+            await logUserActivity('N/A', 'N/A', 'Password Reset Failed', `Unknown email: ${identifier}`);
+            return res.json({ success: true, message: "If this email exists, an OTP will be sent." });
         }
         
         const user = users[0];
 
-        // CRITICAL CHECK: Account Deactivated?
         if (user.IsActive === 0) {
-            await logUserActivity(user.UserID, user.UserRole, 'Password Reset Attempt Failed', `Reset denied: Account is deactivated`);
-            return res.status(403).json({ success: false, message: "Password reset denied. Account is deactivated." });
+            return res.status(403).json({ success: false, message: "Account deactivated." });
         }
         
         const otp = generateOTP();
         await db.query("DELETE FROM otps WHERE user_id = ?", [user.UserID]);
         await db.query("INSERT INTO otps (user_id, otp_code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))", [user.UserID, otp]);
         
-        // 💡 LOG: Password Reset OTP Sent
-        await logUserActivity(
-            user.UserID, 
-            user.UserRole, 
-            'Password Reset', 
-            'OTP sent for password recovery'
-        );
+        await logUserActivity(user.UserID, user.UserRole, 'Password Reset', 'OTP Sent');
         
-        res.json({ success: true, message: "OTP is being sent to your email.", email: user.UserEmail });
-        sendEmail(user.UserEmail, 'Your LaundroLink Password Reset Code', `<strong>Your password reset code is: ${otp}</strong><p>This code will expire in 10 minutes.</p>`);
+        sendEmail(user.UserEmail, 'LaundroLink Password Reset', `<strong>Your reset code is: ${otp}</strong>`);
+        res.json({ success: true, message: "OTP sent." });
+
     } catch (error) {
         console.error("Forgot password error:", error);
-        if (!res.headersSent) {
-            res.status(500).json({ success: false, message: "Server error" });
-        }
+        res.status(500).json({ success: false, message: "Server error" });
     }
 });
 
-// POST /api/auth/reset-password
 router.post("/reset-password", async (req, res) => {
     try {
         const { email, otp, newPassword } = req.body;
-        if (!email || !otp || !newPassword) { return res.status(400).json({ success: false, message: "Missing required fields" }); }
+        if (!email || !otp || !newPassword) return res.status(400).json({ success: false, message: "Missing fields" }); 
         
-        // Fetch user data including IsActive status
         const [users] = await db.query("SELECT UserID, UserRole, IsActive FROM Users WHERE UserEmail = ?", [email]); 
-        if (users.length === 0) { return res.status(400).json({ success: false, message: "User not found" }); }
+        if (users.length === 0) return res.status(400).json({ success: false, message: "User not found" });
         
         const { UserID: userId, UserRole } = users[0];
 
-        // CRITICAL CHECK: Account Deactivated?
         if (users[0].IsActive === 0) {
-            return res.status(403).json({ success: false, message: "Password reset denied. Account is deactivated." });
+            return res.status(403).json({ success: false, message: "Account deactivated." });
         }
         
         const [otpRows] = await db.query("SELECT * FROM otps WHERE user_id = ? AND otp_code = ? AND expires_at > NOW()", [userId, otp]);
-        if (otpRows.length === 0) { return res.status(400).json({ success: false, message: "Invalid or expired OTP" }); }
+        if (otpRows.length === 0) return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
         
         const hashedPassword = await bcrypt.hash(newPassword, 10);
         await db.query("UPDATE Users SET UserPassword = ? WHERE UserID = ?", [hashedPassword, userId]);
         await db.query("DELETE FROM otps WHERE user_id = ?", [userId]);
         
-        // 💡 LOG: SUCCESSFUL PASSWORD RESET
-        await logUserActivity(
-            userId, 
-            UserRole, 
-            'Password Reset', 
-            'User successfully changed their password'
-        );
-        
+        await logUserActivity(userId, UserRole, 'Password Reset', 'Success');
         res.json({ success: true, message: "Password reset successfully" });
+
     } catch (error) {
         console.error("Reset password error:", error);
         res.status(500).json({ success: false, message: "Server error" });
     }
 });
 
-
 router.get("/test-users", async (req, res) => {
     try {
         const [users] = await db.query(
-            // 💡 ADD IsActive to the test route for diagnostics
-            `SELECT UserID, UserEmail, UserRole, UserPassword, IsActive FROM Users`
+            `SELECT UserID, UserEmail, UserRole, IsActive FROM Users`
         );
-        
-        // WARNING: This exposes password hashes! Use ONLY for local debugging.
-        console.log(`[DIAGNOSTIC] Found ${users.length} users.`);
-        
-        return res.json({
-            success: true,
-            count: users.length,
-            data: users
-        });
-
+        return res.json({ success: true, count: users.length, data: users });
     } catch (error) {
-        console.error("❌ Diagnostic Error:", error);
-        return res.status(500).json({ 
-            success: false, 
-            message: "Failed to fetch users. Check DB connection/schema.",
-            error: error.message
-        });
+        return res.status(500).json({ error: error.message });
     }
 });
 

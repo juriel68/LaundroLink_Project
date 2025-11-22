@@ -81,7 +81,7 @@ export default function ReceiptScreen() {
                         <Text style={styles.metaValue}>{new Date().toLocaleDateString()}</Text>
                     </View>
                     
-                    {/* 🔑 ADDED: Payment Method Row */}
+                    {/* Payment Method Row */}
                     <View style={styles.metaRow}>
                         <Text style={styles.metaLabel}>Payment Method</Text>
                         <Text style={[styles.metaValue, { color: '#004aad' }]}>
@@ -154,9 +154,16 @@ export default function ReceiptScreen() {
                 </View>
             </View>
 
-            {/* Home Button */}
-            <TouchableOpacity style={styles.homeButton} onPress={() => router.dismissAll()}>
-                <Text style={styles.homeButtonText}>Back to Home</Text>
+            {/* 🔑 ADDED: Track Order Button (Replaces Back to Home) */}
+            <TouchableOpacity 
+                style={styles.trackButton} 
+                onPress={() => router.push({
+                    pathname: "/activity/track_order",
+                    params: { orderId: order.orderId }
+                })}
+            >
+                <Text style={styles.trackButtonText}>Track my Order</Text>
+                <Ionicons name="arrow-forward" size={20} color="#004aad" style={{marginLeft: 8}} />
             </TouchableOpacity>
 
         </ScrollView>
@@ -231,13 +238,30 @@ const styles = StyleSheet.create({
   appreciation: { fontSize: 12, color: "#666", textAlign: "center", fontStyle: 'italic' },
 
   // Support
-  supportContainer: { alignItems: 'center', marginBottom: 20, width: '100%' },
+  supportContainer: { alignItems: 'center', marginBottom: 25, width: '100%' },
   helpText: { color: "rgba(255,255,255,0.8)", fontSize: 14, marginBottom: 10 },
   contactIcons: { flexDirection: 'row', justifyContent: 'center', gap: 15 },
   contactBtn: { flexDirection: 'row', backgroundColor: "#fff", paddingVertical: 10, paddingHorizontal: 20, borderRadius: 25, alignItems: 'center', shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
   contactBtnText: { marginLeft: 8, color: "#004aad", fontWeight: "600" },
 
-  // Home Button
-  homeButton: { paddingVertical: 15, width: '100%', alignItems: 'center' },
-  homeButtonText: { color: "rgba(255,255,255,0.7)", fontSize: 16, fontWeight: "600", textDecorationLine: 'underline' },
+  // 🔑 NEW BUTTON STYLES
+  trackButton: { 
+    flexDirection: 'row',
+    backgroundColor: "#fff", 
+    paddingVertical: 16, 
+    width: '100%', 
+    alignItems: 'center', 
+    justifyContent: 'center',
+    borderRadius: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 5,
+    elevation: 4
+  },
+  trackButtonText: { 
+    color: "#004aad", 
+    fontSize: 18, 
+    fontWeight: "bold" 
+  },
 });

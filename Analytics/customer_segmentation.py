@@ -1,5 +1,3 @@
-# In[1]:
-
 #!/usr/bin/env python
 # coding: utf-8
 
@@ -26,7 +24,7 @@ except mysql.connector.Error as err:
     exit()
 
 # ===================================================================
-# ✅ NEW: Helper function to create analytics tables if they don't exist
+# 2️⃣ Helper: Create Analytics Tables
 # ===================================================================
 def create_analytics_tables(cursor):
     """
@@ -34,10 +32,12 @@ def create_analytics_tables(cursor):
     """
     print("🔍 Checking and creating analytics tables if needed...")
     
-    # Define the structure for the Customer_Segments table
+    # 🔑 FIX: ShopID must be INT to match Laundry_Shops schema
+    
+    # 1. Customer Segments
     create_segments_table = """
     CREATE TABLE IF NOT EXISTS Customer_Segments (
-        ShopID VARCHAR(10) NOT NULL,
+        ShopID INT NOT NULL,  -- Changed from VARCHAR(10) to INT
         SegmentName VARCHAR(50) NOT NULL,
         customerCount INT,
         averageSpend DECIMAL(10, 2),
@@ -49,10 +49,10 @@ def create_analytics_tables(cursor):
     );
     """
     
-    # Define the structure for the Shop_Popular_Services table
+    # 2. Popular Services
     create_popular_services_table = """
     CREATE TABLE IF NOT EXISTS Shop_Popular_Services (
-        ShopID VARCHAR(10) NOT NULL,
+        ShopID INT NOT NULL, -- Changed from VARCHAR(10) to INT
         SvcName VARCHAR(50) NOT NULL,
         orderCount INT,
         AnalyzedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -61,10 +61,10 @@ def create_analytics_tables(cursor):
     );
     """
     
-    # Define the structure for the Shop_Busiest_Times table
+    # 3. Busiest Times
     create_busiest_times_table = """
     CREATE TABLE IF NOT EXISTS Shop_Busiest_Times (
-        ShopID VARCHAR(10) NOT NULL,
+        ShopID INT NOT NULL, -- Changed from VARCHAR(10) to INT
         timeSlot VARCHAR(50) NOT NULL,
         orderCount INT,
         AnalyzedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -82,15 +82,15 @@ def create_analytics_tables(cursor):
         print(f"❌ Error creating analytics tables: {err}")
         exit()
 
-# ===================================================================
-# ✅ NEW: Call the function to ensure tables exist
-# ===================================================================
+# Call the function to ensure tables exist
 create_analytics_tables(cursor)
 
 
 # ========================
-# 2️⃣ Load Order Data
+# 3️⃣ Load Order Data
 # ========================
+# 🔑 FIX: Removed dependency on Invoice_Status table. Using Invoices.PaymentStatus directly.
+# Also, fetching 'Completed' status from Order_Status is correct.
 query = """
 SELECT 
     o.OrderID, o.ShopID, o.CustID, 
@@ -104,16 +104,19 @@ JOIN (
     GROUP BY OrderID
 ) latest ON o.OrderID = latest.OrderID
 JOIN Order_Status os ON os.OrderID = latest.OrderID AND os.OrderUpdatedAt = latest.LatestUpdate
-WHERE os.OrderStatus = 'Completed';
+WHERE os.OrderStatus = 'Completed' 
+  AND i.PaymentStatus = 'Paid'; -- Ensure we only analyze paid/completed transactions
 """
 df = pd.read_sql(query, conn)
 
 if df.empty:
     print("⚠️ No completed orders found.")
+    cursor.close()
+    conn.close()
     exit()
 
 # ========================
-# 3️⃣ CUSTOMER SEGMENTATION
+# 4️⃣ CUSTOMER SEGMENTATION
 # ========================
 print("📊 Generating customer segmentation...")
 
@@ -163,7 +166,7 @@ conn.commit()
 print("✅ Customer Segments updated successfully.")
 
 # ========================
-# 4️⃣ POPULAR SERVICES
+# 5️⃣ POPULAR SERVICES
 # ========================
 print("📈 Calculating popular services...")
 
@@ -182,7 +185,7 @@ conn.commit()
 print("✅ Popular Services updated successfully.")
 
 # ========================
-# 5️⃣ BUSIEST TIMES
+# 6️⃣ BUSIEST TIMES
 # ========================
 print("⏰ Calculating busiest times...")
 
@@ -214,6 +217,3 @@ print("✅ Busiest Times updated successfully.")
 cursor.close()
 conn.close()
 print("\n🎯 Data analytics processing complete! All metrics are live in MySQL.")
-
-
-# In[ ]:

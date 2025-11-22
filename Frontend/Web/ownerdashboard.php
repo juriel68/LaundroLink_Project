@@ -30,7 +30,7 @@
         .sidebar-nav { 
             flex-grow: 1; 
             display: flex; 
-            flex-direction: column;
+            flex-direction: column; 
         }
 
         .sidebar-nav a { 
@@ -184,8 +184,7 @@
     </div>
 
     <div class="main-content" id="content-area">
-        <!-- Content will be loaded here -->
-    </div>
+        </div>
 
     <script type="module">
         import { API_BASE_URL } from './api.js';
@@ -195,9 +194,12 @@
         const loggedInUser = JSON.parse(localStorage.getItem('laundroUser'));
 
         function drawDashboard() {
+            // Fallback if Name/ID is missing
+            const ownerName = loggedInUser?.OwnerName || 'Owner';
+            
             const dashboardHtml = `
                 <div class="header">
-                    <h2 id="shopNameHeader">Welcome, ${loggedInUser.OwnerName || 'Owner'}!</h2>
+                    <h2 id="shopNameHeader">Welcome, ${ownerName}!</h2>
                     <div class="time-filter">
                         <button id="weeklyBtn" class="active">Weekly</button>
                         <button id="monthlyBtn">Monthly</button>
@@ -233,19 +235,24 @@
             const buttons = [weeklyBtn, monthlyBtn, yearlyBtn];
 
             buttons.forEach(button => {
-                button.addEventListener('click', () => {
-                    buttons.forEach(btn => btn.classList.remove('active'));
-                    button.classList.add('active');
-                    let period = 'Weekly';
-                    if (button.id === 'monthlyBtn') period = 'Monthly';
-                    if (button.id === 'yearlyBtn') period = 'Yearly';
-                    fetchDashboardData(period);
-                });
+                if (button) {
+                    button.addEventListener('click', () => {
+                        buttons.forEach(btn => btn.classList.remove('active'));
+                        button.classList.add('active');
+                        let period = 'Weekly';
+                        if (button.id === 'monthlyBtn') period = 'Monthly';
+                        if (button.id === 'yearlyBtn') period = 'Yearly';
+                        fetchDashboardData(period);
+                    });
+                }
             });
         }
         
         async function fetchDashboardData(period) {
-            if (!loggedInUser || !loggedInUser.ShopID) return;
+            if (!loggedInUser || !loggedInUser.ShopID) {
+                console.error("Shop ID missing from session.");
+                return;
+            }
             
             const chartSvg = document.getElementById('chartSvg');
             if (chartSvg) {
@@ -264,7 +271,7 @@
                 
                 document.getElementById('totalRevenue').textContent = `₱${parseFloat(data.totalRevenue || 0).toFixed(2)}`;
                 document.getElementById('totalOrders').textContent = data.totalOrders || 0;
-                drawChart(data.chartData, period); // Pass period to drawChart
+                drawChart(data.chartData, period);
 
             } catch (error) {
                 console.error("Dashboard fetch error:", error);
@@ -277,15 +284,17 @@
         function drawChart(chartData, period) {
             const chartSvg = document.getElementById('chartSvg');
             chartSvg.innerHTML = '';
+            
             if (!chartData || chartData.length === 0) {
                  chartSvg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#adb5bd" font-family="Segoe UI">No revenue data for this period.</text>`;
                  return;
             }
-            const values = chartData.map(d => d.value);
+            
+            const values = chartData.map(d => parseFloat(d.value)); // Ensure numbers
             const labels = chartData.map(d => d.label);
             const maxProfit = Math.ceil(Math.max(...values, 1) / 1000) * 1000 || 1000;
             const svgNS = "http://www.w3.org/2000/svg";
-            const padding = { top: 20, right: 20, bottom: 60, left: 70 }; // Adjusted padding for titles
+            const padding = { top: 20, right: 20, bottom: 60, left: 70 }; 
             const svgWidth = chartSvg.clientWidth;
             const svgHeight = chartSvg.clientHeight;
             const chartWidth = svgWidth - padding.left - padding.right;
@@ -310,7 +319,7 @@
             const yTitle = document.createElementNS(svgNS, 'text');
             yTitle.setAttribute('transform', `rotate(-90)`);
             yTitle.setAttribute('x', -(svgHeight / 2));
-            yTitle.setAttribute('y', 20); // Position from the left edge
+            yTitle.setAttribute('y', 20); 
             yTitle.setAttribute('text-anchor', 'middle');
             yTitle.setAttribute('fill', '#000000ff');
             yTitle.setAttribute('font-size', '14');
@@ -321,7 +330,7 @@
             // X-Axis Title
             const xTitle = document.createElementNS(svgNS, 'text');
             xTitle.setAttribute('x', padding.left + chartWidth / 2);
-            xTitle.setAttribute('y', svgHeight - 10); // Position from the bottom edge
+            xTitle.setAttribute('y', svgHeight - 10); 
             xTitle.setAttribute('text-anchor', 'middle');
             xTitle.setAttribute('fill', '#000000ff');
             xTitle.setAttribute('font-size', '14');
@@ -329,9 +338,11 @@
             xTitle.textContent = xAxisTitleText;
             chartSvg.appendChild(xTitle);
             
-            // --- The rest of the chart drawing logic is unchanged ---
+            // --- Chart Drawing ---
             const defs = document.createElementNS(svgNS, 'defs'); const gradient = document.createElementNS(svgNS, 'linearGradient'); gradient.id = 'areaGradient'; gradient.innerHTML = `<stop offset="0%" style="stop-color:#007bff; stop-opacity:0.4"/><stop offset="100%" style="stop-color:#007bff; stop-opacity:0"/>`; defs.appendChild(gradient); chartSvg.appendChild(defs);
+            
             if (values.length === 1) {
+                // Single point logic
                 const value = values[0]; const x = padding.left + chartWidth / 2; const y = padding.top + chartHeight - (value / maxProfit) * chartHeight;
                 const startX = padding.left; const endX = svgWidth - padding.right; const bottomY = svgHeight - padding.bottom; const controlX1 = x - chartWidth * 0.25; const controlX2 = x + chartWidth * 0.25; const lineD = `M ${startX},${bottomY} C ${controlX1},${bottomY} ${controlX1},${y} ${x},${y} S ${controlX2},${bottomY} ${endX},${bottomY}`;
                 const areaPath = document.createElementNS(svgNS, 'path'); areaPath.setAttribute('d', lineD + ` Z`); areaPath.setAttribute('fill', 'url(#areaGradient)');
@@ -340,6 +351,7 @@
                 const circle = document.createElementNS(svgNS, 'circle'); circle.setAttribute('cx', x); circle.setAttribute('cy', y); circle.setAttribute('r', '5'); circle.setAttribute('fill', '#007bff'); circle.setAttribute('stroke', 'white'); circle.setAttribute('stroke-width', '2'); chartSvg.appendChild(circle);
                 const xLabel = document.createElementNS(svgNS, 'text'); xLabel.setAttribute('x', x); xLabel.setAttribute('y', svgHeight - padding.bottom + 20); xLabel.setAttribute('text-anchor', 'middle'); xLabel.setAttribute('fill', '#000000ff'); xLabel.setAttribute('font-size', '12'); xLabel.textContent = labels[0]; chartSvg.appendChild(xLabel);
             } else {
+                // Multi point logic
                 const points = values.map((value, index) => ({ x: padding.left + (index / (labels.length - 1)) * chartWidth, y: padding.top + chartHeight - (value / maxProfit) * chartHeight }));
                 const line = (points) => { let d = `M ${points[0].x} ${points[0].y}`; for (let i = 0; i < points.length - 1; i++) { const x_mid = (points[i].x + points[i+1].x) / 2; const cp_x1 = (x_mid + points[i].x) / 2; d += ` C ${cp_x1},${points[i].y} ${cp_x1},${points[i+1].y} ${points[i+1].x},${points[i+1].y}`; } return d; };
                 const areaPath = document.createElementNS(svgNS, 'path'); areaPath.setAttribute('d', line(points) + ` L ${svgWidth - padding.right} ${svgHeight - padding.bottom} L ${padding.left} ${svgHeight - padding.bottom} Z`); areaPath.setAttribute('fill', 'url(#areaGradient)');

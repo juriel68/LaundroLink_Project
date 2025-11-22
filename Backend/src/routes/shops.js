@@ -1,4 +1,4 @@
-// shops.js (Full Code - FINALIZED FOR NORMALIZED SCHEMA)
+// routes/shops.js
 
 import express from "express";
 import db from "../db.js";
@@ -6,55 +6,8 @@ import db from "../db.js";
 const router = express.Router();
 
 // =================================================================
-// HELPER FUNCTIONS: ID Generation
+// 1. PUBLIC & APP LISTING ROUTES
 // =================================================================
-
-const generateNextID = async (connection, table, prefix, idColumn) => {
-    const [rows] = await connection.query(
-        `SELECT ${idColumn} AS last_id 
-         FROM ${table} 
-         WHERE ${idColumn} LIKE '${prefix}%'
-         ORDER BY LENGTH(${idColumn}) DESC, ${idColumn} DESC
-         LIMIT 1`
-    );
-
-    let nextNumber = 1;
-    if (rows.length > 0) {
-        const lastID = rows[0].last_id;
-        const numberPart = parseInt(lastID.substring(prefix.length)) || 0;
-        nextNumber = numberPart + 1;
-    }
-
-    const paddedNumber = nextNumber.toString().padStart(2, '0');
-    return `${prefix}${paddedNumber}`;
-};
-
-const generateNewShopID = async (connection) => {
-    return await generateNextID(connection, 'Laundry_Shops', 'SH', 'ShopID');
-};
-
-
-// =================================================================
-// SHOP ROUTES (Public & Management)
-// =================================================================
-
-const getShopSelectClause = (includeDistance = false) => {
-    // NOTE: This helper is now redundant due to explicit aliasing in /nearby and /full-details,
-    // but is kept here for reference consistency.
-    return `
-        LS.ShopID as id,
-        LS.ShopName as name,
-        LS.ShopAddress as address,
-        LS.ShopDescrp as description,
-        LS.ShopImage_url as image_url,
-        LS.ShopPhone as contact,
-        LS.ShopOpeningHours as hours,
-        LS.ShopStatus as availability,
-        SR.ShopRating AS rating
-        ${includeDistance ? ', SD.ShopLatitude, SD.ShopLongitude' : ''}
-    `;
-};
-
 
 // GET /api/shops/ (Public listing)
 router.get("/", async (req, res) => {
@@ -96,7 +49,6 @@ router.get("/nearby", async (req, res) => {
 
         const query = `
             SELECT 
-                -- 🔑 FORCE CORRECT ALIASES FOR MOBILE APP
                 LS.ShopID as id, 
                 LS.ShopName as name, 
                 LS.ShopAddress as address, 
@@ -108,8 +60,6 @@ router.get("/nearby", async (req, res) => {
                 COALESCE(SR.ShopRating, 0.0) AS rating,
                 SD.ShopLatitude, 
                 SD.ShopLongitude,
-                
-                -- Distance Calculation
                 ( 6371 * acos( cos( radians(?) ) * cos( radians( SD.ShopLatitude ) ) * cos( radians( SD.ShopLongitude ) - radians(?) ) + sin( radians(?) ) * sin( radians( SD.ShopLatitude ) ) ) ) AS distance
             FROM 
                 Laundry_Shops AS LS
@@ -148,9 +98,8 @@ router.get("/:shopId/full-details", async (req, res) => {
             deliveryOptions,
             fabricTypes,
             paymentMethods,
-
         ] = await Promise.all([
-            // 1. Basic Shop Details - RATING SOURCED DIRECTLY
+            // 1. Basic Shop Details
             connection.query(
                 `SELECT 
                     LS.ShopID as id, LS.ShopName as name, LS.ShopAddress as address, 
@@ -164,28 +113,28 @@ router.get("/:shopId/full-details", async (req, res) => {
                 [shopId]
             ),
             
-            // 2. Services (Shop_Services)
+            // 2. Services
             connection.query(
                 `SELECT SS.SvcID as id, S.SvcName as name, SS.SvcPrice as price, SS.MinLoad as minLoad, SS.MaxLoad as maxLoad
                   FROM Shop_Services SS JOIN Services S ON SS.SvcID = S.SvcID WHERE SS.ShopID = ?`,
                 [shopId]
             ),
 
-            // 3. Add-Ons (Shop_Add_Ons)
+            // 3. Add-Ons
             connection.query(
                 `SELECT SAO.AddOnID as id, AO.AddOnName as name, SAO.AddOnPrice as price
                   FROM Shop_Add_Ons SAO JOIN Add_Ons AO ON SAO.AddOnID = AO.AddOnID WHERE SAO.ShopID = ?`,
                 [shopId]
             ),
             
-            // 4. Delivery Options (Shop_Delivery_Options)
+            // 4. Delivery Options (Modes)
             connection.query(
                 `SELECT SDO.DlvryID as id, DT.DlvryTypeName as name, SDO.DlvryDescription as description
                   FROM Shop_Delivery_Options SDO JOIN Delivery_Types DT ON SDO.DlvryTypeID = DT.DlvryTypeID WHERE SDO.ShopID = ?`,
                 [shopId]
             ),
 
-            // 5. Fabric Types (Shop_Fabrics)
+            // 5. Fabric Types
             connection.query(
                 `SELECT SF.FabID as id, F.FabName as name
                   FROM Shop_Fabrics SF JOIN Fabrics F ON SF.FabID = F.FabID WHERE SF.ShopID = ?`,
@@ -198,7 +147,6 @@ router.get("/:shopId/full-details", async (req, res) => {
                   FROM Payment_Methods PM`,
                 []
             ),
-
         ]);
 
         if (!shopDetails) {
@@ -223,6 +171,10 @@ router.get("/:shopId/full-details", async (req, res) => {
 });
 
 
+// =================================================================
+// 2. OWNER MANAGEMENT ROUTES
+// =================================================================
+
 // GET /api/shops/:shopId/full-details-owner (Owner Dashboard)
 router.get("/:shopId/full-details-owner", async (req, res) => {
     const { shopId } = req.params;
@@ -245,16 +197,8 @@ router.get("/:shopId/full-details-owner", async (req, res) => {
                 GROUP BY LS.ShopID`,
                 [shopId]
             ),
-            
-            connection.query(
-                `SELECT ShopRating FROM Shop_Rates WHERE ShopID = ?`,
-                [shopId]
-            ),
-
-            connection.query(
-                `SELECT ShopLatitude, ShopLongitude FROM Shop_Distance WHERE ShopID = ?`,
-                [shopId]
-            )
+            connection.query(`SELECT ShopRating FROM Shop_Rates WHERE ShopID = ?`, [shopId]),
+            connection.query(`SELECT ShopLatitude, ShopLongitude FROM Shop_Distance WHERE ShopID = ?`, [shopId])
         ]);
         
         if (!shopDetails) {
@@ -267,20 +211,13 @@ router.get("/:shopId/full-details-owner", async (req, res) => {
         
         ratingsArray.forEach(rating => {
             const roundedRating = Math.round(rating);
-            if (breakdown[roundedRating] !== undefined) {
-                breakdown[roundedRating]++;
-            }
+            if (breakdown[roundedRating] !== undefined) breakdown[roundedRating]++;
         });
 
         res.json({
             success: true,
             details: {
-                ShopName: shopDetails.ShopName,
-                ShopDescrp: shopDetails.ShopDescrp,
-                ShopAddress: shopDetails.ShopAddress,
-                ShopPhone: shopDetails.ShopPhone,
-                ShopOpeningHours: shopDetails.ShopOpeningHours,
-                ShopStatus: shopDetails.ShopStatus,
+                ...shopDetails,
                 ShopLatitude: shopDistance ? shopDistance.ShopLatitude : null,
                 ShopLongitude: shopDistance ? shopDistance.ShopLongitude : null,
             },
@@ -298,7 +235,6 @@ router.get("/:shopId/full-details-owner", async (req, res) => {
     }
 });
 
-
 // POST /api/shops/create (Create New Shop)
 router.post("/create", async (req, res) => {
     const connection = await db.getConnection();
@@ -313,28 +249,19 @@ router.post("/create", async (req, res) => {
 
         if (!OwnerID || !ShopName || !ShopAddress || !ShopLatitude || !ShopLongitude) {
             await connection.rollback();
-            return res.status(400).json({ success: false, message: "Missing required shop details (OwnerID, Name, Address, Latitude, Longitude)." });
+            return res.status(400).json({ success: false, message: "Missing required shop details." });
         }
 
-        const newShopID = await generateNewShopID(connection);
-        
-        const shopInsertQuery = `
-            INSERT INTO Laundry_Shops 
-            (ShopID, OwnerID, ShopName, ShopDescrp, ShopAddress, ShopPhone, ShopOpeningHours, ShopStatus, ShopImage_url) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `;
-        await connection.query(
-            shopInsertQuery, 
-            [newShopID, OwnerID, ShopName, ShopDescrp, ShopAddress, ShopPhone, ShopOpeningHours, ShopStatus, ShopImage_url || null]
+        const [shopResult] = await connection.query(
+            `INSERT INTO Laundry_Shops 
+            (OwnerID, ShopName, ShopDescrp, ShopAddress, ShopPhone, ShopOpeningHours, ShopStatus, ShopImage_url) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, 
+            [OwnerID, ShopName, ShopDescrp, ShopAddress, ShopPhone, ShopOpeningHours, ShopStatus, ShopImage_url || null]
         );
+        const newShopID = shopResult.insertId;
         
-        const distanceInsertQuery = `
-            INSERT INTO Shop_Distance 
-            (ShopID, ShopLatitude, ShopLongitude) 
-            VALUES (?, ?, ?)
-        `;
         await connection.query(
-            distanceInsertQuery, 
+            `INSERT INTO Shop_Distance (ShopID, ShopLatitude, ShopLongitude) VALUES (?, ?, ?)`, 
             [newShopID, ShopLatitude, ShopLongitude]
         );
         
@@ -348,13 +275,13 @@ router.post("/create", async (req, res) => {
 
     } catch (error) {
         await connection.rollback();
-        res.status(500).json({ success: false, error: "Failed to create and link shop details." });
+        res.status(500).json({ success: false, error: "Failed to create shop." });
     } finally {
         connection.release();
     }
 });
 
-// PUT /api/shops/:shopId (Update Shop Details and Coordinates)
+// PUT /api/shops/:shopId (Update Shop Details)
 router.put("/:shopId", async (req, res) => {
     const { shopId } = req.params;
     const { 
@@ -366,7 +293,7 @@ router.put("/:shopId", async (req, res) => {
     await connection.beginTransaction();
 
     try {
-        const [shopResult] = await connection.query(
+        await connection.query(
             `UPDATE Laundry_Shops SET 
                 ShopName = ?, ShopDescrp = ?, ShopAddress = ?, 
                 ShopPhone = ?, ShopOpeningHours = ?, ShopStatus = ?
@@ -385,11 +312,6 @@ router.put("/:shopId", async (req, res) => {
             );
         }
 
-        if (shopResult.affectedRows === 0) {
-            await connection.rollback();
-            return res.status(404).json({ error: "Shop not found or no changes made." });
-        }
-        
         await connection.commit();
         res.json({ success: true, message: "Shop details updated successfully." });
 
@@ -403,223 +325,225 @@ router.put("/:shopId", async (req, res) => {
 
 
 // =================================================================
-// CONFIGURATION ROUTES
+// 3. CONFIGURATION ROUTES (Services, Logistics, etc.)
 // =================================================================
 
-// --- GLOBAL SERVICES (For Dropdown population on frontend) ---
+// --- SERVICES ---
 router.get("/global/services", async (req, res) => {
-    const connection = await db.getConnection();
     try {
-        const [services] = await connection.query(`SELECT SvcID, SvcName FROM Services`);
+        const [services] = await db.query(`SELECT SvcID, SvcName FROM Services`);
         res.json({ success: true, services });
-    } catch (error) {
-        res.status(500).json({ success: false, message: "Failed to fetch global services." });
-    } finally { connection.release(); }
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// --- SHOP SERVICES (Shop_Services table) ---
-
 router.get("/:shopId/services", async (req, res) => {
-    const { shopId } = req.params;
-    const connection = await db.getConnection();
     try {
-        const [services] = await connection.query(
-            `SELECT SS.SvcID, S.SvcName, SS.SvcPrice, SS.MinLoad, SS.MaxLoad
-             FROM Shop_Services SS
-             JOIN Services S ON SS.SvcID = S.SvcID
+        // 🔑 CHANGED: Select MinWeight, removed MinLoad/MaxLoad
+        const [services] = await db.query(
+            `SELECT SS.SvcID, S.SvcName, SS.SvcPrice, SS.MinWeight
+             FROM Shop_Services SS 
+             JOIN Services S ON SS.SvcID = S.SvcID 
              WHERE SS.ShopID = ?`,
-            [shopId]
+            [req.params.shopId]
         );
         res.json({ success: true, services });
-    } catch (error) {
-        res.status(500).json({ success: false, message: "Failed to fetch services." });
-    } finally { connection.release(); }
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 router.post("/services", async (req, res) => {
-    const { ShopID, SvcID, SvcPrice, MinLoad, MaxLoad } = req.body;
-    if (!ShopID || !SvcID || SvcPrice === undefined) {
-        return res.status(400).json({ success: false, message: "Missing required service details." });
-    }
-    const connection = await db.getConnection();
+    // 🔑 CHANGED: Destructure MinWeight
+    const { ShopID, SvcID, SvcPrice, MinWeight } = req.body;
     try {
-        await connection.query(
-            `INSERT INTO Shop_Services (ShopID, SvcID, SvcPrice, MinLoad, MaxLoad) 
-             VALUES (?, ?, ?, ?, ?)
+        // 🔑 CHANGED: Insert/Update MinWeight
+        await db.query(
+            `INSERT INTO Shop_Services (ShopID, SvcID, SvcPrice, MinWeight) 
+             VALUES (?, ?, ?, ?) 
              ON DUPLICATE KEY UPDATE 
                 SvcPrice=VALUES(SvcPrice), 
-                MinLoad=VALUES(MinLoad), 
-                MaxLoad=VALUES(MaxLoad)`,
-            [ShopID, SvcID, SvcPrice, MinLoad || 0, MaxLoad || 0]
+                MinWeight=VALUES(MinWeight)`,
+            [ShopID, SvcID, SvcPrice, MinWeight || 1] // Default to 1kg if empty
         );
-        res.status(201).json({ success: true, message: "Shop service saved successfully." });
-    } catch (error) {
-        res.status(500).json({ success: false, message: "Failed to save shop service." });
-    } finally { connection.release(); }
+        res.status(201).json({ success: true });
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-
-// --- GLOBAL FABRICS (For Dropdown population on frontend) ---
+// --- FABRICS ---
 router.get("/global/fabrics", async (req, res) => {
-    const connection = await db.getConnection();
     try {
-        const [fabrics] = await connection.query(`SELECT FabID, FabName FROM Fabrics`);
+        const [fabrics] = await db.query(`SELECT FabID, FabName FROM Fabrics`);
         res.json({ success: true, fabrics });
-    } catch (error) {
-        res.status(500).json({ success: false, message: "Failed to fetch global fabrics." });
-    } finally { connection.release(); }
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
-
-// --- SHOP FABRICS (Shop_Fabrics junction table) ---
 
 router.get("/:shopId/fabrics", async (req, res) => {
-    const { shopId } = req.params;
-    const connection = await db.getConnection();
     try {
-        const [fabrics] = await connection.query(
-            `SELECT SF.FabID, F.FabName
-             FROM Shop_Fabrics SF
-             JOIN Fabrics F ON SF.FabID = F.FabID
-             WHERE SF.ShopID = ?`,
-            [shopId]
+        const [fabrics] = await db.query(
+            `SELECT SF.FabID, F.FabName FROM Shop_Fabrics SF JOIN Fabrics F ON SF.FabID = F.FabID WHERE SF.ShopID = ?`,
+            [req.params.shopId]
         );
         res.json({ success: true, fabrics });
-    } catch (error) {
-        res.status(500).json({ success: false, message: "Failed to fetch shop fabrics." });
-    } finally { connection.release(); }
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 router.post("/fabrics", async (req, res) => {
-    const { ShopID, FabID } = req.body;
-    if (!ShopID || !FabID) return res.status(400).json({ success: false, message: "Missing shop ID or fabric ID." });
-    const connection = await db.getConnection();
     try {
-        await connection.query(
-            `INSERT IGNORE INTO Shop_Fabrics (ShopID, FabID) VALUES (?, ?)`,
-            [ShopID, FabID]
-        );
-        res.status(201).json({ success: true, message: "Fabric type added successfully." });
-    } catch (error) {
-        res.status(500).json({ success: false, message: "Failed to add fabric type." });
-    } finally { connection.release(); }
+        await db.query(`INSERT IGNORE INTO Shop_Fabrics (ShopID, FabID) VALUES (?, ?)`, [req.body.ShopID, req.body.FabID]);
+        res.status(201).json({ success: true });
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-
-// --- GLOBAL ADD-ONS (For Dropdown population on frontend) ---
+// --- ADD-ONS ---
 router.get("/global/addons", async (req, res) => {
-    const connection = await db.getConnection();
     try {
-        const [addons] = await connection.query(`SELECT AddOnID, AddOnName FROM Add_Ons`);
+        const [addons] = await db.query(`SELECT AddOnID, AddOnName FROM Add_Ons`);
         res.json({ success: true, addons });
-    } catch (error) {
-        res.status(500).json({ success: false, message: "Failed to fetch global add-ons." });
-    } finally { connection.release(); }
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
-
-// --- SHOP ADD-ONS (Shop_Add_Ons junction table) ---
 
 router.get("/:shopId/addons", async (req, res) => {
-    const { shopId } = req.params;
-    const connection = await db.getConnection();
     try {
-        const [addons] = await connection.query(
-            `SELECT SAO.AddOnID, AO.AddOnName, SAO.AddOnPrice
-             FROM Shop_Add_Ons SAO
-             JOIN Add_Ons AO ON SAO.AddOnID = AO.AddOnID
-             WHERE SAO.ShopID = ?`,
-            [shopId]
+        const [addons] = await db.query(
+            `SELECT SAO.AddOnID, AO.AddOnName, SAO.AddOnPrice FROM Shop_Add_Ons SAO JOIN Add_Ons AO ON SAO.AddOnID = AO.AddOnID WHERE SAO.ShopID = ?`,
+            [req.params.shopId]
         );
         res.json({ success: true, addons });
-    } catch (error) {
-        res.status(500).json({ success: false, message: "Failed to fetch shop add-ons." });
-    } finally { connection.release(); }
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 router.post("/addons", async (req, res) => {
-    const { ShopID, AddOnID, AddOnPrice } = req.body;
-    if (!ShopID || !AddOnID || AddOnPrice === undefined) return res.status(400).json({ success: false, message: "Missing required add-on details." });
-    const connection = await db.getConnection();
     try {
-        await connection.query(
-            `INSERT INTO Shop_Add_Ons (ShopID, AddOnID, AddOnPrice) 
-             VALUES (?, ?, ?)
-             ON DUPLICATE KEY UPDATE 
-             AddOnPrice = VALUES(AddOnPrice)`,
-            [ShopID, AddOnID, AddOnPrice]
+        await db.query(
+            `INSERT INTO Shop_Add_Ons (ShopID, AddOnID, AddOnPrice) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE AddOnPrice=VALUES(AddOnPrice)`,
+            [req.body.ShopID, req.body.AddOnID, req.body.AddOnPrice]
         );
-        res.status(201).json({ success: true, message: "Shop add-on saved successfully." });
-    } catch (error) {
-        res.status(500).json({ success: false, message: "Failed to save shop add-on." });
-    } finally { connection.release(); }
+        res.status(201).json({ success: true });
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// --- GLOBAL DELIVERY TYPES (For Dropdown population on frontend) ---
+// --- DELIVERY TYPES (Legacy/Modes) ---
 router.get("/global/delivery-types", async (req, res) => {
-    const connection = await db.getConnection();
     try {
-        const [deliveryTypes] = await connection.query(`SELECT DlvryTypeID, DlvryTypeName, DlvryDescription FROM Delivery_Types`);
+        const [deliveryTypes] = await db.query(`SELECT DlvryTypeID, DlvryTypeName, DlvryDescription FROM Delivery_Types`);
         res.json({ success: true, deliveryTypes });
-    } catch (error) {
-        res.status(500).json({ success: false, message: "Failed to fetch global delivery types." });
-    } finally { connection.release(); }
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
-
-// --- SHOP DELIVERY OPTIONS (Shop_Delivery_Options table) ---
 
 router.get("/:shopId/delivery", async (req, res) => {
-    const { shopId } = req.params;
-    const connection = await db.getConnection();
     try {
-        const [delivery] = await connection.query(
+        const [delivery] = await db.query(
             `SELECT SDO.DlvryID, DT.DlvryTypeName, SDO.DlvryDescription, SDO.DlvryTypeID
-             FROM Shop_Delivery_Options SDO
-             JOIN Delivery_Types DT ON SDO.DlvryTypeID = DT.DlvryTypeID
-             WHERE SDO.ShopID = ?`,
-            [shopId]
+             FROM Shop_Delivery_Options SDO JOIN Delivery_Types DT ON SDO.DlvryTypeID = DT.DlvryTypeID WHERE SDO.ShopID = ?`,
+            [req.params.shopId]
         );
         res.json({ success: true, delivery });
-    } catch (error) {
-        res.status(500).json({ success: false, message: "Failed to fetch shop delivery options." });
-    } finally { connection.release(); }
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 router.post("/delivery", async (req, res) => {
     const { ShopID, DlvryTypeID, DlvryDescription } = req.body;
-    if (!ShopID || !DlvryTypeID || !DlvryDescription) return res.status(400).json({ success: false, message: "Missing required delivery option details." });
-    
-    const connection = await db.getConnection();
-    await connection.beginTransaction();
-
     try {
-        const [existing] = await connection.query(
-            `SELECT DlvryID FROM Shop_Delivery_Options WHERE ShopID = ? AND DlvryTypeID = ?`,
-            [ShopID, DlvryTypeID]
-        );
-
+        const [existing] = await db.query(`SELECT DlvryID FROM Shop_Delivery_Options WHERE ShopID = ? AND DlvryTypeID = ?`, [ShopID, DlvryTypeID]);
         let dlvryIdToUse;
-        
         if (existing.length > 0) {
             dlvryIdToUse = existing[0].DlvryID;
-            await connection.query(
-                `UPDATE Shop_Delivery_Options SET DlvryDescription = ? WHERE DlvryID = ?`,
-                [DlvryDescription, dlvryIdToUse]
-            );
+            await db.query(`UPDATE Shop_Delivery_Options SET DlvryDescription = ? WHERE DlvryID = ?`, [DlvryDescription, dlvryIdToUse]);
         } else {
-            dlvryIdToUse = await generateNextID(connection, 'Shop_Delivery_Options', 'DV', 'DlvryID');
-            await connection.query(
-                `INSERT INTO Shop_Delivery_Options (DlvryID, ShopID, DlvryTypeID, DlvryDescription) VALUES (?, ?, ?, ?)`,
-                [dlvryIdToUse, ShopID, DlvryTypeID, DlvryDescription]
-            );
+            const [result] = await db.query(`INSERT INTO Shop_Delivery_Options (ShopID, DlvryTypeID, DlvryDescription) VALUES (?, ?, ?)`, [ShopID, DlvryTypeID, DlvryDescription]);
+            dlvryIdToUse = result.insertId;
         }
-        
-        await connection.commit();
-        res.status(201).json({ success: true, message: "Shop delivery option saved successfully.", DlvryID: dlvryIdToUse });
-
-    } catch (error) {
-        await connection.rollback();
-        res.status(500).json({ success: false, message: "Failed to save shop delivery option." });
-    } finally { connection.release(); }
+        res.status(201).json({ success: true, DlvryID: dlvryIdToUse });
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+// =================================================================
+// 4. LOGISTICS ROUTES (FINAL CLEANUP)
+// =================================================================
+
+// --- GLOBAL APPS ---
+router.get("/global/delivery-apps", async (req, res) => {
+    try {
+        const [apps] = await db.query("SELECT DlvryAppID, DlvryAppName, AppBaseFare, AppBaseKm, AppDistanceRate FROM Delivery_App");
+        res.json({ success: true, apps });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to fetch delivery apps." });
+    }
+});
+
+// --- SHOP OWN SERVICE (Needs Status to preserve price settings) ---
+router.get("/:shopId/own-delivery", async (req, res) => {
+    try {
+        const [rows] = await db.query(
+            "SELECT ShopBaseFare, ShopBaseKm, ShopDistanceRate, ShopServiceStatus FROM Shop_Own_Service WHERE ShopID = ?", 
+            [req.params.shopId]
+        );
+        res.json({ success: true, settings: rows[0] || null });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to fetch own delivery settings." });
+    }
+});
+
+router.post("/own-delivery", async (req, res) => {
+    const { ShopID, ShopBaseFare, ShopBaseKm, ShopDistanceRate, ShopServiceStatus } = req.body;
+    
+    // Default to 'Active' if not provided
+    const statusToSave = ShopServiceStatus || 'Active'; 
+
+    try {
+        await db.query(
+            `INSERT INTO Shop_Own_Service (ShopID, ShopBaseFare, ShopBaseKm, ShopDistanceRate, ShopServiceStatus) 
+             VALUES (?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE 
+                ShopBaseFare=VALUES(ShopBaseFare), 
+                ShopBaseKm=VALUES(ShopBaseKm), 
+                ShopDistanceRate=VALUES(ShopDistanceRate),
+                ShopServiceStatus=VALUES(ShopServiceStatus)`,
+            [ShopID, ShopBaseFare, ShopBaseKm, ShopDistanceRate, statusToSave]
+        );
+        res.status(201).json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to save own delivery settings." });
+    }
+});
+
+// --- LINKED DELIVERY APPS (No Status needed - Row existence = Active) ---
+router.get("/:shopId/delivery-apps", async (req, res) => {
+    try {
+        const [apps] = await db.query(
+            `SELECT DA.DlvryAppID, DA.DlvryAppName, DA.AppBaseFare, DA.AppBaseKm, DA.AppDistanceRate
+             FROM Shop_Delivery_App SDA 
+             JOIN Delivery_App DA ON SDA.DlvryAppID = DA.DlvryAppID 
+             WHERE SDA.ShopID = ?`,
+            [req.params.shopId]
+        );
+        res.json({ success: true, apps });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to fetch linked delivery apps." });
+    }
+});
+
+router.post("/delivery-apps", async (req, res) => {
+    const { ShopID, DlvryAppID } = req.body;
+    try {
+        // Simply insert. If it exists (duplicate), IGNORE handles it.
+        await db.query(
+            `INSERT IGNORE INTO Shop_Delivery_App (ShopID, DlvryAppID) VALUES (?, ?)`, 
+            [ShopID, DlvryAppID]
+        );
+        res.status(201).json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to link delivery app." });
+    }
+});
+
+router.post("/delivery-apps/unlink", async (req, res) => {
+    const { ShopID, DlvryAppID } = req.body;
+    try {
+        // Hard Delete is fine here because no custom data is lost
+        await db.query("DELETE FROM Shop_Delivery_App WHERE ShopID = ? AND DlvryAppID = ?", [ShopID, DlvryAppID]);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to unlink delivery app." });
+    }
+});
 
 export default router;

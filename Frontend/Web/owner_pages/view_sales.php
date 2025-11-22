@@ -154,7 +154,6 @@
 </head>
 <body>
 
-    <!-- Title Section -->
     <div class="title-box">
         <div class="title-row">
             <div>
@@ -169,7 +168,6 @@
         </div>
     </div>
 
-    <!-- KPI Section -->
     <div class="kpi-row">
         <div class="kpi-card">
             <h4>Total Sales</h4>
@@ -185,7 +183,6 @@
         </div>
     </div>
 
-    <!-- Sales Table -->
     <div class="table-container">
         <table>
             <thead>
@@ -200,7 +197,6 @@
         </table>
     </div>
 
-    <!-- PAGINATION CONTROLS -->
     <div class="pagination-controls">
         <button id="prevPageBtn" disabled>Previous</button>
         <span id="pageInfo">Page 1 of 1</span>
@@ -208,7 +204,8 @@
     </div>
 
     <script type="module">
-        import { API_BASE_URL } from '/Web/api.js';
+        // 🔑 FIX: Correct path to api.js assuming view_sales.php is in /owner_pages/
+        import { API_BASE_URL } from '../api.js';
 
         // --- GLOBAL STATE & ELEMENTS ---
         const tableBody = document.getElementById('sales-table-body');
@@ -234,8 +231,9 @@
         const COLSPAN = 3;
 
         const updateKpiCards = (summary) => {
-            const totalSales = summary.totalSales || 0;
-            const totalOrders = summary.totalOrders || 0;
+            const totalSales = parseFloat(summary.totalSales || 0);
+            const totalOrders = parseInt(summary.totalOrders || 0, 10);
+            // Fix division by zero possibility
             const avgSale = totalOrders > 0 ? (totalSales / totalOrders) : 0;
 
             totalSalesEl.textContent = formatCurrency(totalSales);
@@ -244,10 +242,12 @@
         };
         
         const updatePaginationControls = () => {
+            // Calculate total pages based on backend count
             const totalPages = Math.ceil(totalTransactions / ROWS_PER_PAGE);
+            
             pageInfoSpan.textContent = `Page ${currentPage} of ${totalPages > 0 ? totalPages : 1} (Total: ${totalTransactions})`;
             prevPageBtn.disabled = currentPage === 1;
-            nextPageBtn.disabled = currentPage >= totalPages;
+            nextPageBtn.disabled = currentPage >= totalPages || totalPages === 0;
         };
 
         const renderTable = (transactions) => {
@@ -256,15 +256,17 @@
                 const message = totalTransactions > 0 ? 
                     'No sales found on this page.' : 
                     'No sales found for this period.';
-                tableBody.innerHTML = `<tr><td colspan="${COLSPAN}" style="text-align:center;">${message}</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="${COLSPAN}" style="text-align:center; padding: 20px; color: #777;">${message}</td></tr>`;
                 return;
             }
             
             transactions.forEach(sale => {
                 // NOTE: Using PaidAt from the backend response as the transaction date
-                const formattedDate = new Date(sale.PaidAt).toLocaleDateString('en-US', {
+                const dateObj = new Date(sale.PaidAt);
+                const formattedDate = !isNaN(dateObj) ? dateObj.toLocaleDateString('en-US', {
                     year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-                });
+                }) : 'N/A';
+
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${formattedDate}</td>
@@ -291,8 +293,8 @@
             const offset = (currentPage - 1) * limit;
 
             // Show loading state
-            tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center;">Loading...</td></tr>';
-            updateKpiCards({}); // Reset KPIs
+            tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding: 20px;">Loading...</td></tr>';
+            // Don't reset KPIs immediately to avoid flickering, wait for data
 
             try {
                 const params = new URLSearchParams({
@@ -309,15 +311,16 @@
                 
                 const data = await response.json();
 
-                totalTransactions = data.totalCount || 0; // Capture total count
+                totalTransactions = data.totalCount || 0; // Capture total count for pagination
                 
                 updateKpiCards(data.summary || {});
                 renderTable(data.transactions);
 
             } catch (error) {
                 console.error('Fetch error:', error);
-                tableBody.innerHTML = `<tr><td colspan="3" style="text-align:center;">Error loading sales data.</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color: red;">Error loading sales data.</td></tr>`;
                 totalTransactions = 0;
+                updateKpiCards({}); // Clear KPIs on error
                 updatePaginationControls();
             }
         };

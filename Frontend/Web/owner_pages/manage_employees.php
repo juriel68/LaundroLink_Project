@@ -123,7 +123,7 @@
     .action-buttons {
         display: flex;
         gap: 5px; 
-        flex-wrap: wrap; /* Allows wrapping on smaller screens, but tries to keep inline */
+        flex-wrap: wrap; 
     }
     
     .btn-update, .btn-status-toggle {
@@ -265,8 +265,6 @@
         background-color: #004aad;
     }
     
-    /* Removed delete popup styles as delete is removed */
-    
 </style>
 </head>
 <body>
@@ -301,7 +299,7 @@
                 <th>Address</th>
                 <th>Phone Number</th>
                 <th>Salary</th>
-                <th>Status</th> <!-- NEW COLUMN -->
+                <th>Status</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -356,10 +354,9 @@
         </div>
     </div>
 
-    <!-- Removed Delete Confirmation Popup -->
-
     <script type="module">
-        import { API_BASE_URL } from '/Web/api.js'; 
+        // 🔑 FIX: Correct relative path to api.js
+        import { API_BASE_URL } from '../api.js';
 
         // --- GLOBAL STATE & ELEMENTS ---
         const tableBody = document.getElementById('employee-table-body');
@@ -379,15 +376,12 @@
         let currentPage = 1;
         const ROWS_PER_PAGE = 10;
         let totalEmployees = 0;
-        const COLSPAN = 8; // Updated colspan
-        // -------------------------------
+        const COLSPAN = 8; 
         
         document.getElementById('addEmployeeBtn').addEventListener('click', () => addPopup.style.display = 'flex');
         document.getElementById('addCancelBtn').addEventListener('click', () => { addForm.reset(); addPopup.style.display = 'none'; });
         document.getElementById('updateCancelBtn').addEventListener('click', () => updatePopup.style.display = 'none');
         
-        // Removed delete button handler logic here
-
         prevPageBtn.addEventListener('click', () => {
             if (currentPage > 1) fetchEmployees(sortSelect.value, currentPage - 1);
         });
@@ -399,9 +393,12 @@
         
         const updatePaginationControls = () => {
             const totalPages = Math.ceil(totalEmployees / ROWS_PER_PAGE);
-            pageInfoSpan.textContent = `Page ${currentPage} of ${totalPages > 0 ? totalPages : 1} (Total: ${totalEmployees})`;
+            const displayPage = totalPages > 0 ? currentPage : 1;
+            const displayTotal = totalPages > 0 ? totalPages : 1;
+            
+            pageInfoSpan.textContent = `Page ${displayPage} of ${displayTotal} (Total: ${totalEmployees})`;
             prevPageBtn.disabled = currentPage === 1;
-            nextPageBtn.disabled = currentPage >= totalPages;
+            nextPageBtn.disabled = currentPage >= totalPages || totalPages === 0;
         };
         
         const renderTable = (employees) => {
@@ -443,7 +440,6 @@
                 `;
                 
                 row.querySelector('.btn-update').addEventListener('click', () => {
-                    // Populate update form fields
                     currentStaffId = emp.StaffID;
                     document.getElementById('updateStaffId').value = emp.StaffID;
                     document.getElementById('updateName').value = emp.StaffName;
@@ -474,14 +470,14 @@
             try {
                 const shopId = loggedInUser.ShopID;
                 
-                // Fetch staff list including IsActive from the backend
                 const response = await fetch(`${API_BASE_URL}/users/staff/${shopId}?sortBy=${sortBy}&limit=${ROWS_PER_PAGE}&offset=${offset}`);
                 if (!response.ok) throw new Error('Failed to fetch employees');
                 
                 const data = await response.json();
                 
-                const employees = data.staff || data; 
-                totalEmployees = data.totalCount || employees.length; 
+                // 🔑 KEY FIX: Handle { staff: [], totalCount: N } response structure
+                const employees = data.staff || []; 
+                totalEmployees = data.totalCount || 0; 
 
                 renderTable(employees);
                 
@@ -493,11 +489,10 @@
             }
         };
 
-        // --- NEW STATUS TOGGLE HANDLER ---
         async function handleStatusToggle(e) {
             const button = e.target.closest('.btn-status-toggle');
             const staffId = button.dataset.staffId;
-            const action = parseInt(button.dataset.action); // 1 to Activate, 0 to Deactivate
+            const action = parseInt(button.dataset.action); 
             const actionText = action === 1 ? 'Reactivate' : 'Deactivate';
             const staffName = button.closest('tr').cells[1].textContent;
 
@@ -513,7 +508,6 @@
 
                     if (response.ok && result.success) {
                         window.alert(result.message || `Employee ${staffName} successfully ${actionText}d.`);
-                        // Refresh the current table page
                         fetchEmployees(sortSelect.value, currentPage); 
                     } else {
                          window.alert(result.message || `Error toggling status.`);
@@ -525,7 +519,6 @@
                 }
             }
         }
-        // --- END NEW STATUS TOGGLE HANDLER ---
         
         addForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -580,13 +573,11 @@
             }
         });
 
-        // Removed handleDelete as it is now handled by status toggle (for deactivation)
-        
         document.addEventListener('DOMContentLoaded', () => {
             sortSelect.addEventListener('change', () => {
                 fetchEmployees(sortSelect.value, 1);
             });
-            fetchEmployees(); // Initial load (default sort, page 1)
+            fetchEmployees(); 
         });
     </script>
 </body>

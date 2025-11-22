@@ -125,8 +125,8 @@
             font-size: 16px; 
             font-weight: 600; 
             transition: all 0.3s ease; 
-            width: 100%; 
-            margin-top: 5px; 
+            width: 100%;
+            margin-top: 5px;
         }
 
         .btn-edit:hover { 
@@ -146,10 +146,10 @@
             padding: 25px; 
             box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08); 
             text-align: center;
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
-            gap: 20px; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
         }
 
         .rating-main {
@@ -188,37 +188,37 @@
 
         /* New Breakdown Styles */
         .rating-breakdown {
-            width: 100%; 
+            width: 100%;
             max-width: 280px;
         }
 
         .rating-row {
-            display: flex; 
-            align-items: center; 
-            gap: 8px; 
-            margin: 6px 0; 
-            font-size: 14px; 
-            color: #444; 
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 6px 0;
+            font-size: 14px;
+            color: #444;
         }
 
         .rating-row .bar {
-            flex-grow: 1; 
-            height: 8px; 
-            background: #e9ecef; 
-            border-radius: 5px; 
-            overflow: hidden; 
+            flex-grow: 1;
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 5px;
+            overflow: hidden;
         }
 
         .rating-row .bar-fill {
-            height: 100%; 
-            background: #ffc107; 
-            border-radius: 5px; 
-            transition: width 0.4s ease; 
+            height: 100%;
+            background: #ffc107;
+            border-radius: 5px;
+            transition: width 0.4s ease;
         }
 
         .rating-row .star-label {
-            width: 30px; 
-            text-align: right; 
+            width: 30px;
+            text-align: right;
         }
 
         /* === Popup Styles === */
@@ -232,17 +232,17 @@
             height: 100%; 
             background-color: rgba(0,0,0,0.5); 
             overflow-y: auto; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
         .popup-content { 
             background-color: #fff; 
-            margin: auto; 
+            margin: auto;
             padding: 30px; 
             border-radius: 12px; 
-            width: 450px; 
+            width: 420px; 
             box-shadow: 0 6px 16px rgba(0,0,0,0.25); 
             max-height: 90vh; 
             overflow-y: auto; 
@@ -260,7 +260,7 @@
             font-size: 14px; 
             color: #333; 
             display: block; 
-            margin-top: 12px; 
+            margin-top: 10px; 
         }
 
         .popup-content input, 
@@ -272,7 +272,7 @@
             border-radius: 6px; 
             border: 1px solid #ccc; 
             font-size: 14px; 
-            box-sizing: border-box; 
+            box-sizing: border-box;
         }
 
         .popup-buttons { 
@@ -304,23 +304,6 @@
         .btn-save:hover { 
             background-color: #003c8a; 
         }
-
-        /* Pinpoint Button Style */
-        .btn-pinpoint {
-            background-color: #17a2b8;
-            color: white;
-            border: none;
-            padding: 8px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 13px;
-            margin-top: 5px;
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-        }
-        .btn-pinpoint:hover { background-color: #138496; }
-        .btn-pinpoint:disabled { background-color: #b8daff; cursor: not-allowed; }
 
         @keyframes fadeIn { 
             from {opacity: 0; transform: translateY(-10px);} 
@@ -395,37 +378,27 @@
             <h2>Manage Shop</h2>
             <form id="manageForm">
                 <input type="hidden" id="shopID">
-                
                 <label>Shop Name</label>
                 <input type="text" id="shopName" required>
-                
                 <label>Description</label>
                 <textarea id="shopDescrp" rows="3" required></textarea>
+                <label>Address</label>
+                <input type="text" id="shopAddress" required>
                 
-                <label>Address & Location</label>
-                <input type="hidden" id="shopLatitude">
-                <input type="hidden" id="shopLongitude">
-                
-                <div style="display:flex; gap:10px; align-items:center;">
-                    <button type="button" id="pinpointBtn" class="btn-pinpoint">
-                        <i class="fas fa-map-marker-alt"></i> Pinpoint Location
-                    </button>
-                    <span id="locationStatus" style="font-size:12px; color:#666;"></span>
-                </div>
-                <input type="text" id="shopAddress" placeholder="Click 'Pinpoint' to auto-fill or type manually" required>
+                <label>Shop Latitude</label>
+                <input type="number" id="shopLatitude" step="any" required>
+                <label>Shop Longitude</label>
+                <input type="number" id="shopLongitude" step="any" required>
                 
                 <label>Phone Number</label>
                 <input type="text" id="shopPhone" required>
-                
                 <label>Opening Hours</label>
                 <input type="text" id="shopHours" required>
-                
                 <label>Status</label>
                 <select id="shopStatus">
                     <option value='Available'>Available</option>
                     <option value='Closed'>Closed</option>
                 </select>
-                
                 <div class='popup-buttons'>
                     <button type='button' class='btn-cancel' id="cancelBtn">Cancel</button>
                     <button type='submit' class='btn-save'>Save Changes</button>
@@ -435,7 +408,7 @@
     </div>
 
     <script type="module">
-        import { API_BASE_URL } from '../api.js';
+        import { API_BASE_URL } from '/Web/api.js';
 
         const loggedInUser = JSON.parse(localStorage.getItem('laundroUser'));
         const managePopup = document.getElementById('managePopup');
@@ -456,13 +429,11 @@
         const ratingStarsEl = document.getElementById('rating-stars');
         const ratingCountEl = document.getElementById('rating-count');
 
-        const shopAddressInput = document.getElementById('shopAddress');
-        const shopLatitudeInput = document.getElementById('shopLatitude');
-        const shopLongitudeInput = document.getElementById('shopLongitude');
-        const pinpointBtn = document.getElementById('pinpointBtn');
-        const locationStatus = document.getElementById('locationStatus');
+        const shopLatitudeEl = document.getElementById('shopLatitude');
+        const shopLongitudeEl = document.getElementById('shopLongitude');
         
         let shopCoordinates = {}; 
+
 
         // --- MAPS DATA FROM API TO HTML ELEMENTS ---
         const updateShopInfo = (details) => {
@@ -532,6 +503,7 @@
             document.querySelector('.title-box h1').textContent = 'Shop Configuration';
             document.querySelector('.title-box p').textContent = 'Set up your services, pricing, and operational options.';
             
+            // Reload the iframe content to ensure fresh configuration data
             document.getElementById('config-iframe').src = 'configure_shop.php';
         };
 
@@ -570,8 +542,9 @@
                     ShopLongitude: details.ShopLongitude
                 };
                 
-                // We keep these in memory to populate the hidden fields on edit
-                
+                delete details.ShopLatitude; 
+                delete details.ShopLongitude;
+
                 updateShopInfo(details);
                 updateRatingSummary(rating);
 
@@ -580,101 +553,6 @@
                 shopMainContent.innerHTML = `<p style="text-align:center; width:100%;">Error loading shop details. ${error.message}</p>`;
             }
         };
-
-// --- GEOLOCATION LOGIC (HIGH PRECISION UPDATE) ---
-        pinpointBtn.addEventListener('click', () => {
-            if (!navigator.geolocation) {
-                alert("Geolocation is not supported by your browser.");
-                return;
-            }
-
-            locationStatus.textContent = "Locating...";
-            locationStatus.style.color = "#666";
-            pinpointBtn.disabled = true;
-
-            navigator.geolocation.getCurrentPosition(async (position) => {
-                const lat = position.coords.latitude;
-                const lon = position.coords.longitude;
-
-                // 1. Set hidden inputs immediately
-                shopLatitudeInput.value = lat;
-                shopLongitudeInput.value = lon;
-
-                console.log(`Got Coordinates: ${lat}, ${lon}`);
-                locationStatus.textContent = "Fetching address...";
-
-                try {
-                    // ATTEMPT 1: Photon (Komoot) - Excellent for street-level precision & CORS friendly
-                    const photonUrl = `https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}`;
-                    const response = await fetch(photonUrl);
-                    
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.features && data.features.length > 0) {
-                            const props = data.features[0].properties;
-                            
-                            // Build specific address parts
-                            // We prioritize: Name (e.g. Shop Name/Building) -> House Number -> Street -> District -> City
-                            const parts = [
-                                props.name,
-                                props.housenumber,
-                                props.street,
-                                props.district || props.suburb || props.locality,
-                                props.city,
-                                props.state,
-                                props.country
-                            ].filter(Boolean); // Remove undefined/null/empty strings
-
-                            // Deduplicate parts (sometimes name and street are same)
-                            const uniqueParts = [...new Set(parts)];
-
-                            if (uniqueParts.length > 0) {
-                                shopAddressInput.value = uniqueParts.join(", ");
-                                locationStatus.textContent = "✅ Specific address found!";
-                                locationStatus.style.color = "green";
-                                return;
-                            }
-                        }
-                    }
-                    throw new Error("Photon returned vague data");
-
-                } catch (primaryError) {
-                    console.warn("Primary geocoding failed, trying fallback...", primaryError);
-                    
-                    // ATTEMPT 2: OpenStreetMap Nominatim (Standard Fallback)
-                    try {
-                        const nomUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&addressdetails=1`;
-                        const nomRes = await fetch(nomUrl);
-                        const nomData = await nomRes.json();
-
-                        if (nomData && nomData.display_name) {
-                            shopAddressInput.value = nomData.display_name;
-                            locationStatus.textContent = "✅ Address found (OSM)!";
-                            locationStatus.style.color = "green";
-                        } else {
-                            throw new Error("Nominatim failed");
-                        }
-                    } catch (finalError) {
-                        console.error("All attempts failed:", finalError);
-                        locationStatus.textContent = "Coordinates set. Please type address.";
-                        locationStatus.style.color = "#d9534f"; 
-                    }
-                } finally {
-                    pinpointBtn.disabled = false;
-                }
-
-            }, (error) => {
-                let msg = "Unable to retrieve location.";
-                if (error.code === 1) msg = "Location permission denied.";
-                locationStatus.textContent = msg;
-                locationStatus.style.color = "red";
-                alert(msg);
-                pinpointBtn.disabled = false;
-            }, {
-                enableHighAccuracy: true, 
-                timeout: 10000
-            });
-        });
 
         // --- POPUP/FORM LOGIC: OPEN POPUP FOR EDIT ---
         document.getElementById('edit-details-btn').addEventListener('click', () => {
@@ -686,11 +564,8 @@
             document.getElementById('shopHours').value = shopHoursEl.textContent;
             document.getElementById('shopStatus').value = shopStatusEl.textContent;
             
-            // Pre-fill hidden lat/long from stored state
-            shopLatitudeInput.value = shopCoordinates.ShopLatitude || '';
-            shopLongitudeInput.value = shopCoordinates.ShopLongitude || '';
-            
-            locationStatus.textContent = ""; // Clear status
+            document.getElementById('shopLatitude').value = shopCoordinates.ShopLatitude || '';
+            document.getElementById('shopLongitude').value = shopCoordinates.ShopLongitude || '';
 
             document.querySelector('#managePopup h2').textContent = 'Manage Shop';
             document.querySelector('.btn-save').textContent = 'Save Changes';
@@ -708,9 +583,8 @@
                 document.getElementById('shopHours').value = '';
                 document.getElementById('shopStatus').value = 'Available';
                 
-                shopLatitudeInput.value = '';
-                shopLongitudeInput.value = '';
-                locationStatus.textContent = "";
+                shopLatitudeEl.value = '';
+                shopLongitudeEl.value = '';
 
                 document.querySelector('#managePopup h2').textContent = 'Create New Shop';
                 document.querySelector('.btn-save').textContent = 'Create Shop';
@@ -725,15 +599,6 @@
             const shopId = document.getElementById('shopID').value;
             const isCreating = !shopId; 
             
-            // Validation: Ensure Lat/Long are set
-            const lat = shopLatitudeInput.value;
-            const lon = shopLongitudeInput.value;
-
-            if (!lat || !lon) {
-                alert("Please use the 'Pinpoint Location' button to set the shop's map coordinates.");
-                return;
-            }
-
             const baseData = {
                 ShopName: document.getElementById('shopName').value,
                 ShopDescrp: document.getElementById('shopDescrp').value,
@@ -741,8 +606,6 @@
                 ShopPhone: document.getElementById('shopPhone').value,
                 ShopOpeningHours: document.getElementById('shopHours').value,
                 ShopStatus: document.getElementById('shopStatus').value,
-                ShopLatitude: parseFloat(lat),
-                ShopLongitude: parseFloat(lon)
             };
 
             let url = '';
@@ -752,12 +615,18 @@
             if (isCreating) {
                 data = {
                     ...baseData,
+                    ShopLatitude: parseFloat(shopLatitudeEl.value),
+                    ShopLongitude: parseFloat(shopLongitudeEl.value),
                     OwnerID: loggedInUser?.OwnerID 
                 };
                 url = `${API_BASE_URL}/shops/create`;
                 method = 'POST';
             } else {
-                data = baseData;
+                data = {
+                    ...baseData,
+                    ShopLatitude: parseFloat(shopLatitudeEl.value),
+                    ShopLongitude: parseFloat(shopLongitudeEl.value)
+                };
                 url = `${API_BASE_URL}/shops/${shopId}`;
                 method = 'PUT';
             }
@@ -797,6 +666,7 @@
                 configureShopBtn.addEventListener('click', loadConfigurationView);
             }
         });
+
 
         // Initial data load
         fetchShopDetails();

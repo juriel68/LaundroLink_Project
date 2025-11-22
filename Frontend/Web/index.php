@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LaundroLink Login</title>
     <style>
-        
         /* ==== BACKGROUND ==== */
         body {
             margin: 0;
@@ -51,25 +50,12 @@
         }
 
         @keyframes floatUpSideways {
-            0% {
-                transform: translate(0, 0) scale(1);
-                opacity: 1;
-            }
-            25% {
-                transform: translateX(15px) translateY(-25vh) scale(1.05);
-            }
-            50% {
-                transform: translateX(-20px) translateY(-50vh) scale(1.1);
-            }
-            75% {
-                transform: translateX(10px) translateY(-75vh) scale(1.2);
-            }
-            100% {
-                transform: translateX(-10px) translateY(-110vh) scale(1.3);
-                opacity: 0;
-            }
+            0% { transform: translate(0, 0) scale(1); opacity: 1; }
+            25% { transform: translateX(15px) translateY(-25vh) scale(1.05); }
+            50% { transform: translateX(-20px) translateY(-50vh) scale(1.1); }
+            75% { transform: translateX(10px) translateY(-75vh) scale(1.2); }
+            100% { transform: translateX(-10px) translateY(-110vh) scale(1.3); opacity: 0; }
         }
-
 
         /* ==== BRAND TITLE ==== */
         .brand-title {
@@ -84,7 +70,7 @@
         /* ==== LOGIN BOX ==== */
         .login-box {
             background: #89CFF0;
-            padding: 50px ;
+            padding: 50px;
             border-radius: 25px;
             box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
             width: 350px;
@@ -169,10 +155,14 @@
 
         /* ==== ERROR MESSAGE ==== */
         .error {
-            color: #ff4d4d;
+            color: #d32f2f; /* Darker red for better readability on blue */
             font-size: 0.9em;
             margin-top: 10px;
             display: none;
+            font-weight: 500;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 5px;
+            border-radius: 4px;
         }
     </style>
 </head>
@@ -187,7 +177,6 @@
         <div class="bubble" style="left: 80%; width: 35px; height: 35px; animation-duration: 12s; animation-delay: 1s;"></div>
         <div class="bubble" style="left: 90%; width: 25px; height: 25px; animation-duration: 15s; animation-delay: 2s;"></div>
     </div>
-
 
     <h1 class="brand-title">LaundroLink</h1>
 
@@ -214,46 +203,44 @@
         const errorMessage = document.getElementById('errorMessage');
         const loginButton = loginForm.querySelector('button[type="submit"]');
 
+        // Clear previous sessions on load to prevent conflicts
+        localStorage.removeItem('laundroUser');
+
         const MAINTENANCE_STATUS_ENDPOINT = `${API_BASE_URL}/admin/config/maintenance-status`;
 
-        // **MODIFIED:** Checks maintenance mode based on response.ok (200 status) OR JSON content.
-        // Returns true if maintenance is ON or status is undeterminable (network error).
         async function checkMaintenanceStatus() {
             try {
                 const response = await fetch(MAINTENANCE_STATUS_ENDPOINT);
                 
-                // If response is NOT ok (e.g., 503, 500, 403, 404), something is wrong.
-                // Since this endpoint is designed to return 200 when OFF and 503 when ON,
-                // we treat NOT 200 as a maintenance indicator or critical failure.
                 if (!response.ok) {
-                    // For the Shop Owner, we treat non-200 success as maintenance is active
-                    // (This catches the 503 status, or other server failures)
+                    // If backend is 500/503/404, assume maintenance or critical error
+                    console.warn(`Backend check failed: ${response.status}. Treating as Maintenance Mode.`);
                     return true; 
                 }
 
-                // If response.ok (Status 200), we must check the body for confirmation (Admin style)
                 try {
                     const data = await response.json();
                     if (typeof data.maintenanceMode === 'boolean' && data.maintenanceMode === true) {
-                        return true; // Maintenance is ON (Confirmed by JSON)
+                        return true; // Maintenance is ON
                     }
                 } catch (e) {
-                    // If parsing JSON fails but status was 200, assume OFF to be safe
+                    console.error("Failed to parse maintenance config JSON", e);
+                    // If JSON fails but server responded 200, safer to assume OFF unless proven otherwise
                 }
                 
-                return false; // Maintenance is OFF (Confirmed by 200 status and/or JSON data)
+                return false; // Maintenance is OFF
                 
             } catch (error) {
-                // Network error (server unreachable) means we cannot confirm operational status.
-                // For a non-admin user (Shop Owner), this must trigger the block (return true).
-                return true; 
+                console.error("Network error checking maintenance status:", error);
+                return true; // Fail-safe: Block access if server is unreachable
             }
         }
-
 
         loginForm.addEventListener('submit', async (event) => {
             event.preventDefault();
             errorMessage.style.display = 'none';
+            loginButton.disabled = true;
+            loginButton.textContent = 'Logging in...';
 
             const formData = new FormData(loginForm);
             const data = Object.fromEntries(formData.entries());
@@ -266,49 +253,41 @@
                     body: JSON.stringify(data),
                 });
                 
-                if (!response.ok && response.status !== 401) {
-                    // Handle non-401 authentication errors (e.g., 500)
-                    throw new Error("Server error during login. Status: " + response.status);
-                }
-
                 const result = await response.json();
 
-                // 2. Handle successful login
                 if (response.ok && result.success) {
                     const userRole = result.user.UserRole;
                     localStorage.setItem('laundroUser', JSON.stringify(result.user));
 
                     if (userRole === 'Admin') {
-                        // Admin gets access regardless of maintenance status
                         window.location.href = 'admindashboard.php';
-                        
                     } else if (userRole === 'Shop Owner') {
-                        
-                        // 3. Shop Owner (non-admin) Maintenance Check:
+                        // 2. Shop Owner Check: Maintenance Mode
                         const isMaintenanceActive = await checkMaintenanceStatus();
                         
                         if (isMaintenanceActive) {
-                            // Redirect Shop Owner to maintenance page
                             window.location.href = 'maintenancemode.php';
                         } else {
-                            // Allow Shop Owner access
                             window.location.href = 'ownerdashboard.php';
                         }
                     } else {
-                        // Other roles (Staff/Customer) are blocked from this portal
-                        errorMessage.textContent = 'This portal is for Admins and Owners only.';
+                        // Block Staff/Customer
+                        errorMessage.textContent = 'Access Restricted: This portal is for Admins and Owners only.';
                         errorMessage.style.display = 'block';
+                        localStorage.removeItem('laundroUser'); // Clear invalid session
                     }
                     
                 } else {
-                    // Login failed (e.g., Invalid credentials or backend message)
+                    // Login Failed
                     errorMessage.textContent = result.message || 'Invalid credentials.';
                     errorMessage.style.display = 'block';
                 }
             } catch (error) {
-                // This catch handles network errors on the initial /auth/login call
-                errorMessage.textContent = 'Cannot connect to the login server.';
+                errorMessage.textContent = 'Cannot connect to the server. Please try again later.';
                 errorMessage.style.display = 'block';
+            } finally {
+                loginButton.disabled = false;
+                loginButton.textContent = 'Log In';
             }
         });
     </script>

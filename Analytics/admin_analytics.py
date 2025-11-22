@@ -1,3 +1,4 @@
+# admin_analytics.py
 #!/usr/bin/env python
 # coding: utf-8
 
@@ -116,22 +117,20 @@ def analyze_platform_growth(conn, cursor):
     print("📈 Analyzing Platform Growth and Churn...")
     
     # --- 1. Monthly Revenue ---
+    # 🔑 FIXED: Removed Invoice_Status subquery, used I.PaymentStatus directly
     revenue_query = """
     SELECT
         DATE_FORMAT(o.OrderCreatedAt, '%Y-%m') AS MonthYear,
         SUM(i.PayAmount) AS MonthlyRevenue
     FROM Orders o
     JOIN Invoices i ON o.OrderID = i.OrderID
-    WHERE (SELECT invs.InvoiceStatus FROM Invoice_Status invs WHERE invs.InvoiceID = i.InvoiceID ORDER BY invs.StatUpdateAt DESC LIMIT 1) = 'Paid'
+    WHERE i.PaymentStatus = 'Paid'
     GROUP BY MonthYear
     ORDER BY MonthYear;
     """
     revenue_df = pd.read_sql(revenue_query, conn)
     
     # --- 2. Monthly New Shops (Using Laundry_Shops.DateCreated) ---
-    
-    # Get all shop registration dates
-    # FIX: Query changed to use Laundry_Shops.DateCreated directly
     shop_data_query = """
     SELECT 
         ShopID, 
@@ -148,8 +147,6 @@ def analyze_platform_growth(conn, cursor):
     growth_df = pd.merge(new_shops_df, revenue_df, on='MonthYear', how='outer').fillna(0)
     
     # --- 3. Calculate Cumulative Active Shops ---
-    # NOTE: Since we don't have a definitive "deactivated" timestamp, ChurnedShops will be 0, 
-    # and TotalActiveShops will be cumulative new shops.
     growth_df['TotalActiveShops'] = growth_df['NewShops'].cumsum()
     growth_df['ChurnedShops'] = 0 
 

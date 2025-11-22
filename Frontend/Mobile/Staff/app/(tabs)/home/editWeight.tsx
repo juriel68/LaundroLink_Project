@@ -64,7 +64,7 @@ export default function EditWeight() {
 
         if (response.success) {
             // Updated success message to reflect finalization
-            setSuccessMsg(`Final weight and invoice updated to ${parseFloat(weight).toFixed(2)} kg.`);
+            setSuccessMsg(`Final weight and invoice updated to ${parseFloat(weight).toFixed(1)} kg.`);
             
             setTimeout(() => router.back(), 2000);
         } else {

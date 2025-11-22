@@ -48,12 +48,10 @@ export default function InvoiceScreen() {
     );
   }
 
-  // 🔑 PREPARE VALUES DIRECTLY FROM BACKEND DATA
+  // 🔑 PREPARE VALUES
   const serviceFee = parseFloat(order.servicePrice.toString()) || 0;
   const deliveryFee = parseFloat(order.deliveryFee.toString()) || 0;
   const totalAmount = parseFloat(order.totalAmount.toString()) || 0;
-  
-  // Calculate Add-ons sum just for the breakdown display
   const addonsFee = order.addons.reduce((sum, item) => sum + parseFloat(item.price.toString()), 0);
 
   return (
@@ -87,41 +85,75 @@ export default function InvoiceScreen() {
           <View style={styles.divider} />
           
           <View style={styles.headerRow}>
-             <Text style={styles.headerLabel}>Customer:</Text>
-             <Text style={styles.headerValue}>{order.customerName}</Text>
+              <Text style={styles.headerLabel}>Customer:</Text>
+              <Text style={styles.headerValue}>{order.customerName}</Text>
           </View>
           <View style={styles.headerRow}>
-             <Text style={styles.headerLabel}>Created At:</Text>
-             <Text style={styles.headerValue}>{new Date(order.createdAt).toLocaleString()}</Text>
+              <Text style={styles.headerLabel}>Created At:</Text>
+              <Text style={styles.headerValue}>{new Date(order.createdAt).toLocaleString()}</Text>
           </View>
         </View>
 
-        {/* --- ORDER DETAILS SECTION --- */}
+        {/* --- ORDER DETAILS SECTION (STACKED LAYOUT) --- */}
         <View style={styles.section}>
             <Text style={styles.sectionTitle}>Order Details</Text>
             
-            <DetailRow label="Laundry Weight" value={`${order.weight} kg`} />
-            <DetailRow label="Service Name" value={order.serviceName} />
-            <DetailRow label="Delivery Type" value={order.deliveryType} />
+            {/* 1. Basic Info */}
+            <StackedRow label="Laundry Weight" value={`${order.weight} kg`} icon="scale-outline" />
+            <StackedRow label="Service Name" value={order.serviceName} icon="basket-outline" />
+            <StackedRow label="Delivery Type" value={order.deliveryType} icon="bicycle-outline" />
             
-            <View style={styles.row}>
-                <Text style={styles.label}>Add-Ons</Text>
-                <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                    {order.addons.length > 0 ? (
-                        order.addons.map((addon, index) => (
-                            <Text key={index} style={styles.valueSmall}>• {addon.name}</Text>
+            {/* 2. Stacked Fabrics (NEW) */}
+            <View style={styles.stackedItem}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                    <Ionicons name="shirt-outline" size={16} color="#666" style={{ marginRight: 6 }} />
+                    <Text style={styles.label}>Fabrics / Clothes</Text>
+                </View>
+                <View style={styles.addOnBox}>
+                    {order.fabrics && order.fabrics.length > 0 ? (
+                        order.fabrics.map((fabric, index) => (
+                            <View key={index} style={styles.addOnRow}>
+                                <Ionicons name="pricetag-outline" size={14} color="#004aad" style={{ marginRight: 8 }} />
+                                <Text style={styles.addOnText}>{fabric}</Text>
+                            </View>
                         ))
                     ) : (
-                        <Text style={styles.value}>None</Text>
+                        <Text style={styles.valueStacked}>Regular Clothes</Text>
+                    )}
+                </View>
+            </View>
+
+            {/* 3. Stacked Add-Ons */}
+            <View style={styles.stackedItem}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                    <Ionicons name="layers-outline" size={16} color="#666" style={{ marginRight: 6 }} />
+                    <Text style={styles.label}>Add-Ons</Text>
+                </View>
+                <View style={styles.addOnBox}>
+                    {order.addons.length > 0 ? (
+                        order.addons.map((addon, index) => (
+                            <View key={index} style={styles.addOnRow}>
+                                <Ionicons name="checkmark-circle" size={16} color="#27ae60" style={{ marginRight: 6 }} />
+                                <Text style={styles.addOnText}>{addon.name}</Text>
+                            </View>
+                        ))
+                    ) : (
+                        <Text style={styles.valueStacked}>None</Text>
                     )}
                 </View>
             </View>
             
-            <View style={[styles.row, { alignItems: 'flex-start' }]}>
-                <Text style={styles.label}>Special Instructions</Text>
-                <Text style={[styles.value, { maxWidth: '60%', textAlign: 'right' }]}>
-                    {order.instructions || "None"}
-                </Text>
+            {/* 4. Stacked Instructions */}
+            <View style={styles.stackedItem}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                    <Ionicons name="create-outline" size={16} color="#666" style={{ marginRight: 6 }} />
+                    <Text style={styles.label}>Special Instructions</Text>
+                </View>
+                <View style={[styles.addOnBox, { backgroundColor: '#fff3cd', borderColor: '#ffeeba' }]}>
+                    <Text style={[styles.valueStacked, { color: '#856404', fontStyle: 'italic' }]}>
+                        {order.instructions || "None"}
+                    </Text>
+                </View>
             </View>
         </View>
 
@@ -153,7 +185,7 @@ export default function InvoiceScreen() {
                     params: { 
                         orderId: order.orderId,
                         shopName: order.shopName,
-                        totalAmount: totalAmount.toFixed(2) // 🔑 Use Backend Total
+                        totalAmount: totalAmount.toFixed(2) 
                     }
                 });
             }}
@@ -167,10 +199,14 @@ export default function InvoiceScreen() {
 }
 
 // --- Helper Components ---
-const DetailRow = ({ label, value }: { label: string, value: string }) => (
-    <View style={styles.row}>
-        <Text style={styles.label}>{label}</Text>
-        <Text style={styles.value}>{value}</Text>
+
+const StackedRow = ({ label, value, icon }: { label: string, value: string, icon: any }) => (
+    <View style={styles.stackedItem}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+            <Ionicons name={icon} size={16} color="#666" style={{ marginRight: 6 }} />
+            <Text style={styles.label}>{label}</Text>
+        </View>
+        <Text style={styles.valueStacked}>{value}</Text>
     </View>
 );
 
@@ -224,13 +260,39 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  sectionTitle: { fontSize: 16, fontWeight: "700", color: "#004aad", marginBottom: 15, textTransform: "uppercase", letterSpacing: 0.5 },
+  sectionTitle: { fontSize: 16, fontWeight: "700", color: "#004aad", marginBottom: 20, textTransform: "uppercase", letterSpacing: 0.5 },
   
-  // Rows
-  row: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
-  label: { fontSize: 14, color: "#666" },
-  value: { fontSize: 14, color: "#222", fontWeight: "600" },
-  valueSmall: { fontSize: 13, color: "#444", marginBottom: 2, textAlign: 'right' },
+  // Stacked Layout Styles
+  stackedItem: {
+    marginBottom: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    paddingBottom: 12,
+  },
+  label: { fontSize: 13, color: "#666", fontWeight: '500' },
+  valueStacked: { fontSize: 16, color: "#222", fontWeight: "700", marginTop: 2, marginLeft: 22 },
+  
+  // Box Styles (For Addons, Fabrics, Instructions)
+  addOnBox: {
+    backgroundColor: '#f9f9f9',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 4,
+    marginLeft: 22,
+  },
+  addOnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  addOnText: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '500',
+  },
+
+  // Payment Rows (Classic Layout)
+  row: { flexDirection: "row", justifyContent: "space-between", alignItems: 'center', marginBottom: 12 },
   price: { fontSize: 14, color: "#222", fontWeight: "600" },
   
   // Totals

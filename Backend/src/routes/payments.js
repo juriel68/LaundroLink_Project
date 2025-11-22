@@ -1,6 +1,6 @@
 // src/routes/payments.js
 import express from "express";
-import db from "../db.js"; // Ensure this path correctly points to your db utility
+import db from "../db.js"; 
 
 const router = express.Router();
 
@@ -8,8 +8,8 @@ const router = express.Router();
  * @route GET /api/payments/admin
  * @description Admin endpoint to fetch and filter all PAID payments by shop and date range.
  * @queryParam {string} [shopId] - Optional ShopID to filter by.
- * @queryParam {string} [startDate] - Optional start date for the PaidAt filter (YYYY-MM-DD).
- * @queryParam {string} [endDate] - Optional end date for the PaidAt filter (YYYY-MM-DD).
+ * @queryParam {string} [startDate] - Optional start date (YYYY-MM-DD).
+ * @queryParam {string} [endDate] - Optional end date (YYYY-MM-DD).
  */
 router.get("/admin", async (req, res) => {
     const { shopId, startDate, endDate } = req.query;
@@ -24,15 +24,13 @@ router.get("/admin", async (req, res) => {
         queryParams.push(shopId);
     }
 
-    // 2. Build Date Range Filter (using PaidAt)
-    // The date filter is crucial for the "Date" requirement. We use PaidAt as it represents the payment completion date.
+    // 2. Build Date Range Filter 
+    // We use I.StatusUpdatedAt because that is when the payment status was changed to 'Paid'
     if (startDate && endDate) {
-        // Use DATE_ADD to make the endDate inclusive up to the last millisecond of the day
-        dateFilter = 'AND IRS.PaidAt BETWEEN ? AND DATE_ADD(?, INTERVAL 1 DAY)';
+        dateFilter = 'AND I.StatusUpdatedAt BETWEEN ? AND DATE_ADD(?, INTERVAL 1 DAY)';
         queryParams.push(startDate, endDate);
     } else if (startDate) {
-        // Filter for a single entire day if only startDate is provided
-        dateFilter = 'AND IRS.PaidAt >= ? AND IRS.PaidAt < DATE_ADD(?, INTERVAL 1 DAY)';
+        dateFilter = 'AND I.StatusUpdatedAt >= ? AND I.StatusUpdatedAt < DATE_ADD(?, INTERVAL 1 DAY)';
         queryParams.push(startDate, startDate);
     }
 
@@ -43,13 +41,11 @@ router.get("/admin", async (req, res) => {
                 LS.ShopName AS shopName,
                 I.PayAmount AS amount,
                 PM.MethodName AS paymentMethod,
-                IRS.PaidAt AS dateCompleted,
-                IRS.InvoiceStatus AS status,
+                I.StatusUpdatedAt AS dateCompleted, 
+                I.PaymentStatus AS status,
                 O.OrderID AS orderId
             FROM
                 Invoices I
-            JOIN
-                Invoice_Status IRS ON I.InvoiceID = IRS.InvoiceID
             JOIN
                 Orders O ON I.OrderID = O.OrderID
             JOIN
@@ -59,14 +55,13 @@ router.get("/admin", async (req, res) => {
             JOIN
                 Payment_Methods PM ON I.MethodID = PM.MethodID
             WHERE
-                IRS.InvoiceStatus = 'Paid' -- Base condition: Only show successfully processed payments
+                I.PaymentStatus = 'Paid' -- Only show successfully processed payments
                 ${shopFilter}
                 ${dateFilter}
             ORDER BY
-                IRS.PaidAt DESC;
+                I.StatusUpdatedAt DESC;
         `;
 
-        // Execute the query with the dynamically built parameters
         const [payments] = await db.query(query, queryParams);
         
         res.status(200).json(payments);
@@ -92,7 +87,6 @@ router.get("/shops", async (req, res) => {
                 ShopName ASC;
         `;
         const [shops] = await db.query(query);
-        // Returns [{ ShopID: 'SH01', ShopName: 'Wash n’ Dry - Lahug' }, ...]
         res.status(200).json(shops);
     } catch (error) {
         console.error("Error fetching shops for filter:", error);

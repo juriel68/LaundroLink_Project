@@ -1,11 +1,9 @@
 // Backend/src/routes/admin.js
 
 import express from "express";
-// Imports the default export (the pool) as 'db' and the named export (runSystemBackup).
 import db, { runSystemBackup, BACKUP_DIR } from "../db.js";
-// Imports the default export (systemLogger) from "../utils/logger.js".
-import logger from "../utils/logger.js"; 
-import { Parser } from 'json2csv'; 
+// 🔑 UPDATED: Import logUserActivity alongside the default system logger
+import logger, { logUserActivity } from "../utils/logger.js"; 
 import fs from 'fs'; 
 import path from 'path'; 
 
@@ -15,7 +13,6 @@ const router = express.Router();
 const getDateCondition = (period, alias = 'o') => {
     switch (period) {
         case 'Monthly':
-            // Uses OrderCreatedAt from the Orders table
             return `YEAR(${alias}.OrderCreatedAt) = YEAR(CURDATE()) AND MONTH(${alias}.OrderCreatedAt) = MONTH(CURDATE())`;
         case 'Yearly':
             return `YEAR(${alias}.OrderCreatedAt) = YEAR(CURDATE())`;
@@ -25,9 +22,7 @@ const getDateCondition = (period, alias = 'o') => {
     }
 };
 
-// Helper function to dynamically generate Shop Date condition using the new Laundry_Shops.DateCreated
 const getShopDateCondition = (period, alias = 'ls') => {
-    // We now reference the Laundry_Shops.DateCreated column directly
     switch (period) {
         case 'Monthly':
             return `YEAR(${alias}.DateCreated) = YEAR(CURDATE()) AND MONTH(${alias}.DateCreated) = MONTH(CURDATE())`;
@@ -40,13 +35,9 @@ const getShopDateCondition = (period, alias = 'ls') => {
 };
 
 // =======================================================
-// 1. System Settings Routes (config)
+// 1. System Settings Routes
 // =======================================================
 
-/**
- * GET /api/admin/config/maintenance-status
- * Fetches the current maintenance mode status from the database.
- */
 router.get('/config/maintenance-status', async (req, res) => {
     try {
         const [[config]] = await db.query("SELECT ConfigValue FROM SystemConfig WHERE ConfigKey = 'MAINTENANCE_MODE'");
@@ -58,13 +49,8 @@ router.get('/config/maintenance-status', async (req, res) => {
     }
 });
 
-/**
- * POST /api/admin/config/set-maintenance
- * Sets the maintenance mode status in the database.
- * Expects body: { enable: boolean }
- */
 router.post('/config/set-maintenance', async (req, res) => {
-    const { enable } = req.body;
+    const { enable, userId } = req.body; // Added userId for logging
     const value = enable ? 'true' : 'false';
 
     try {
@@ -72,6 +58,11 @@ router.post('/config/set-maintenance', async (req, res) => {
             INSERT INTO SystemConfig (ConfigKey, ConfigValue)
             VALUES ('MAINTENANCE_MODE', ?)
             ON DUPLICATE KEY UPDATE ConfigValue = ?`, [value, value]);
+
+        // 💡 LOG: Maintenance Mode Toggle
+        if (userId) {
+            await logUserActivity(userId, 'Admin', 'System Config', `Maintenance mode set to: ${enable}`);
+        }
 
         return res.status(200).json({ 
             message: 'Maintenance mode updated.', 
@@ -85,19 +76,31 @@ router.post('/config/set-maintenance', async (req, res) => {
 
 
 // =======================================================
-// 2. Backup Routes
+// 2. Backup Routes (LOGGING ADDED)
 // =======================================================
 
 router.post('/backup/run', async (req, res) => {
+    const { userId } = req.body; // 🔑 Expect userId from Frontend
+
     try {
         const backupFilePath = await runSystemBackup();
         const backupFileName = path.basename(backupFilePath);
         logger.info(`Database backup successful: ${backupFileName}`);
         
+        // 💡 LOG: Backup Generation
+        if (userId) {
+            await logUserActivity(
+                userId, 
+                'Admin', 
+                'Data Security', 
+                `Generated system backup: ${backupFileName}`
+            );
+        }
+
         return res.status(200).json({ 
             message: 'Database backup completed successfully.',
             filename: backupFileName,
-            downloadUrl: `/api/admin/backup/download?filename=${backupFileName}`
+            downloadUrl: `/api/admin/backup/download?filename=${backupFileName}&userId=${userId || ''}` // Pass userId to download link
         });
     } catch (error) {
         logger.error(`Error running database backup: ${error.message}`);
@@ -108,21 +111,32 @@ router.post('/backup/run', async (req, res) => {
     }
 });
 
-/**
- * GET /api/admin/backup/download?filename=[name]
- * Streams the generated backup file to the client for download.
- */
-router.get('/backup/download', (req, res) => {
-    const { filename } = req.query;
-    if (!filename) {
-        return res.status(400).json({ message: 'Missing filename parameter.' });
-    }
+router.get('/backup/download', async (req, res) => {
+    const { filename, userId } = req.query; // 🔑 Expect userId from Query Params
+
+    if (!filename) return res.status(400).json({ message: 'Missing filename parameter.' });
 
     const filePath = path.join(BACKUP_DIR, filename);
 
     if (!fs.existsSync(filePath) || !filePath.startsWith(BACKUP_DIR)) {
         logger.warn(`Attempted download of non-existent or invalid backup file: ${filename}`);
         return res.status(404).json({ message: 'Backup file not found.' });
+    }
+
+    // 💡 LOG: Backup Download
+    // We do this before the stream starts
+    if (userId) {
+        try {
+            await logUserActivity(
+                userId, 
+                'Admin', 
+                'Data Security', 
+                `Downloaded backup file: ${filename}`
+            );
+        } catch (logError) {
+            console.error("Failed to log download activity:", logError);
+            // Continue download even if logging fails
+        }
     }
 
     res.setHeader('Content-disposition', `attachment; filename=${filename}`);
@@ -136,15 +150,10 @@ router.get('/backup/download', (req, res) => {
 // 3. Admin Reporting Routes (Metrics - Used by reports.php)
 // =======================================================
 
-/**
- * POST /api/admin/report/platform-summary
- * Fetches platform-wide aggregated metrics (Revenue, Orders, New Shops, Growth Trend).
- */
 router.post("/report/platform-summary", async (req, res) => {
     const { period = 'Weekly' } = req.body; 
 
     let groupBy, dateFormat, dateCondition;
-    // Get the updated shop date condition
     const shopDateCondition = getShopDateCondition(period, 'ls');
     
     switch (period) {
@@ -170,48 +179,41 @@ router.post("/report/platform-summary", async (req, res) => {
 
         const query = `
             SELECT
-                -- Total Orders 
                 (SELECT COUNT(*) FROM Orders) AS totalOrders,
                 
-                -- Total Revenue (Paid Invoices only)
                 (SELECT SUM(i.PayAmount) 
                     FROM Orders o 
                     JOIN Invoices i ON o.OrderID = i.OrderID
                     WHERE ${dateCondition} 
-                    AND (SELECT invs.InvoiceStatus FROM Invoice_Status invs WHERE invs.InvoiceID = i.InvoiceID ORDER BY invs.StatUpdateAt DESC LIMIT 1) = 'Paid'
+                    AND i.PaymentStatus = 'Paid'
                 ) AS totalRevenue,
 
-                -- New Shops Onboarded (Count new shops using Laundry_Shops.DateCreated)
-                (
-                    SELECT COUNT(ls.ShopID)
+                (SELECT COUNT(ls.ShopID)
                     FROM Laundry_Shops ls 
                     WHERE ${shopDateCondition} 
                 ) AS newShops,
 
-                -- Aggregate revenue trend data
-                (
-                    SELECT CONCAT('[', 
-                        GROUP_CONCAT(
-                            JSON_OBJECT('label', label, 'value', revenue) 
-                            ORDER BY sortKey
-                        ), 
-                    ']')
-                    FROM (
-                        SELECT
-                            ${groupBy} AS sortKey,
-                            DATE_FORMAT(o.OrderCreatedAt, ${dateFormat}) AS label,
-                            SUM(i.PayAmount) AS revenue
-                        FROM Orders o
-                        JOIN Invoices i ON o.OrderID = i.OrderID
-                        WHERE ${dateCondition} 
-                        AND (SELECT invs.InvoiceStatus FROM Invoice_Status invs WHERE invs.InvoiceID = i.InvoiceID ORDER BY invs.StatUpdateAt DESC LIMIT 1) = 'Paid'
-                        GROUP BY sortKey, label
-                    ) AS ChartData
+                (SELECT CONCAT('[', 
+                    GROUP_CONCAT(
+                        JSON_OBJECT('label', label, 'value', revenue) 
+                        ORDER BY sortKey
+                    ), 
+                ']')
+                FROM (
+                    SELECT
+                        ${groupBy} AS sortKey,
+                        DATE_FORMAT(o.OrderCreatedAt, ${dateFormat}) AS label,
+                        SUM(i.PayAmount) AS revenue
+                    FROM Orders o
+                    JOIN Invoices i ON o.OrderID = i.OrderID
+                    WHERE ${dateCondition} 
+                    AND i.PaymentStatus = 'Paid'
+                    GROUP BY sortKey, label
+                ) AS ChartData
                 ) AS chartData;
         `;
         
         const [[results]] = await db.query(query);
-        
         const chartDataArray = results.chartData ? JSON.parse(results.chartData) : [];
 
         res.json({
@@ -227,10 +229,6 @@ router.post("/report/platform-summary", async (req, res) => {
     }
 });
 
-/**
- * POST /api/admin/report/top-shops
- * Fetches Top 10 Shops by Revenue for the period.
- */
 router.post("/report/top-shops", async (req, res) => {
     const { period } = req.body; 
     const dateCondition = getDateCondition(period, 'o');
@@ -244,7 +242,7 @@ router.post("/report/top-shops", async (req, res) => {
             JOIN Orders o ON i.OrderID = o.OrderID
             JOIN Laundry_Shops ls ON o.ShopID = ls.ShopID 
             WHERE ${dateCondition}
-                AND (SELECT invs.InvoiceStatus FROM Invoice_Status invs WHERE invs.InvoiceID = i.InvoiceID ORDER BY invs.StatUpdateAt DESC LIMIT 1) = 'Paid'
+                AND i.PaymentStatus = 'Paid'
             GROUP BY ls.ShopID, ls.ShopName
             ORDER BY revenue DESC
             LIMIT 10;
@@ -257,10 +255,6 @@ router.post("/report/top-shops", async (req, res) => {
     }
 });
 
-/**
- * POST /api/admin/report/order-status-breakdown
- * Fetches breakdown of all paid orders by their current status (latest entry in Order_Status).
- */
 router.post("/report/order-status-breakdown", async (req, res) => {
     const { period } = req.body; 
     const dateCondition = getDateCondition(period, 'o');
@@ -271,18 +265,16 @@ router.post("/report/order-status-breakdown", async (req, res) => {
                 t1.OrderStatus AS label, 
                 COUNT(o.OrderID) AS count
             FROM Orders o
-            -- Finds the latest status record for the order
             JOIN Order_Status t1 ON t1.OrderID = o.OrderID
             JOIN (
-                SELECT 
-                    OrderID, MAX(OrderUpdatedAt) as max_date
+                SELECT OrderID, MAX(OrderUpdatedAt) as max_date
                 FROM Order_Status
                 GROUP BY OrderID
             ) t2 ON t1.OrderID = t2.OrderID AND t1.OrderUpdatedAt = t2.max_date
             
-            JOIN Invoices i ON o.OrderID = i.OrderID -- Ensure only paid orders are counted
+            JOIN Invoices i ON o.OrderID = i.OrderID 
             WHERE ${dateCondition}
-            AND (SELECT invs.InvoiceStatus FROM Invoice_Status invs WHERE invs.InvoiceID = i.InvoiceID ORDER BY invs.StatUpdateAt DESC LIMIT 1) = 'Paid'
+            AND i.PaymentStatus = 'Paid'
             GROUP BY t1.OrderStatus
             ORDER BY count DESC;
         `;
@@ -299,13 +291,8 @@ router.post("/report/order-status-breakdown", async (req, res) => {
 // 4. Admin Analytics Routes (Insights - Used by analytics.php)
 // =======================================================
 
-/**
- * GET /api/admin/analytics/growth-trend
- * Fetches platform growth metrics (Revenue, New Shops) from the aggregated table.
- */
 router.get("/analytics/growth-trend", async (req, res) => {
     try {
-        // Fetches all historical data from the Python-populated table
         const query = `
             SELECT 
                 MonthYear AS label, 
@@ -322,14 +309,8 @@ router.get("/analytics/growth-trend", async (req, res) => {
     }
 });
 
-/**
- * GET /api/admin/analytics/service-gaps
- * Fetches the Service Gap Analysis data (Demand vs. Supply).
- * Identifies high-demand services not widely offered.
- */
 router.get("/analytics/service-gaps", async (req, res) => {
     try {
-        // Fetches the top services with the highest GapScore (highest demand vs. lowest supply)
         const query = `
             SELECT 
                 SvcName, 

@@ -107,9 +107,8 @@ router.get("/admin-dashboard-stats", async (req, res) => {
             FROM Admin_Growth_Metrics
             WHERE MetricID = 1; 
         `;
-        // Since we are fetching specific columns, kpiResults will be an array with one object
         const [kpiResults] = await db.query(kpiQuery); 
-        const kpiData = kpiResults[0] || {}; // Get the first (and only) row
+        const kpiData = kpiResults[0] || {}; 
 
         // 2. Fetch Monthly Growth Data for the Chart (System Growth)
         const growthQuery = `
@@ -123,14 +122,11 @@ router.get("/admin-dashboard-stats", async (req, res) => {
         
         // Combine and Send Response
         res.json({
-            // Ensure keys match what the frontend expects
             totalOwners: kpiData.totalOwners || 0,
-            // Use totalSystemUsers from the DB, but map it to 'totalUsers' for the frontend
             totalUsers: kpiData.totalSystemUsers || 0, 
             activeShops: kpiData.activeShops || 0,
-            // Use totalPaymentsProcessed from the DB, but map it to 'totalPayments' for the frontend
             totalPayments: kpiData.totalPaymentsProcessed || 0, 
-            chartData: chartData
+            chartData: chartData || [] // Ensure it's an array
         });
 
     } catch (error) {

@@ -24,6 +24,7 @@ export default function OrderDetailScreen() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  
   const [currentUser, setCurrentUser] = useState<{ UserID: string, UserRole: string } | null>(null);
 
   const [deliveryStep, setDeliveryStep] = useState(0);
@@ -48,8 +49,7 @@ export default function OrderDetailScreen() {
           
           if (foundOrder) {
              if (foundOrder.status === "To Pick-up") setDeliveryStep(2);
-             // If status is Delivered In Shop or Processing, we don't need to set step 
-             // because we will hide the UI entirely below.
+             if (foundOrder.status === "Delivered In Shop") setDeliveryStep(3);
           }
         }
       } catch (e) {
@@ -168,8 +168,7 @@ export default function OrderDetailScreen() {
 
   const isPickupOrder = order.deliveryType === "Pick-up Only" || order.deliveryType === "Pick-up & Delivery";
   
-  // 🔑 NEW LOGIC: Only show delivery buttons if status is Pending or To Pick-up
-  // If it is 'Delivered In Shop', 'Processing', 'Completed', etc., hide it.
+  // Logic to show delivery controls
   const showDeliveryControls = isPickupOrder && (order.status === "Pending" || order.status === "To Pick-up");
 
   return (
@@ -203,12 +202,14 @@ export default function OrderDetailScreen() {
         <View style={styles.section}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: 'space-between' }}>
             <Text style={styles.sectionTitle}>Laundry Weight</Text>
-            {order.status === "Pending" && ( 
+            {/* 🔑 UPDATED: Edit Weight Button with Text */}
+            {(order.status === "Delivered In Shop") && ( 
               <TouchableOpacity
                 onPress={() => router.push({ pathname: "/home/editWeight", params: { orderId: order.orderId, prevWeight: order.weight?.toString() },})}
-                style={styles.editIconContainer}
+                style={styles.editButton}
               >
-                <Ionicons name="pencil" size={20} color="#004aad" />
+                <Ionicons name="pencil" size={16} color="#004aad" style={{marginRight: 6}} />
+                <Text style={styles.editButtonText}>Edit Weight</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -254,7 +255,6 @@ export default function OrderDetailScreen() {
           <Text style={styles.normalText}>Type: {order.deliveryType}</Text>
           <Text style={styles.normalText}>Address: {order.customerAddress}</Text>
           
-          {/* 🔑 FIX: Use the robust boolean logic we defined */}
           {showDeliveryControls && (
             <View style={styles.deliveryFlowContainer}>
                 {/* STEP 0: Initial */}
@@ -293,6 +293,7 @@ export default function OrderDetailScreen() {
         </View>
       </ScrollView>
 
+      {/* Modal for Fee & Screenshot */}
       <Modal animationType="slide" transparent={true} visible={isModalVisible} onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
             <View style={styles.modalContainer}>
@@ -341,7 +342,22 @@ const styles = StyleSheet.create({
   totalText: { fontSize: 17, fontWeight: "700", color: "#0077b6", },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5, },
   summaryValue: { fontWeight: 'bold', color: '#333' },
-  editIconContainer: { backgroundColor: "#eaf5ff", padding: 6, borderRadius: 8, },
+  
+  // 🔑 UPDATED: Edit Button Style
+  editButton: { 
+      backgroundColor: "#eaf5ff", 
+      paddingVertical: 6, 
+      paddingHorizontal: 12, 
+      borderRadius: 20, 
+      flexDirection: 'row', 
+      alignItems: 'center' 
+  },
+  editButtonText: { 
+      color: "#004aad", 
+      fontWeight: "bold", 
+      fontSize: 12 
+  },
+
   deliveryFlowContainer: { marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#eee', alignItems: 'center' },
   deliveryMessage: { fontSize: 16, fontWeight: '600', color: '#d35400', marginBottom: 10, textAlign: 'center' },
   actionButton: { backgroundColor: '#004aad', paddingVertical: 10, paddingHorizontal: 25, borderRadius: 25, elevation: 2 },

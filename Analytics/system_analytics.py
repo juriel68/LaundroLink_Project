@@ -34,12 +34,7 @@ def create_admin_analytics_tables(cursor):
     """
     print("🔍 Checking and creating Admin analytics tables if needed...")
     
-    # --- TEMPORARY FIX: Drop the table to ensure clean recreation with the new schema ---
-    # Running this once will fix the mismatch. You can remove it after this successful run.
-    cursor.execute("DROP TABLE IF EXISTS Admin_Growth_Metrics;") 
-
-    # Table for storing single-value KPIs (Total Owners, Total Users, etc.)
-    # This structure is necessary to support the INSERT...ON DUPLICATE KEY UPDATE logic
+    # Table for storing single-value KPIs
     create_growth_table = """
     CREATE TABLE IF NOT EXISTS Admin_Growth_Metrics (
         MetricID INT NOT NULL PRIMARY KEY,   
@@ -62,13 +57,10 @@ def create_admin_analytics_tables(cursor):
     """
     
     try:
-        # 1. Recreate KPI table with correct columns
-        cursor.execute(create_growth_table) 
-        # 2. Ensure chart data table exists
+        cursor.execute(create_growth_table)
         cursor.execute(create_monthly_growth_table)
         
-        # 3. Insert the required single row (MetricID=1) if it doesn't exist
-        # This row is required for the INSERT INTO ... ON DUPLICATE KEY UPDATE logic later.
+        # Insert the required single row (MetricID=1) if it doesn't exist
         cursor.execute("""
             INSERT IGNORE INTO Admin_Growth_Metrics (MetricID) VALUES (1);
         """)
@@ -90,10 +82,6 @@ print("📈 Calculating monthly user growth...")
 # Calculate new users and owners per month for the last 12 months
 one_year_ago = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
 
-# Using the dictionary cursor temporarily for pandas compatibility
-cursor_dict = conn.cursor(dictionary=True)
-
-# **FIXED COLUMN NAME: Using 'DateCreated' as requested**
 growth_query = f"""
 SELECT 
     DATE_FORMAT(DateCreated, '%Y-%m') as MonthYear,
@@ -112,38 +100,40 @@ except pd.io.sql.DatabaseError as e:
     conn.close()
     exit()
 
-# Pivot data to get separate columns for NewUsers and NewOwners
-growth_pivot = df.pivot_table(
-    index='MonthYear', 
-    columns='UserRole', 
-    values='Count', 
-    fill_value=0
-).reset_index()
+if not df.empty:
+    # Pivot data to get separate columns for NewUsers and NewOwners
+    growth_pivot = df.pivot_table(
+        index='MonthYear', 
+        columns='UserRole', 
+        values='Count', 
+        fill_value=0
+    ).reset_index()
 
-# Rename columns for clarity in the database
-growth_pivot.columns.name = None
-growth_pivot = growth_pivot.rename(columns={
-    'Customer': 'NewUsers', 
-    'Shop Owner': 'NewOwners'
-})
+    # Rename columns safely (Check if columns exist first)
+    # Pandas pivot might not create columns if no data exists for that role
+    cols = growth_pivot.columns.tolist()
+    rename_map = {}
+    if 'Customer' in cols: rename_map['Customer'] = 'NewUsers'
+    if 'Shop Owner' in cols: rename_map['Shop Owner'] = 'NewOwners'
+    
+    growth_pivot = growth_pivot.rename(columns=rename_map)
 
-# Ensure the required columns exist, handling cases where a user type had zero sign-ups
-if 'NewUsers' not in growth_pivot.columns:
-    growth_pivot['NewUsers'] = 0
-if 'NewOwners' not in growth_pivot.columns:
-    growth_pivot['NewOwners'] = 0
+    # Ensure columns exist
+    if 'NewUsers' not in growth_pivot.columns: growth_pivot['NewUsers'] = 0
+    if 'NewOwners' not in growth_pivot.columns: growth_pivot['NewOwners'] = 0
 
-# Store in MySQL: First, clear the old data
-cursor.execute("TRUNCATE TABLE Admin_Monthly_Growth;")
-for _, row in growth_pivot.iterrows():
-    cursor.execute("""
-        INSERT INTO Admin_Monthly_Growth (MonthYear, NewUsers, NewOwners)
-        VALUES (%s, %s, %s)
-    """, (row['MonthYear'], int(row['NewUsers']), int(row['NewOwners'])))
+    # Store in MySQL
+    cursor.execute("TRUNCATE TABLE Admin_Monthly_Growth;")
+    for _, row in growth_pivot.iterrows():
+        cursor.execute("""
+            INSERT INTO Admin_Monthly_Growth (MonthYear, NewUsers, NewOwners)
+            VALUES (%s, %s, %s)
+        """, (row['MonthYear'], int(row['NewUsers']), int(row['NewOwners'])))
 
-conn.commit()
-print("✅ Monthly Growth metrics updated successfully.")
-cursor_dict.close() # Close dictionary cursor
+    conn.commit()
+    print("✅ Monthly Growth metrics updated successfully.")
+else:
+    print("⚠️ No user growth data found for the last year.")
 
 
 # ===================================================================
@@ -151,8 +141,7 @@ cursor_dict.close() # Close dictionary cursor
 # ===================================================================
 print("📊 Calculating Admin KPIs...")
 
-# Complex query to get all KPIs in one go
-# **FIXED TABLE NAME: Using Invoices and Invoice_Status for totalPaymentsProcessed**
+# 🔑 FIXED: Removed Invoice_Status dependency. Using Invoices.PaymentStatus.
 kpi_query = """
 INSERT INTO Admin_Growth_Metrics (MetricID, totalOwners, activeShops, totalPaymentsProcessed, totalSystemUsers)
 VALUES (
@@ -166,10 +155,9 @@ VALUES (
         AND os.OrderUpdatedAt >= DATE_SUB(NOW(), INTERVAL 30 DAY)
     ),
     (
-        SELECT COUNT(t1.InvoiceID)
-        FROM Invoices AS t1
-        JOIN Invoice_Status AS t2 ON t1.InvoiceID = t2.InvoiceID
-        WHERE t2.InvoiceStatus = 'Paid' 
+        SELECT COUNT(InvoiceID)
+        FROM Invoices
+        WHERE PaymentStatus = 'Paid' 
     ),
     (SELECT COUNT(UserID) FROM Users)
 )
@@ -195,4 +183,4 @@ except mysql.connector.Error as err:
 # ========================
 cursor.close()
 conn.close()
-print("\n🎯 System analytics processing complete! Admin metrics are live in MySQL. Run this script manually before checking the dashboard.")
+print("\n🎯 System analytics processing complete! Admin metrics are live in MySQL.")

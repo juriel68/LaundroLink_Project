@@ -1,6 +1,6 @@
 // frontend/message/message_pay.tsx
 
-import { Entypo, Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useNavigation, useRouter, useFocusEffect } from "expo-router"; 
 import React, { useLayoutEffect, useRef, useState, useCallback, useEffect } from "react"; 
@@ -25,7 +25,7 @@ import {
     sendMessage,
     ChatMessage,
 } from "@/lib/messages"; 
-import { fetchOrderDetails, CustomerOrderDetails, AddOnDetail, cancelCustomerOrder } from "@/lib/orders"; 
+import { fetchOrderDetails, CustomerOrderDetails, cancelCustomerOrder } from "@/lib/orders"; 
 import { UserDetails } from "@/lib/auth"; 
 
 // --- TYPES ---
@@ -34,7 +34,7 @@ interface InvoiceData {
     orderId: string;
     shopId: string;
     newWeight: string; 
-    deliveryFee: string; // 🔑 Mandatory as per your request
+    deliveryFee: string; 
     finalTotal: string;   
 }
 
@@ -65,9 +65,13 @@ export default function MessagePay() {
     const [isLoading, setIsLoading] = useState(true); 
     const [currentUserId, setCurrentUserId] = useState<string | null>(null); 
     
-    const [activeInvoiceDetails, setActiveInvoiceDetails] = useState<CustomerOrderDetails | null>(null);
+    // Map to store details for ALL orders in the chat
+    const [orderDetailsMap, setOrderDetailsMap] = useState<Record<string, CustomerOrderDetails>>({});
+    
+    const [activeInvoiceOrderId, setActiveInvoiceOrderId] = useState<string | null>(null);
     const [isFetchingOrder, setIsFetchingOrder] = useState(false);
 
+    // 1. Hook: Load History
     // 1. Hook: Load History
     const loadHistory = useCallback(async (userId: string, silent: boolean = false) => {
         if (!conversationId) return;
@@ -75,11 +79,52 @@ export default function MessagePay() {
 
         try {
             const history = await fetchConversationHistory(conversationId as string);
-            let lastInvoiceOrderId: string | undefined;
+            const orderIdsToFetch = new Set<string>();
+            let latestInvoiceId: string | null = null;
 
+            // 1. Extract ALL Order IDs
+            for (let i = history.length - 1; i >= 0; i--) {
+                const text = history[i].text || "";
+                if (text.includes('"type":"INVOICE"') || text.includes('"type":"INVOICE_FINALIZED"')) {
+                     const jsonStartIndex = text.indexOf('{');
+                     const jsonString = text.substring(jsonStartIndex);
+                     try {
+                        const parsed = JSON.parse(jsonString);
+                        if (parsed.type === "INVOICE" || parsed.type === "INVOICE_FINALIZED") {
+                            orderIdsToFetch.add(parsed.orderId);
+                            if (!latestInvoiceId) latestInvoiceId = parsed.orderId; 
+                        }
+                     } catch (e) {}
+                }
+            }
+
+            setActiveInvoiceOrderId(latestInvoiceId);
+
+            // 🔑 FIXED: Declare the map HERE so it is visible to the rest of the function
+            let fetchedData: Record<string, CustomerOrderDetails> = {};
+
+            // 2. Fetch Real-Time Data
+            if (orderIdsToFetch.size > 0) {
+                if (!silent) setIsFetchingOrder(true);
+                
+                const promises = Array.from(orderIdsToFetch).map(id => fetchOrderDetails(id));
+                const results = await Promise.all(promises);
+                
+                results.forEach(det => {
+                    if (det) fetchedData[det.orderId] = det;
+                });
+                
+                // Update the main state map
+                setOrderDetailsMap(prev => ({ ...prev, ...fetchedData }));
+                
+                if (!silent) setIsFetchingOrder(false);
+            }
+
+            // 3. Map Messages to UI
             const mappedHistory: MessageUI[] = history.map(msg => {
                 let invoiceData: InvoiceData | null = null;
                 let text = msg.text || undefined;
+                let isFinalized = false;
                 
                 if (text && (text.includes('"type":"INVOICE"') || text.includes('"type":"INVOICE_FINALIZED"'))) { 
                     const jsonStartIndex = text.indexOf('{');
@@ -89,7 +134,19 @@ export default function MessagePay() {
                         if (parsed.type === "INVOICE" || parsed.type === "INVOICE_FINALIZED") {
                             invoiceData = parsed as InvoiceData;
                             text = text.substring(0, jsonStartIndex).trim(); 
-                            lastInvoiceOrderId = parsed.orderId;
+                            
+                            // 🔑 FIXED: Now we can access 'fetchedData' safely
+                            // We check the just-fetched data OR the existing state map
+                            const details = fetchedData[parsed.orderId] || orderDetailsMap[parsed.orderId];
+                            
+                            if (details) {
+                                if (details.orderStatus === 'Cancelled' || 
+                                    details.orderStatus === 'Rejected' || 
+                                    details.orderStatus === 'Processing' || 
+                                    details.orderStatus === 'Completed') {
+                                    isFinalized = true; 
+                                } 
+                            }
                         }
                     } catch (e) {
                         console.warn("Message JSON parse error:", text);
@@ -104,47 +161,22 @@ export default function MessagePay() {
                     time: formatTime(msg.time),
                     sender: msg.senderId === userId ? 'user' : 'shop',
                     invoiceData: invoiceData,
+                    isFinalized: isFinalized
                 } as MessageUI;
             });
             
-            // Fetch persistent status
-            let currentOrderDetails: CustomerOrderDetails | null = null;
-            if (lastInvoiceOrderId) {
-                currentOrderDetails = await fetchOrderDetails(lastInvoiceOrderId); 
-                setActiveInvoiceDetails(currentOrderDetails);
-            }
-            
-            // Apply Finalization Logic
-            const finalMappedHistory = mappedHistory.map(msg => {
-                let updatedMsg: MessageUI = { ...msg };
-
-                if (currentOrderDetails) {
-                    if (msg.invoiceData && msg.invoiceData.orderId === currentOrderDetails.orderId) {
-                        if (currentOrderDetails.status === 'Cancelled' || 
-                            currentOrderDetails.status === 'Rejected' || 
-                            currentOrderDetails.status === 'Processing' || 
-                            currentOrderDetails.status === 'Completed') {
-                            updatedMsg.isFinalized = true; 
-                        } 
-                    }
-                    if (msg.text && (msg.text.includes('cancelled') || msg.text.includes('rejected'))) {
-                         updatedMsg.sender = msg.senderId === userId ? 'user' : 'shop';
-                    }
-                }
-                return updatedMsg;
-            });
-            
-            setMessages(finalMappedHistory);
+            setMessages(mappedHistory);
 
         } catch (error) {
             console.error("Failed to load message history:", error);
         } finally {
             if (!silent) {
                 setIsLoading(false);
+                setIsFetchingOrder(false);
                 setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
             }
         }
-    }, [conversationId]);
+    }, [conversationId]); // Removed orderDetailsMap to prevent loop
 
     // 2. Hook: Auto-Polling
     useFocusEffect(
@@ -164,7 +196,8 @@ export default function MessagePay() {
             try {
                 const storedUser = await AsyncStorage.getItem("user");
                 if (storedUser) {
-                    setCurrentUserId(JSON.parse(storedUser).UserID);
+                    const user: UserDetails = JSON.parse(storedUser);
+                    setCurrentUserId(user.UserID);
                 } else {
                     setIsLoading(false);
                 }
@@ -199,7 +232,7 @@ export default function MessagePay() {
         flatListRef.current?.scrollToEnd({ animated: true });
 
         const sentMessage = await sendMessage(currentUserId, partnerId as string, textToSend, imageUri);
-        if (sentMessage) loadHistory(currentUserId, true);
+        if (sentMessage) loadHistory(currentUserId, true); 
         else setMessages((prev) => prev.map(msg => msg.id === tempMsg.id ? { ...msg, status: 'Failed' } : msg));
     }, [inputMessage, currentUserId, partnerId, conversationId, loadHistory]); 
 
@@ -242,108 +275,180 @@ export default function MessagePay() {
         ]);
     };
 
-    // --- 🎨 RENDER ITEM (Clean & Aligned) ---
+    // --- 🎨 RENDER ITEM ---
     const renderMessage = ({ item }: { item: MessageUI }) => {
         const showInteractiveCard = item.invoiceData; 
         
         if (showInteractiveCard) {
-            const isCurrentInvoice = item.invoiceData!.orderId === activeInvoiceDetails?.orderId;
-            const details = isCurrentInvoice ? activeInvoiceDetails : null;
+            const isCurrentInvoice = item.invoiceData!.orderId === activeInvoiceOrderId;
+            // Lookup details from map
+            const details = orderDetailsMap[item.invoiceData!.orderId];
+            
+            // CASE 1: OLD INVOICE (Previous Order - Instant View)
+            if (!isCurrentInvoice) {
+                // If details missing (rare), show loader
+                if (!details) return <ActivityIndicator size="small" color="#ccc" style={{margin:10}}/>;
 
-            // 🔑 LOGIC: Fetch Service Price from DB details
-            const displayServicePrice = details?.servicePrice 
+                return (
+                    <View style={[styles.invoiceCard, { alignSelf: 'flex-start', backgroundColor: '#f9f9f9', borderColor: '#e0e0e0' }]}>
+                        
+                        {/* HEADER: Shop Name (Gray Theme) */}
+                        <View style={[styles.cardHeader, { backgroundColor: '#ededed', borderBottomColor: '#e0e0e0' }]}>
+                            <View style={{flexDirection:'row', alignItems:'center'}}>
+                                <Ionicons name="time-outline" size={18} color="#7f8c8d" style={{marginRight:6}}/>
+                                <Text style={[styles.headerTitleText, { color: '#7f8c8d' }]}>
+                                    {details.shopName || partnerName}
+                                </Text>
+                            </View>
+                        </View>
+
+                        <View style={styles.cardBody}>
+                             {/* Order ID */}
+                             <View style={styles.row}>
+                                <Text style={styles.oldInvoiceLabel}>Order ID</Text>
+                                <Text style={styles.oldInvoiceValue}>#{item.invoiceData!.orderId}</Text>
+                             </View>
+                             
+                             {/* Amount */}
+                             <View style={styles.row}>
+                                <Text style={styles.oldInvoiceLabel}>Amount To Pay</Text>
+                                <Text style={styles.oldInvoiceValue}>₱{item.invoiceData!.finalTotal}</Text>
+                             </View>
+
+                             {/* Invoice Status (Dynamic) */}
+                             <View style={styles.row}>
+                                <Text style={styles.oldInvoiceLabel}>Invoice Status</Text>
+                                <Text style={[styles.oldInvoiceValue, { color: '#7f8c8d' }]}>
+                                    {details.invoiceStatus ? details.invoiceStatus : 'N/A'}
+                                </Text>
+                             </View>
+
+                             {/* Order Status (Dynamic) */}
+                             <View style={[styles.row, { marginBottom: 0 }]}>
+                                <Text style={styles.oldInvoiceLabel}>Order Status</Text>
+                                <Text style={[styles.oldInvoiceValue, { color: '#7f8c8d' }]}>
+                                    {details.orderStatus ? details.orderStatus : 'N/A'}
+                                </Text>
+                             </View>
+                        </View>
+                    </View>
+                );
+            }
+
+            // CASE 2: CURRENT INVOICE IS PAID / FINALIZED
+            if (item.isFinalized) {
+                return (
+                    <View style={[styles.successCard, { alignSelf: 'flex-start' }]}>
+                        <Ionicons name="checkmark-circle" size={24} color="#fff" />
+                        <View style={{ marginLeft: 10 }}>
+                            <Text style={styles.successText}>Order Successfully Paid</Text>
+                            <Text style={styles.successSubText}>#{item.invoiceData!.orderId} Confirmed</Text>
+                        </View>
+                    </View>
+                );
+            }
+
+            // CASE 3: CURRENT ACTIVE INVOICE (Full Detail Card)
+            // Fallback for initial render before fetch completes
+            if (!details && isFetchingOrder) {
+                 return (
+                    <View style={[styles.invoiceCard, { alignSelf: 'flex-start', padding: 20 }]}>
+                        <ActivityIndicator size="small" color="#004aad" />
+                        <Text style={styles.loadingText}>Loading Invoice...</Text>
+                    </View>
+                 );
+            }
+            
+            // If fetch failed or details missing
+            if (!details) return null; 
+
+            const displayServicePrice = details.servicePrice 
                 ? parseFloat(details.servicePrice.toString()) 
                 : 0.00;
 
-            // 🔑 LOGIC: Fetch Delivery Fee from DB details (as requested)
-            const displayDlvryFee = details?.deliveryFee 
+            const displayDlvryFee = details.deliveryFee 
                 ? parseFloat(details.deliveryFee.toString()).toFixed(2) 
                 : '0.00';
 
             return (
                 <View style={[styles.invoiceCard, { alignSelf: 'flex-start' }]}> 
                     
-                    {/* Header Section */}
+                    {/* HEADER: Shop Name (Active Theme) */}
                     <View style={styles.cardHeader}>
                         <View style={{flexDirection:'row', alignItems:'center'}}>
                             <Ionicons name="receipt-outline" size={18} color="#004aad" style={{marginRight:6}}/>
-                            <Text style={styles.headerTitleText}>Final Invoice</Text>
+                            <Text style={styles.headerTitleText}>{details.shopName}</Text>
                         </View>
-                        <Text style={styles.orderIdText}>#{item.invoiceData!.orderId}</Text>
                     </View>
 
                     <View style={styles.cardBody}>
-                        {isFetchingOrder || !details ? (
-                            <View style={styles.loaderContainer}>
-                                <ActivityIndicator size="small" color="#004aad" />
-                                <Text style={styles.loadingText}>Fetching details...</Text>
+                        {/* Invoice Status & Order Status Row */}
+                        <View style={styles.statusRow}>
+                            <View>
+                                <Text style={{fontSize:12, fontWeight: '600', color: '#636262ff'}}>Invoice #{details.invoiceId}</Text>
+                                <Text style={{fontSize:12, fontWeight: '600', color: '#636262ff'}}>Order #{details.orderId}</Text>
                             </View>
-                        ) : (
-                            <>
-                                {/* Service Row */}
-                                <View style={styles.row}>
-                                    <View style={{flex:1}}>
-                                        <Text style={styles.labelMain}>Service</Text>
-                                        <Text style={styles.subLabel}>{details.serviceName}</Text>
+                            
+                            <View style={{alignItems:'flex-end'}}>
+                                <Text style={{fontSize:12, color:'#888'}}>Status</Text>
+                                <Text style={{fontSize:12, fontWeight:'700', color:'#004aad'}}>
+                                    {details.orderStatus} 
+                                </Text>
+                            </View>
+                        </View>
+
+                        {/* Service */}
+                        <View style={styles.row}>
+                            <View style={{flex:1}}>
+                                <Text style={styles.labelMain}>Service</Text>
+                                <Text style={styles.subLabel}>{details.serviceName}</Text>
+                            </View>
+                            <Text style={styles.price}>₱{displayServicePrice.toFixed(2)}</Text>
+                        </View>
+
+                        {/* Weight */}
+                        <View style={styles.row}>
+                            <Text style={styles.label}>Final Weight</Text>
+                            <Text style={styles.value}>{item.invoiceData!.newWeight} kg</Text>
+                        </View>
+
+                        {/* Add-ons */}
+                        {details.addons.length > 0 && (
+                            <View style={styles.addonsContainer}>
+                                <Text style={styles.sectionHeader}>Add-ons</Text>
+                                {details.addons.map((addon, index) => (
+                                    <View key={index} style={styles.rowSmall}>
+                                        <Text style={styles.labelSmall}>• {addon.name}</Text>
+                                        <Text style={styles.priceSmall}>+₱{parseFloat(addon.price.toString()).toFixed(2)}</Text>
                                     </View>
-                                    <Text style={styles.price}>₱{displayServicePrice.toFixed(2)}</Text>
-                                </View>
-
-                                {/* Weight Row */}
-                                <View style={styles.row}>
-                                    <Text style={styles.label}>Final Weight</Text>
-                                    <Text style={styles.value}>{item.invoiceData!.newWeight} kg</Text>
-                                </View>
-
-                                {/* Add-ons Section */}
-                                {details.addons.length > 0 && (
-                                    <View style={styles.addonsContainer}>
-                                        <Text style={styles.sectionHeader}>Add-ons</Text>
-                                        {details.addons.map((addon, index) => (
-                                            <View key={index} style={styles.rowSmall}>
-                                                <Text style={styles.labelSmall}>• {addon.name}</Text>
-                                                <Text style={styles.priceSmall}>+₱{parseFloat(addon.price.toString()).toFixed(2)}</Text>
-                                            </View>
-                                        ))}
-                                    </View>
-                                )}
-
-                                {/* 🔑 Delivery Fee Row (Cleanly Aligned) */}
-                                <View style={styles.row}>
-                                    <Text style={styles.label}>Delivery Fee</Text>
-                                    <Text style={styles.price}>₱{displayDlvryFee}</Text>
-                                </View>
-
-                                {/* Divider Line */}
-                                <View style={styles.divider} />
-
-                                {/* Total Row */}
-                                <View style={styles.totalRow}>
-                                    <Text style={styles.totalLabel}>TOTAL AMOUNT</Text>
-                                    <Text style={styles.totalAmount}>₱{item.invoiceData!.finalTotal}</Text> 
-                                </View>
-
-                                {/* Buttons */}
-                                {!item.isFinalized && (
-                                    <View style={styles.buttonRow}>
-                                        <TouchableOpacity style={styles.payBtn} onPress={() => handleConfirm(item.invoiceData!)}>
-                                            <Text style={styles.payBtnText}>Pay Now</Text>
-                                            <Ionicons name="arrow-forward" size={16} color="#fff" style={{marginLeft:4}}/>
-                                        </TouchableOpacity>
-                                        <TouchableOpacity style={styles.cancelBtn} onPress={() => handleCancel(item.invoiceData!)}>
-                                            <Text style={styles.cancelBtnText}>Cancel</Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                )}
-                                
-                                {item.isFinalized && (
-                                    <View style={styles.finalizedContainer}>
-                                        <Ionicons name="checkmark-circle" size={20} color="#27ae60" />
-                                        <Text style={styles.finalizedText}>Order Paid / Finalized</Text>
-                                    </View>
-                                )}
-                            </>
+                                ))}
+                            </View>
                         )}
+
+                        {/* Delivery Fee */}
+                        <View style={styles.row}>
+                            <Text style={styles.label}>Delivery Fee</Text>
+                            <Text style={styles.price}>₱{displayDlvryFee}</Text>
+                        </View>
+
+                        <View style={styles.divider} />
+
+                        {/* Total */}
+                        <View style={styles.totalRow}>
+                            <Text style={styles.totalLabel}>TOTAL AMOUNT</Text>
+                            <Text style={styles.totalAmount}>₱{item.invoiceData!.finalTotal}</Text> 
+                        </View>
+
+                        {/* Buttons */}
+                        <View style={styles.buttonRow}>
+                            <TouchableOpacity style={styles.payBtn} onPress={() => handleConfirm(item.invoiceData!)}>
+                                <Text style={styles.payBtnText}>Pay Now</Text>
+                                <Ionicons name="arrow-forward" size={16} color="#fff" style={{marginLeft:4}}/>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.cancelBtn} onPress={() => handleCancel(item.invoiceData!)}>
+                                <Text style={styles.cancelBtnText}>Cancel</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                     <View style={styles.footer}>
                         <Text style={styles.messageTime}>{item.time}</Text>
@@ -390,7 +495,7 @@ export default function MessagePay() {
     );
 }
 
-// --- UPDATED CLEAN STYLES ---
+// --- STYLES ---
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: "#f2f4f7" },
     loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
@@ -407,7 +512,7 @@ const styles = StyleSheet.create({
     statusAndTime: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 4 }, 
     messageTime: { fontSize: 10, color: "#999", textAlign: "right" },
 
-    // --- 🧾 INVOICE CARD STYLES ---
+    // --- INVOICE CARD STYLES ---
     invoiceCard: {
         backgroundColor: "#fff",
         borderRadius: 16,
@@ -436,6 +541,7 @@ const styles = StyleSheet.create({
     orderIdText: { fontSize: 14, fontWeight: "600", color: "#555" },
     
     cardBody: { padding: 16 },
+    statusRow: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', borderBottomWidth:1, borderBottomColor:'#f0f0f0', paddingBottom:8, marginBottom:12 },
 
     // Rows
     row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
@@ -466,9 +572,34 @@ const styles = StyleSheet.create({
     cancelBtn: { backgroundColor: "#fff", paddingVertical: 12, borderRadius: 10, flex: 1, alignItems: 'center', borderWidth: 1, borderColor: '#ddd' },
     cancelBtnText: { color: "#e74c3c", fontWeight: "700", fontSize: 14 },
 
-    // Finalized State
-    finalizedContainer: { marginTop: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 10, backgroundColor: '#eafaf1', borderRadius: 8 },
-    finalizedText: { marginLeft: 6, color: '#27ae60', fontWeight: '600', fontSize: 14 },
+    // --- SUCCESS / PAID CARD STYLES ---
+    successCard: {
+        backgroundColor: "#27ae60", // Green
+        padding: 15,
+        borderRadius: 12,
+        marginVertical: 10,
+        width: "80%",
+        flexDirection: "row",
+        alignItems: "center",
+        shadowColor: "#000",
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+    },
+    successText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+    successSubText: { color: "#e8f8f5", fontSize: 12, marginTop: 2 },
+
+    // --- OLD INVOICE STYLES ---
+    oldInvoiceLabel: {
+        fontSize: 13,
+        color: '#7f8c8d',
+        fontWeight: '500',
+    },
+    oldInvoiceValue: {
+        fontSize: 13,
+        color: '#2c3e50',
+        fontWeight: '700',
+    },
 
     footer: { paddingHorizontal: 16, paddingBottom: 12 },
 

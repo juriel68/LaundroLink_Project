@@ -11,7 +11,7 @@
             background-color: #f8f9fa;
             flex-direction: column;
             height: 100vh;
-            overflow: auto; /* Changed to auto to allow scrolling if content overflows */
+            overflow: auto; 
         }
 
         /* --- Title Box --- */
@@ -115,25 +115,11 @@
             color: #343a40;
         }
 
-        #pending-card { 
-            border-top: 4px solid #6c757d; 
-        }
-
-        #processing-card { 
-            border-top: 4px solid #ffc107; 
-        }
-
-        #delivery-card { 
-            border-top: 4px solid #17a2b8; 
-        }
-
-        #completed-card { 
-            border-top: 4px solid #28a745; 
-        }
-
-        #rejected-card { 
-            border-top: 4px solid #dc3545; 
-        }
+        #pending-card { border-top: 4px solid #6c757d; }
+        #processing-card { border-top: 4px solid #ffc107; }
+        #delivery-card { border-top: 4px solid #17a2b8; }
+        #completed-card { border-top: 4px solid #28a745; }
+        #rejected-card { border-top: 4px solid #dc3545; }
 
         /* --- Table --- */
         .table-container {
@@ -144,11 +130,13 @@
             max-width: 1100px;
             margin: 0 auto 30px auto;
             flex-grow: 1;
+            overflow-x: auto;
         }
     
         table {
             width: 100%;
             border-collapse: collapse;
+            min-width: 800px; /* Ensure table doesn't squash on small screens */
         }
 
         th, td {
@@ -192,61 +180,23 @@
             transition: opacity 0.2s ease-in-out;
         }
 
-        th:hover .sort-btn { 
-            opacity: 1; 
-        }
-
-        .sort-btn.active { 
-            opacity: 1; 
-            color: #ffc107; 
-        }
-        .sort-btn 
-        .fa-sort-up, 
-        .sort-btn 
-        .fa-sort-down { 
-            display: none; 
-        }
-
-        .sort-btn.active.asc .fa-sort { 
-            display: none; 
-        }
-
-        .sort-btn.active.asc .fa-sort-up { 
-            display: inline-block; 
-        }
-
-        .sort-btn.active.desc .fa-sort { 
-            display: none; 
-        }
-
-        .sort-btn.active.desc .fa-sort-down { 
-            display: inline-block; 
-        }
+        th:hover .sort-btn { opacity: 1; }
+        .sort-btn.active { opacity: 1; color: #ffc107; }
+        
+        .sort-btn .fa-sort-up, .sort-btn .fa-sort-down { display: none; }
+        .sort-btn.active.asc .fa-sort { display: none; }
+        .sort-btn.active.asc .fa-sort-up { display: inline-block; }
+        .sort-btn.active.desc .fa-sort { display: none; }
+        .sort-btn.active.desc .fa-sort-down { display: inline-block; }
 
         /* --- Status Colors --- */
-        .status { 
-            font-weight: bold; 
-        }
-        .status-completed { 
-            color: #28a745; 
-        }
-
-        .status-processing { 
-            color: #ffc107; 
-        }
-
-        .status-pending { 
-            color: #6c757d; 
-        }
-
-        .status-rejected, 
-        .status-cancelled { 
-            color: #dc3545; 
-        }
-
-        .status-for-delivery { 
-            color: #17a2b8; 
-        }
+        .status { font-weight: bold; text-transform: capitalize; }
+        .status-completed { color: #28a745; }
+        .status-processing { color: #ffc107; }
+        .status-pending { color: #6c757d; }
+        .status-rejected, .status-cancelled { color: #dc3545; }
+        .status-for-delivery, .status-out-for-delivery { color: #17a2b8; }
+        .status-to-pick-up, .status-ready-for-pickup { color: #007bff; }
 
         /* --- Pagination Controls --- */
         .pagination-controls {
@@ -283,7 +233,6 @@
 </head>
 <body>
 
-    <!-- Title Section -->
     <div class="title-box">
         <div class="title-row">
             <div>
@@ -299,7 +248,6 @@
             </div>
         </div>
 
-        <!-- Custom Date Range -->
         <div class="custom-range-container" id="custom-range-picker">
             <label for="start-date">From:</label>
             <input type="date" id="start-date">
@@ -309,7 +257,6 @@
         </div>
     </div>
 
-    <!-- KPI Section -->
     <div class="kpi-row">
         <div class="kpi-card" id="pending-card"><h4>Pending</h4><div class="value" id="pending-count">0</div></div>
         <div class="kpi-card" id="processing-card"><h4>Processing</h4><div class="value" id="processing-count">0</div></div>
@@ -318,7 +265,6 @@
         <div class="kpi-card" id="rejected-card"><h4>Rejected</h4><div class="value" id="rejected-count">0</div></div>
     </div>
 
-    <!-- Table Section -->
     <div class="table-container">
         <table>
             <thead>
@@ -344,7 +290,6 @@
         </table>
     </div>
     
-    <!-- PAGINATION CONTROLS -->
     <div class="pagination-controls">
         <button id="prevPageBtn" disabled>Previous</button>
         <span id="pageInfo">Page 1 of 1</span>
@@ -352,7 +297,8 @@
     </div>
 
     <script type="module">
-        import { API_BASE_URL } from '/Web/api.js';
+        // 🔑 FIX: Correct relative path to api.js
+        import { API_BASE_URL } from '../api.js';
 
         // --- GLOBAL STATE & ELEMENTS ---
         const tableBody = document.getElementById('orders-table-body');
@@ -392,9 +338,12 @@
 
         const updatePaginationControls = () => {
             const totalPages = Math.ceil(totalOrders / ROWS_PER_PAGE);
-            pageInfoSpan.textContent = `Page ${currentPage} of ${totalPages > 0 ? totalPages : 1} (Total: ${totalOrders})`;
+            const displayPage = totalPages > 0 ? currentPage : 1;
+            const displayTotal = totalPages > 0 ? totalPages : 1;
+            
+            pageInfoSpan.textContent = `Page ${displayPage} of ${displayTotal} (Total: ${totalOrders})`;
             prevPageBtn.disabled = currentPage === 1;
-            nextPageBtn.disabled = currentPage >= totalPages;
+            nextPageBtn.disabled = currentPage >= totalPages || totalPages === 0;
         };
         
         const renderTable = (orders) => {
@@ -403,11 +352,12 @@
                 const message = totalOrders > 0 ? 
                     'No orders found on this page.' : 
                     'No orders found for this period.';
-                tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center;">${message}</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 20px;">${message}</td></tr>`;
                 return;
             }
             
             orders.forEach(order => {
+                // Create status class name dynamically (e.g., 'For Delivery' -> 'status-for-delivery')
                 const statusClass = `status-${String(order.OrderStatus || 'pending').toLowerCase().replace(/[\s\/-]/g, '-')}`;
                 const formattedPrice = `₱${parseFloat(order.PayAmount || 0).toFixed(2)}`;
                 const formattedDate = new Date(order.OrderCreatedAt).toLocaleDateString('en-US', {
@@ -440,8 +390,7 @@
             const limit = ROWS_PER_PAGE;
             const offset = (currentPage - 1) * limit;
 
-            tableBody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Loading orders...</td></tr>';
-            updateKpiCards({});
+            tableBody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 20px;">Loading orders...</td></tr>';
             
             try {
                 let apiUrl = `${API_BASE_URL}/orders/overview/${loggedInUser.ShopID}`;
@@ -468,17 +417,28 @@
                 
                 const data = await response.json();
                 
-                // Assuming backend returns { summary: {...}, orders: [...], totalCount: N }
                 const orders = data.orders || [];
-                totalOrders = data.totalCount || orders.length; // Get the total count for pagination
+                const summary = data.summary || {};
 
-                updateKpiCards(data.summary || {});
+                // 💡 KEY LOGIC: Calculate Total Orders from the Summary object for accurate pagination
+                // The backend pagination limits the 'orders' array, so we use the summary counts to know the real total.
+                const computedTotal = (parseInt(summary.pending)||0) +
+                                      (parseInt(summary.processing)||0) +
+                                      (parseInt(summary.forDelivery)||0) +
+                                      (parseInt(summary.completed)||0) +
+                                      (parseInt(summary.rejected)||0);
+                
+                // Use computed total if orders exist, otherwise 0
+                totalOrders = computedTotal;
+
+                updateKpiCards(summary);
                 renderTable(orders);
                 
             } catch (error) {
                 console.error('Fetch error:', error);
-                tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center;">Error loading orders.</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center; color: red;">Error loading orders.</td></tr>`;
                 totalOrders = 0;
+                updateKpiCards({});
                 updatePaginationControls();
             }
         };
@@ -504,7 +464,7 @@
         // Returns the current date/period filter state
         const getCurrentFilterState = () => {
             const activePeriodBtn = document.querySelector('.date-filters button.active');
-            const period = activePeriodBtn.dataset.period;
+            const period = activePeriodBtn ? activePeriodBtn.dataset.period : 'Today';
             
             if (period === 'Custom') {
                 return { 
@@ -524,10 +484,9 @@
                     
                     if (period === 'Custom') {
                         customRangePicker.style.display = 'flex';
-                        // Do not fetch data yet, just set the active filter
+                        // Do not fetch data yet, wait for 'Apply'
                     } else {
                         customRangePicker.style.display = 'none';
-                        // Reset pagination to 1 and fetch new data
                         fetchOrderData({ period }, 1);
                     }
 
@@ -545,7 +504,6 @@
                         alert('Start date cannot be after the end date.');
                         return;
                     }
-                    // Reset pagination to 1 and fetch custom range
                     fetchOrderData({ startDate, endDate }, 1);
                 } else {
                     alert('Please select both a start and end date.');
@@ -569,7 +527,6 @@
                         button.classList.add('active', currentSortOrder.toLowerCase());
                     }
                     
-                    // Reset pagination to 1 and fetch with new sort/filter
                     fetchOrderData(getCurrentFilterState(), 1);
                 });
             });
