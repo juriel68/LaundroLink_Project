@@ -7,8 +7,6 @@ import type { BottomTabBarButtonProps } from '@react-navigation/bottom-tabs';
 
 // Custom Tab Bar Button with a press animation
 const AnimatedTabBarButton = (props: BottomTabBarButtonProps) => {
-  // ✅ FIX: Destructure only the props needed by Pressable
-  // Avoid spreading {...rest} which causes the type conflict.
   const { children, onPress, style, accessibilityState } = props;
   const scale = useSharedValue(1);
 
@@ -17,13 +15,11 @@ const AnimatedTabBarButton = (props: BottomTabBarButtonProps) => {
   }));
 
   return (
-    // ✅ FIX: Apply the navigator's style and accessibility state directly
     <Pressable
       accessibilityState={accessibilityState}
       onPressIn={() => (scale.value = withTiming(0.9, { duration: 150 }))}
       onPressOut={() => (scale.value = withTiming(1, { duration: 150 }))}
       onPress={onPress}
-      // Combine styles from the navigator and the component
       style={[styles.tabBarButton, style]}
     >
       <Animated.View style={animatedStyle}>
@@ -33,7 +29,6 @@ const AnimatedTabBarButton = (props: BottomTabBarButtonProps) => {
   );
 };
 
-
 export default function TabLayout() {
   const { shopId, userId } = useLocalSearchParams();
 
@@ -41,19 +36,16 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#4FC3F7", // A bright, lively blue to match the header
-        tabBarInactiveTintColor: "#9E9E9E", // A neutral gray
+        tabBarActiveTintColor: "#4FC3F7",
+        tabBarInactiveTintColor: "#9E9E9E",
         tabBarStyle: {
           backgroundColor: "#fff",
-          borderTopWidth: 0, // Remove the default border for a cleaner look
+          borderTopWidth: 0,
           height: 65,
           paddingBottom: 10,
           paddingTop: 5,
           shadowColor: "#000",
-          shadowOffset: {
-            width: 0,
-            height: -2,
-          },
+          shadowOffset: { width: 0, height: -2 },
           shadowOpacity: 0.05,
           shadowRadius: 3.84,
           elevation: 5,
@@ -70,29 +62,44 @@ export default function TabLayout() {
         initialParams={{ shopId, userId }} 
         options={{
           title: "Home",
-          tabBarButton: AnimatedTabBarButton, // Use custom animated button
+          tabBarButton: AnimatedTabBarButton,
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? "home" : "home-outline"} size={26} color={color} />
           ),
         }}
       />
+
+      {/* ✅ FIXED: Payment Tab */}
+      <Tabs.Screen
+        name="payment"
+        initialParams={{ shopId, userId }} 
+        options={{
+          title: "Payment",
+          tabBarButton: AnimatedTabBarButton,
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? "card" : "card-outline"} size={26} color={color} />
+          ),
+        }}
+      />
+
       <Tabs.Screen
         name="order"
         initialParams={{ shopId, userId }} 
         options={{
           title: "Order",
-          tabBarButton: AnimatedTabBarButton, // Use custom animated button
+          tabBarButton: AnimatedTabBarButton,
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? "list-sharp" : "list-outline"} size={26} color={color} />
           ),
         }}
       />
+
       <Tabs.Screen
         name="message"
         initialParams={{ shopId, userId }}
         options={{
           title: "Messages",
-          tabBarButton: AnimatedTabBarButton, // Use custom animated button
+          tabBarButton: AnimatedTabBarButton,
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? "chatbubbles" : "chatbubbles-outline"} size={26} color={color} />
           ),

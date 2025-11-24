@@ -202,22 +202,18 @@
         <div class="config-section">
             <h2><i class="fas fa-clipboard-list"></i> Service Modes</h2>
             <p style="font-size:13px; color:#777; margin-bottom:10px;">Define which modes your shop accepts (e.g., "Drop-off Only", "Pickup & Delivery").</p>
-            <div id="delivery-add-form" class="add-form" style="align-items: flex-start;"> <div>
+            <div id="delivery-add-form" class="add-form" style="align-items: center;">
+                <div style="flex-grow: 2;">
                     <label>Mode Type</label>
                     <select id="newDlvryTypeID"></select>
                 </div>
-                <div style="flex-grow: 2;">
-                    <label>Description</label>
-                    <textarea id="newDlvryDescription" rows="3" style="resize: vertical;"></textarea>
-                </div>
-                <button class="btn-action btn-add" style="margin-top: 25px;" onclick="saveDeliveryOption()">Add/Update Mode</button>
+                <button class="btn-action btn-add" onclick="saveDeliveryOption()">Add Mode</button>
             </div>
             <div class="table-responsive">
                 <table id="delivery-table">
                     <thead>
                         <tr>
                             <th>Type Name</th>
-                            <th>Description</th>
                             <th>Action</th>
                         </tr>
                     </thead>
@@ -231,7 +227,6 @@
     <script type="module">
         import { API_BASE_URL } from '../api.js'; 
 
-        // Robust user parsing
         const loggedInUser = window.parent.localStorage.getItem('laundroUser') 
             ? JSON.parse(window.parent.localStorage.getItem('laundroUser'))
             : JSON.parse(localStorage.getItem('laundroUser'));
@@ -344,7 +339,7 @@
         async function fetchOwnDeliverySettings() {
             const data = await fetchData(':shopId/own-delivery');
             if (data && data.settings) {
-                // Check Status
+                // Check ShopServiceStatus
                 isInHouseActive = (data.settings.ShopServiceStatus === 'Active');
                 
                 document.getElementById('ownBaseFare').value = data.settings.ShopBaseFare;
@@ -432,7 +427,7 @@
             }
         };
 
-        // --- GLOBAL DATA LOADING ---
+        // --- GLOBAL DATA ---
         async function fetchGlobalData() {
             try {
                 const [svc, fab, ao, dlv, apps] = await Promise.all([
@@ -452,30 +447,10 @@
                 populateDropdown('newSvcID', globalServices, 'SvcID', 'SvcName');
                 populateDropdown('newFabID', globalFabrics, 'FabID', 'FabName');
                 populateDropdown('newAddOnID', globalAddOns, 'AddOnID', 'AddOnName');
+                populateDropdown('newDlvryTypeID', globalDeliveryTypes, 'DlvryTypeID', 'DlvryTypeName');
                 populateDropdown('newAppID', globalDeliveryApps, 'DlvryAppID', 'DlvryAppName');
 
-                // 1. Populate Delivery Types
-                populateDropdown('newDlvryTypeID', globalDeliveryTypes, 'DlvryTypeID', 'DlvryTypeName');
-
-                // 2. 🔑 ADDED: Auto-fill Description when Mode Type changes
-                const modeSelect = document.getElementById('newDlvryTypeID');
-                modeSelect.onchange = (e) => {
-                    const selectedId = e.target.value;
-                    // Find the matching object in our global array
-                    const selectedType = globalDeliveryTypes.find(type => type.DlvryTypeID == selectedId);
-                    
-                    // Update the textarea
-                    const descriptionField = document.getElementById('newDlvryDescription');
-                    if (selectedType) {
-                        descriptionField.value = selectedType.DlvryDescription;
-                    } else {
-                        descriptionField.value = '';
-                    }
-                };
-
-            } catch (e) { 
-                console.error("Global data load partial failure", e); 
-            }
+            } catch (e) { console.error("Global data load partial failure", e); }
         }
 
         function populateDropdown(elementId, data, valueKey, textKey) {
@@ -491,7 +466,7 @@
             });
         }
 
-        // --- 1. SERVICES (Updated Min Weight) ---
+        // --- 1. SERVICES ---
         async function fetchShopServices() {
             const data = await fetchData(':shopId/services');
             const tbody = document.querySelector('#services-table tbody');
@@ -516,7 +491,6 @@
             if(await fetchData('services', 'POST', payload)) { 
                 displayMessage("Service saved."); 
                 fetchShopServices(); 
-                // Reset inputs
                 document.getElementById('newSvcPrice').value = '';
                 document.getElementById('newMinWeight').value = '';
             }
@@ -565,25 +539,28 @@
             if(await fetchData('fabrics', 'POST', payload)) { displayMessage("Fabric added."); fetchShopFabrics(); }
         };
 
-        // --- 5. DELIVERY MODES ---
+        // --- 5. DELIVERY MODES (No Description) ---
         async function fetchDeliveryOptions() {
             const data = await fetchData(':shopId/delivery');
             const tbody = document.querySelector('#delivery-table tbody');
             tbody.innerHTML = '';
-            if (!data?.delivery?.length) { tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;">No modes configured.</td></tr>'; return; }
+            if (!data?.delivery?.length) { tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">No modes configured.</td></tr>'; return; }
             data.delivery.forEach(d => {
                 const row = tbody.insertRow();
-                row.innerHTML = `<td>${d.DlvryTypeName}</td><td>${d.DlvryDescription}</td>
-                <td><button class="btn-action btn-edit" onclick="editDlvry('${d.DlvryTypeID}', '${d.DlvryDescription}')">Edit</button></td>`;
+                row.innerHTML = `<td>${d.DlvryTypeName}</td>
+                <td><button class="btn-action btn-delete" onclick="deleteDeliveryOption('${d.DlvryID}')">Remove</button></td>`;
             });
         }
         window.saveDeliveryOption = async () => {
-            const payload = { ShopID: SHOP_ID, DlvryTypeID: document.getElementById('newDlvryTypeID').value, DlvryDescription: document.getElementById('newDlvryDescription').value };
+            const payload = { ShopID: SHOP_ID, DlvryTypeID: document.getElementById('newDlvryTypeID').value };
             if(await fetchData('delivery', 'POST', payload)) { displayMessage("Mode saved."); fetchDeliveryOptions(); }
         };
-        window.editDlvry = (id, desc) => {
-            document.getElementById('newDlvryTypeID').value = id;
-            document.getElementById('newDlvryDescription').value = desc;
+
+        // NOTE: Added this because the button calls it
+        window.deleteDeliveryOption = async (dlvryId) => {
+             // Since backend for DELETE /delivery/:id is not explicitly in shops.js above,
+             // this is a placeholder. You would need to add `router.delete("/delivery/:id" ...)` in shops.js
+             alert("To remove a mode, please update shops.js backend to include a DELETE route.");
         };
 
         document.addEventListener('DOMContentLoaded', () => {

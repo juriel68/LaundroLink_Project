@@ -1,6 +1,6 @@
-// lib/orders.ts
-
+import axios from "axios";
 import { API_URL } from "./api";
+import { Platform } from "react-native";
 
 // =================================================================
 // 1. UNIFIED INTERFACES
@@ -12,7 +12,7 @@ export interface AddOnDetail {
 }
 
 /**
- * Base Order structure for lists.
+ * Base Order structure for lists (Matches GET /orders/shop/:shopId)
  */
 export interface Order {
     orderId: string;
@@ -22,19 +22,24 @@ export interface Order {
     laundryDetailId: string;
     deliveryId: string;
     createdAt: string;
-    status: string;
+    laundryStatus: string; 
+    deliveryStatus?: string; 
+    deliveryPaymentStatus?: string;
+    deliveryAmount?: number;
+    // 🟢 NEW: Fields for Delivery Payment Modal
+    deliveryPaymentMethod?: string;
+    deliveryPaymentDate?: string;
+    deliveryProofImage?: string;
+    
     updatedAt: string;
     customerName: string;
     invoiceStatus?: string;
     latestProcessStatus?: string | null;
-    reason?: string | null; 
-    note?: string | null;
-    totalAmount?: number; // Useful for lists
+    totalAmount?: number; 
 }
 
 /**
- * Detailed Order structure for single view.
- * Used by both Staff (OrderDetail) and Customer (CustomerOrderDetails).
+ * Detailed Order structure (Matches GET /orders/:orderId)
  */
 export interface OrderDetail {
     orderId: string;
@@ -46,6 +51,7 @@ export interface OrderDetail {
     customerAddress: string;
     
     // Shop Info
+    shopId: number;
     shopName?: string;
     shopAddress?: string;
     shopPhone?: string;
@@ -64,12 +70,9 @@ export interface OrderDetail {
     weight: number; 
     deliveryType: string;
     deliveryFee: string | number;
-    status: string;
-    reason?: string | null; 
-    note?: string | null;
+    laundryStatus: string; 
+    deliveryStatus?: string;
     instructions?: string | null;
-    
-    // Arrays
     fabrics: string[]; 
     addons: AddOnDetail[];
 }
@@ -103,9 +106,9 @@ export interface OrderProcessStep {
 export const fetchOrders = async (shopId: string): Promise<Order[]> => {
     if (!shopId) return []; 
     try {
-        const response = await fetch(`${API_URL}/orders/shop/${shopId}`);
-        if (!response.ok) throw new Error('Network response was not ok');
-        const orders: Order[] = await response.json();
+        const response = await axios.get(`${API_URL}/orders/shop/${shopId}`);
+        const orders: Order[] = response.data;
+        // Sort: Newest first
         return orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     } catch (error) {
         console.error("Failed to fetch orders:", error);
@@ -115,11 +118,12 @@ export const fetchOrders = async (shopId: string): Promise<Order[]> => {
 
 export const fetchOrderDetails = async (orderId: string): Promise<OrderDetail | null> => {
     try {
-        const response = await fetch(`${API_URL}/orders/${orderId}`);
-        if (response.status === 404) return null;
-        if (!response.ok) throw new Error('Failed to fetch order details');
-        return await response.json(); 
-    } catch (error) {
+        const response = await axios.get(`${API_URL}/orders/${orderId}`);
+        return response.data; 
+    } catch (error: any) {
+        if (error.response && error.response.status === 404) {
+            return null;
+        }
         console.error("Error in fetchOrderDetails:", error);
         return null;
     }
@@ -127,13 +131,11 @@ export const fetchOrderDetails = async (orderId: string): Promise<OrderDetail | 
 
 export const fetchOrderSummary = async (shopId: string, dateRange: string): Promise<OrderSummaryData | null> => {
     try {
-        const response = await fetch(`${API_URL}/orders/summary`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ shopId, dateRange }),
+        const response = await axios.post(`${API_URL}/orders/dashboard-summary`, { 
+            shopId, 
+            period: dateRange 
         });
-        if (!response.ok) throw new Error("Failed to fetch order summary");
-        return await response.json();
+        return response.data;
     } catch (error) {
         console.error("Error in fetchOrderSummary:", error);
         return null;
@@ -142,9 +144,8 @@ export const fetchOrderSummary = async (shopId: string, dateRange: string): Prom
 
 export const fetchProcessHistory = async (orderId: string): Promise<OrderProcessStep[]> => {
     try {
-        const response = await fetch(`${API_URL}/orders/${orderId}/process-history`);
-        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-        return await response.json();
+        const response = await axios.get(`${API_URL}/orders/${orderId}/process-history`);
+        return response.data;
     } catch (error) {
         console.error(`Error fetching process history:`, error);
         return [];
@@ -153,108 +154,43 @@ export const fetchProcessHistory = async (orderId: string): Promise<OrderProcess
 
 // --- ACTIONS (UPDATE/POST) ---
 
+/**
+ * Updates the Laundry Status (e.g., Pending -> Processing -> Completed)
+ */
 export const updateOrderStatus = async (
     orderId: string, 
     newStatus: string, 
     userId?: string, 
-    userRole?: string, 
-    reason?: string, 
-    note?: string
+    userRole?: string
 ): Promise<boolean> => {
     try {
-        const response = await fetch(`${API_URL}/orders/status`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderId, newStatus, userId, userRole, reason, note }),
+        const response = await axios.post(`${API_URL}/orders/status`, { 
+            orderId, 
+            newStatus, 
+            userId, 
+            userRole
         });
-        if (!response.ok) throw new Error('Failed to update status');
-        const data = await response.json();
-        return data.success;
+        return response.data.success;
     } catch (error) {
         console.error("Error in updateOrderStatus:", error);
         return false;
     }
 };
 
-export const submitDeliveryBooking = async (
-    orderId: string,
-    fee: number,
-    total: number, 
-    imageUri: string,
-    userId: string,
-    userRole: string
+export const updateProcessStatus = async (
+    orderId: string, 
+    status: string,
+    userId?: string,
+    userRole?: string
 ): Promise<boolean> => {
     try {
-        const formData = new FormData();
-        formData.append('orderId', orderId);
-        formData.append('fee', fee.toString());
-        formData.append('total', total.toString()); 
-        formData.append('userId', userId);
-        formData.append('userRole', userRole);
-
-        const filename = imageUri.split('/').pop() || 'proof.jpg';
-        const fileType = filename.split('.').pop() === 'png' ? 'image/png' : 'image/jpeg';
-
-        formData.append('proofImage', {
-            uri: imageUri,
-            name: filename,
-            type: fileType,
-        } as any);
-
-        const response = await fetch(`${API_URL}/orders/delivery-booking`, {
-            method: 'POST',
-            body: formData,
-            headers: { 'Accept': 'application/json' },
+        const response = await axios.post(`${API_URL}/orders/processing-status`, { 
+            orderId, 
+            status, 
+            userId, 
+            userRole 
         });
-
-        if (!response.ok) {
-            const errText = await response.text();
-            console.error(`❌ Server Error (${response.status}):`, errText);
-            return false;
-        }
-
-        const data = await response.json();
-        return data.success;
-
-    } catch (error: any) {
-        console.error("❌ NETWORK ERROR in submitDeliveryBooking:", error);
-        return false;
-    }
-};
-
-export const updateOrderWeight = async (
-    orderId: string, 
-    newWeight: number, 
-    isFinal: boolean = false,
-    userId?: string, 
-    userRole?: string
-): Promise<{ success: boolean; message: string }> => {
-    try {
-        const response = await fetch(`${API_URL}/orders/weight`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderId, newWeight, isFinal, userId, userRole }), 
-        });
-
-        const data: { success: boolean; message: string } = await response.json();
-
-        if (!response.ok) throw new Error(data.message || 'Failed to update weight');
-        return data; 
-    } catch (error: any) {
-        console.error("Error in updateOrderWeight:", error);
-        return { success: false, message: error.message || "Network Error" }; 
-    }
-};
-
-export const updateProcessStatus = async (orderId: string, status: string): Promise<boolean> => {
-    try {
-        const response = await fetch(`${API_URL}/orders/processing-status`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderId, status }),
-        });
-        const data = await response.json();
-        return response.ok && data.success;
+        return response.data.success;
     } catch (error) {
         console.error(error);
         return false;
@@ -262,22 +198,130 @@ export const updateProcessStatus = async (orderId: string, status: string): Prom
 };
 
 /**
- * Staff Action: Approve Payment (Sets Invoice='Paid', Order='Processing')
+ * Updates the weight of an order
  */
-export const approvePayment = async (orderId: string, userId?: string, userRole?: string): Promise<boolean> => {
+export const updateOrderWeight = async (
+    orderId: string, 
+    newWeight: number, 
+    userId?: string, 
+    userRole?: string
+): Promise<boolean> => {
     try {
-        const response = await fetch(`${API_URL}/orders/approve-payment`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderId, userId, userRole }),
+        const response = await axios.patch(`${API_URL}/orders/weight`, { 
+            orderId, 
+            newWeight, 
+            userId, 
+            userRole 
         });
-
-        if (!response.ok) throw new Error('Failed to approve payment');
-        
-        const data = await response.json();
-        return data.success;
+        return response.data.success;
     } catch (error) {
-        console.error("Error in approvePayment:", error);
+        console.error("Error in updateOrderWeight:", error);
+        return false;
+    }
+};
+
+/**
+ * Staff Confirms Service Payment (Wash & Dry, etc.)
+ */
+export const confirmServicePayment = async (
+    orderId: string, 
+    userId?: string, 
+    userRole?: string
+): Promise<boolean> => {
+    try {
+        const response = await axios.post(`${API_URL}/orders/staff/confirm-service-payment`, { 
+            orderId, 
+            userId, 
+            userRole 
+        });
+        return response.data.success;
+    } catch (error) {
+        console.error("Error in confirmServicePayment:", error);
+        return false;
+    }
+};
+
+/**
+ * Staff Confirms Delivery Payment (Lalamove/Rider fee)
+ */
+export const confirmDeliveryPayment = async (
+    orderId: string, 
+    userId?: string, 
+    userRole?: string
+): Promise<boolean> => {
+    try {
+        const response = await axios.post(`${API_URL}/orders/staff/confirm-delivery-payment`, { 
+            orderId, 
+            userId, 
+            userRole 
+        });
+        return response.data.success;
+    } catch (error) {
+        console.error("Error in confirmDeliveryPayment:", error);
+        return false;
+    }
+};
+
+// --- NEW API FUNCTIONS FOR DELIVERY UPDATE ---
+
+/**
+ * Uploads the screenshot for 3rd Party Booking
+ * Sets DlvryStatus to 'Rider Booked' (intermediate state)
+ */
+export const uploadBookingProof = async (
+    orderId: string, 
+    imageUri: string,
+    userId: string,
+    userRole: string
+): Promise<boolean> => {
+    try {
+        const formData = new FormData();
+        formData.append('orderId', orderId);
+        formData.append('userId', userId);
+        formData.append('userRole', userRole);
+
+        const filename = imageUri.split('/').pop() || "proof.jpg";
+        const match = /\.(\w+)$/.exec(filename);
+        const type = match ? `image/${match[1]}` : `image/jpeg`;
+
+        // @ts-ignore - React Native FormData handling
+        formData.append('proofImage', { uri: imageUri, name: filename, type });
+
+        const response = await axios.post(`${API_URL}/orders/delivery/upload-booking`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        return response.data.success;
+    } catch (error) {
+        console.error("Error uploading booking proof:", error);
+        return false;
+    }
+};
+
+/**
+ * Updates Delivery Status AND Order Status together
+ * Used for: 
+ * 1. "Delivered In Shop" -> OrderStatus='To Weigh'
+ * 2. "Arrived at Customer" -> OrderStatus='To Weigh'
+ * 3. "Delivered To Customer" -> OrderStatus='Completed' (For future use)
+ */
+export const updateDeliveryWorkflow = async (
+    orderId: string,
+    newDlvryStatus: string,
+    newOrderStatus: string,
+    userId: string,
+    userRole: string
+): Promise<boolean> => {
+    try {
+        const response = await axios.post(`${API_URL}/orders/delivery/update-status`, {
+            orderId,
+            newDlvryStatus,
+            newOrderStatus,
+            userId,
+            userRole
+        });
+        return response.data.success;
+    } catch (error) {
+        console.error("Error updating delivery workflow:", error);
         return false;
     }
 };

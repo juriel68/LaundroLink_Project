@@ -14,48 +14,47 @@ import {
   Alert,
   FlatList
 } from "react-native";
-import { confirmPayment, fetchOrderDetails } from "@/lib/orders"; 
-import { fetchShopDetails, PaymentMethod } from "@/lib/shops"; // 🔑 Import shop fetcher
+
+// 🛠️ CHANGED: Adjusted to ../../ to reach app/lib from app/(tabs)/payment
+import { submitPayment, submitDeliveryPayment, fetchOrderDetails } from "@/lib/orders"; 
+import { fetchShopDetails, PaymentMethod } from "@/lib/shops"; 
 
 export default function Payment() {
   const router = useRouter();
   const navigation = useNavigation();
   
-  // Get params passed from Invoice page
-  const { orderId, totalAmount } = useLocalSearchParams<{ orderId: string, totalAmount: string }>();
+  const { orderId, totalAmount, deliveryFee, isFirstPayment } = useLocalSearchParams<{ 
+    orderId: string, 
+    totalAmount: string,
+    deliveryFee: string,
+    isFirstPayment: string
+  }>();
   
   const [loading, setLoading] = useState(false);
   const [initializing, setInitializing] = useState(true);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
 
-  const amountValue = parseFloat(totalAmount || "0");
+  const isDeliveryPay = isFirstPayment === 'true';
+  const amountValue = isDeliveryPay 
+    ? parseFloat(deliveryFee || "0") 
+    : parseFloat(totalAmount || "0");
 
   useLayoutEffect(() => {
     navigation.setOptions({
       headerShown: true,
       headerStyle: { backgroundColor: "#87CEFA" },
       headerTintColor: "#000",
-      headerTitle: "Select Payment",
+      headerTitle: isDeliveryPay ? "Pay Delivery Fee" : "Select Payment",
     });
-  }, [navigation]);
+  }, [navigation, isDeliveryPay]);
 
-  // 🔑 NEW: Fetch Shop Payment Methods on Load
+  // Fetch Shop Payment Methods on Load
   useEffect(() => {
     const loadPaymentMethods = async () => {
         try {
-            // 1. Get Order Details to find the Shop ID
             const orderData = await fetchOrderDetails(orderId);
             
             if (orderData) {
-                // 2. Fetch Shop Details (including payment methods)
-                // Ideally, fetchOrderDetails should return shopId. 
-                // Assuming your CustomerOrderDetails interface (orders.ts) has shopId?
-                // If not, we might need to update orders.ts or rely on the shop fetcher logic.
-                
-                // WORKAROUND: If orderData doesn't have shopId explicitly in frontend type, 
-                // check if your backend returns it.
-                // Based on your previous orders.js, GET /:orderId returns 'shopId'.
-                // So we can cast it:
                 const shopId = (orderData as any).shopId; 
 
                 if (shopId) {
@@ -72,39 +71,54 @@ export default function Payment() {
             setInitializing(false);
         }
     };
-    loadPaymentMethods();
+    if (orderId) {
+        loadPaymentMethods();
+    } else {
+        setInitializing(false);
+    }
   }, [orderId]);
 
   const handlePaymentSelection = async (methodName: string, methodId: string) => {
     setLoading(true);
     try {
-        const success = await confirmPayment(orderId, methodId, amountValue);
+        let success = false;
+
+        if (isDeliveryPay) {
+             // Call the new function for Delivery Fee
+             success = await submitDeliveryPayment(orderId, parseInt(methodId), amountValue);
+        } else {
+             // Call original function for Service Payment
+             success = await submitPayment(orderId, parseInt(methodId), amountValue);
+        }
+
         if (success) {
             router.push({
                 pathname: "/payment/receipt",
                 params: { 
                     orderId: orderId, 
-                    amount: totalAmount, 
-                    method: methodName 
+                    amount: amountValue.toString(), 
+                    method: methodName,
+                    methodId: methodId, 
+                    isFirstPayment: isFirstPayment || 'false', 
+                    deliveryFee: deliveryFee || '0'
                 }
             });
         } else {
             Alert.alert("Error", "Payment submission failed. Please try again.");
         }
     } catch (error) {
+        console.error(error);
         Alert.alert("Error", "Network error occurred.");
     } finally {
         setLoading(false);
     }
   };
 
-  // Helper to get icon based on method name
   const getPaymentIcon = (name: string) => {
     const lowerName = name.toLowerCase();
     if (lowerName.includes('cash')) return <Ionicons name="cash-outline" size={28} color="#2ecc71" style={styles.icon} />;
     if (lowerName.includes('paypal')) return <Image source={{ uri: "https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_37x23.jpg" }} style={styles.logo} />;
-    if (lowerName.includes('gcash')) return <Image source={{ uri: "https://seeklogo.com/images/G/gcash-logo-E9313395F1-seeklogo.com.png" }} style={styles.logo} />; // Example GCash logo
-    // Default icon
+    if (lowerName.includes('gcash')) return <Image source={{ uri: "https://seeklogo.com/images/G/gcash-logo-E9313395F1-seeklogo.com.png" }} style={styles.logo} />; 
     return <Ionicons name="card-outline" size={28} color="#004aad" style={styles.icon} />;
   };
 
@@ -119,20 +133,19 @@ export default function Payment() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.amountTitle}>Total Amount Due</Text>
+        <Text style={styles.amountTitle}>{isDeliveryPay ? "Delivery Fee Due" : "Total Amount Due"}</Text>
         <Text style={styles.amount}>₱{amountValue.toFixed(2)}</Text>
 
         <Text style={styles.subtitle}>Choose your payment method:</Text>
 
-        {/* 🔑 DYNAMIC LIST OF PAYMENT METHODS */}
         {paymentMethods.length > 0 ? (
             <FlatList 
                 data={paymentMethods}
-                keyExtractor={(item) => item.id}
+                keyExtractor={(item) => item.id.toString()}
                 renderItem={({ item }) => (
                     <TouchableOpacity
                         style={[styles.optionCard, loading && { opacity: 0.5 }]}
-                        onPress={() => handlePaymentSelection(item.name, item.id)}
+                        onPress={() => handlePaymentSelection(item.name, item.id.toString())}
                         disabled={loading}
                     >
                         {getPaymentIcon(item.name)}

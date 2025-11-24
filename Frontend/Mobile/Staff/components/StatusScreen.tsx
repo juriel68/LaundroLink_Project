@@ -1,5 +1,3 @@
-// components/StatusScreen.tsx
-
 import React, { useState, useCallback } from "react";
 import {
   View,
@@ -9,50 +7,48 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   TextInput,
-  ViewStyle, // Imported for type safety
-  TextStyle, // Imported for type safety
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
-import { useRouter, useLocalSearchParams } from "expo-router";
-import { useFocusEffect } from "@react-navigation/native";
+import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
+
+// Libs
 import { fetchOrders, Order } from "@/lib/orders";
+import { getCurrentUser } from "@/lib/auth";
 import Header from "@/components/Header";
 
-interface StatusScreenProps {
-  title: string;
-  statusKey: string | string[];
-  showUpdate?: boolean;
-}
-
-export default function StatusScreen({
-  title,
-  statusKey,
-  showUpdate = true,
-}: StatusScreenProps) {
+export default function StatusScreen() {
+  const { status, title, type } = useLocalSearchParams(); 
+  
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState("All");
+  
   const router = useRouter();
-  const { shopId } = useLocalSearchParams();
 
   useFocusEffect(
     useCallback(() => {
+      setFilter("All");
+
       const loadOrders = async () => {
-        if (typeof shopId === "string") {
+        const user = getCurrentUser();
+        if (user?.ShopID) {
           setLoading(true);
-          const allOrders = await fetchOrders(shopId);
+          const allOrders = await fetchOrders(user.ShopID);
           
-          const filtered = Array.isArray(statusKey)
-            ? allOrders.filter((o) => statusKey.includes(o.status))
-            : allOrders.filter((o) => o.status === statusKey);
-            
+          const filtered = allOrders.filter((o) => {
+             if (type === 'delivery') {
+                 return o.deliveryStatus === status;
+             }
+             return o.laundryStatus === status;
+          });
+
           setOrders(filtered);
           setLoading(false);
         }
       };
       loadOrders();
-    }, [statusKey, shopId])
+    }, [status, type])
   );
 
   const displayedOrders = orders.filter((order) => {
@@ -60,19 +56,17 @@ export default function StatusScreen({
       order.orderId.toLowerCase().includes(searchQuery.toLowerCase()) ||
       order.customerName.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const effectiveStatus = 
-        (order.status === "Completed" || order.status === "Out for Delivery") 
-        ? order.status 
-        : (order.latestProcessStatus || order.status);
-
-    const matchesFilter = filter === "All" || effectiveStatus === filter;
+    const matchesFilter =
+      filter === "All" || order.latestProcessStatus === filter;
 
     return matchesSearch && matchesFilter;
   });
 
+  const displayTitle = Array.isArray(title) ? title[0] : title || "Orders";
+
   return (
     <View style={styles.container}>
-      <Header title={title} />
+      <Header title={displayTitle} />
 
       <View style={styles.searchContainer}>
         <TextInput
@@ -84,22 +78,24 @@ export default function StatusScreen({
         />
       </View>
 
-      <View style={styles.filterContainer}>
-        <View style={styles.filterButton}>
-          <Picker
-            selectedValue={filter}
-            style={styles.picker}
-            onValueChange={(itemValue) => setFilter(itemValue)}
-            dropdownIconColor="#fff" 
-          >
-            <Picker.Item label="All Steps" value="All" />
-            <Picker.Item label="Washing" value="Washing" />
-            <Picker.Item label="Drying" value="Drying" />
-            <Picker.Item label="Pressing" value="Pressing" />
-            <Picker.Item label="Folding" value="Folding" />
-          </Picker>
+      {status === "Processing" && (
+        <View style={styles.filterContainer}>
+          <View style={styles.filterButton}>
+            <Picker
+              selectedValue={filter}
+              style={styles.picker}
+              onValueChange={(itemValue) => setFilter(itemValue)}
+              dropdownIconColor="#fff" 
+            >
+              <Picker.Item label="All Stages" value="All" />
+              <Picker.Item label="Washed" value="Washed" />
+              <Picker.Item label="Dry" value="Dry" />
+              <Picker.Item label="Steam Pressed/Ironed" value="Steam Pressed/Ironed" />
+              <Picker.Item label="Folded" value="Folded" />
+            </Picker>
+          </View>
         </View>
-      </View>
+      )}
 
       {loading ? (
         <ActivityIndicator size="large" color="#00aaff" style={{ marginTop: 20 }} />
@@ -108,35 +104,21 @@ export default function StatusScreen({
           {displayedOrders.length > 0 ? (
             displayedOrders.map((order) => {
               
-              let statusToDisplay = order.latestProcessStatus || order.status;
+              let statusToDisplay = type === 'delivery' 
+                ? order.deliveryStatus 
+                : (status === "Processing" ? (order.latestProcessStatus || "Processing") : order.laundryStatus);
 
-              if (order.status === "Rejected") {
-                statusToDisplay = order.reason || "Rejected";
-              } else if (order.status === "Completed") {
-                statusToDisplay = "Completed";
-              } else if (order.status === "Out for Delivery") {
-                statusToDisplay = "Out for Delivery";
-              }
-
-              // 🔑 FIX: Define extra styles separately
-              let extraBadgeStyle: ViewStyle = {};
-              let extraTextStyle: TextStyle = {};
-
-              if (order.status === "Completed") {
-                  extraBadgeStyle = styles.completedBadge;
-                  extraTextStyle = styles.completedText;
-              } else if (order.status === "Rejected") {
-                  extraBadgeStyle = styles.rejectedBadge;
-                  extraTextStyle = styles.rejectedText;
+              if (order.laundryStatus === "Cancelled") {
+                statusToDisplay = "Cancelled";
               }
 
               return (
                 <View key={order.orderId} style={styles.card}>
                   <View style={styles.cardRow}>
-                    {/* Left side */}
                     <View style={styles.cardLeft}>
                       <Text style={styles.orderId}>#{order.orderId}</Text>
                       <Text style={styles.customer}>{order.customerName}</Text>
+                      
                       <TouchableOpacity
                         onPress={() =>
                           router.push({
@@ -147,8 +129,9 @@ export default function StatusScreen({
                       >
                         <Text style={styles.viewDetails}>View Details</Text>
                       </TouchableOpacity>
-                      
-                      {showUpdate && order.status !== 'Completed' && order.status !== 'Rejected' && (
+
+                      {/* Update Laundry Button */}
+                      {order.laundryStatus === "Processing" && (
                         <TouchableOpacity
                           style={styles.updateBtn}
                           onPress={() =>
@@ -157,7 +140,7 @@ export default function StatusScreen({
                               params: {
                                 orderId: order.orderId,
                                 customer: order.customerName,
-                                currentStatus: order.latestProcessStatus,
+                                currentStatus: order.latestProcessStatus || "Processing",
                               },
                             })
                           }
@@ -165,13 +148,39 @@ export default function StatusScreen({
                           <Text style={styles.updateText}>Update Laundry</Text>
                         </TouchableOpacity>
                       )}
+
+                      {/* 🟢 NEW: Manage Delivery Button */}
+                      {type === 'delivery' && (order.deliveryStatus === 'To Pick-up' || order.deliveryStatus === 'Rider Booked' || order.deliveryStatus === 'For Delivery') && (
+                        <TouchableOpacity
+                          style={[styles.updateBtn, { backgroundColor: '#ff9800', marginTop: 8 }]}
+                          onPress={() =>
+                            router.push({
+                              pathname: "/home/updateDelivery",
+                              params: {
+                                orderId: order.orderId,
+                              },
+                            })
+                          }
+                        >
+                          <Text style={styles.updateText}>Manage Delivery</Text>
+                        </TouchableOpacity>
+                      )}
+
                     </View>
 
-                    {/* Right side (badge) */}
                     <View style={styles.cardRight}>
-                      {/* 🔑 FIX: Use array syntax to merge styles */}
-                      <View style={[styles.statusBadge, extraBadgeStyle]}>
-                        <Text style={[styles.statusText, extraTextStyle]}>
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          order.laundryStatus === "Cancelled" && styles.cancelledBadge,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.statusText,
+                            order.laundryStatus === "Cancelled" && styles.cancelledText,
+                          ]}
+                        >
                           {statusToDisplay}
                         </Text>
                       </View>
@@ -182,7 +191,7 @@ export default function StatusScreen({
             })
           ) : (
             <Text style={styles.noOrders}>
-              No orders found matching your filter.
+              No {displayTitle.toLowerCase()} orders found.
             </Text>
           )}
         </ScrollView>
@@ -290,7 +299,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: "center",
   },
-  // Badge Styles
   statusBadge: {
     backgroundColor: "#e1f5fe",
     minWidth: 80,
@@ -306,23 +314,11 @@ const styles = StyleSheet.create({
     color: "#0277bd",
     textAlign: "center",
   },
-  completedBadge: {
-    backgroundColor: "#e8f5e9",
-  },
-  completedText: {
-    color: "#2e7d32",
-    fontSize: 13,
-    fontWeight: "700",
-    textAlign: "center",
-  },
-  rejectedBadge: {
+  cancelledBadge: {
     backgroundColor: "#f8d7da",
   },
-  rejectedText: {
+  cancelledText: {
     color: "#b71c1c",
-    fontSize: 13,
-    fontWeight: "700",
-    textAlign: "center",
   },
   noOrders: {
     textAlign: "center",

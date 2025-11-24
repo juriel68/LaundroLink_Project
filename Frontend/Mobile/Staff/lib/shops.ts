@@ -1,7 +1,6 @@
-// Staff/lib/shops.ts
-
 import axios from "axios";
-import { API_URL } from "@/lib/api";
+// 🔑 UPDATED: Using relative path to ensure build consistency
+import { API_URL } from "./api";
 
 // --- INTERFACES ---
 
@@ -22,8 +21,7 @@ export interface Service {
     id: string; 
     name: string; 
     price: number; 
-    minLoad: number; 
-    maxLoad: number; 
+    minWeight: number; // 🔑 Matches backend 'MinWeight'
 }
 
 export interface AddOn {
@@ -35,7 +33,7 @@ export interface AddOn {
 export interface DeliveryOption {
     id: string;     
     name: string;   
-    description: string; 
+    // 🔑 Removed 'description' as it was dropped from DB schema
 }
 
 export interface FabricType {
@@ -48,6 +46,19 @@ export interface PaymentMethod {
     name: string; 
 }
 
+// 🟢 NEW: Interface for Shop_Own_Service
+export interface OwnDeliverySettings {
+    ShopBaseFare: number;
+    ShopBaseKm: number;
+    ShopDistanceRate: number;
+    ShopServiceStatus: string;
+}
+
+// 🟢 NEW: Interface for Shop_Delivery_App
+export interface LinkedDeliveryApp {
+    DlvryAppName: string;
+}
+
 /**
  * The complete structure returned when fetching full shop details.
  */
@@ -58,6 +69,9 @@ export interface FullShopDetails {
     deliveryOptions: DeliveryOption[];
     fabricTypes: FabricType[];
     paymentMethods: PaymentMethod[];
+    // 🟢 NEW: Delivery Configurations
+    ownDelivery: OwnDeliverySettings | null;
+    deliveryApps: LinkedDeliveryApp[];
 }
 
 // --- API FUNCTIONS ---
@@ -78,6 +92,9 @@ export const fetchShopDetails = async (shopId: string): Promise<FullShopDetails 
                 deliveryOptions: response.data.deliveryOptions || [], 
                 fabricTypes: response.data.fabricTypes || [], 
                 paymentMethods: response.data.paymentMethods || [],
+                // 🟢 UPDATED: Parse new delivery config data
+                ownDelivery: response.data.ownDelivery || null,
+                deliveryApps: response.data.deliveryApps || []
             };
         }
         

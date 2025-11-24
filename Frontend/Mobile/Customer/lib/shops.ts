@@ -3,8 +3,12 @@
 import axios from "axios";
 import { API_URL } from "@/lib/api";
 
+// =================================================================
+// 1. DOMAIN ENTITIES (INTERFACES)
+// =================================================================
+
 export interface Shop {
-    id: string; 
+    id: number; 
     name: string; 
     address: string; 
     description: string; 
@@ -16,50 +20,36 @@ export interface Shop {
     distance: number; 
 }
 
-/**
- * Interface for Service details.
- */
 export interface Service {
-    id: string; 
+    id: number; 
     name: string; 
     price: number; 
-    minLoad: number; 
-    maxLoad: number; 
+    minWeight: number; 
 }
 
-/**
- * Interface for Add-On details.
- */
 export interface AddOn {
-    id: string; 
+    id: number; 
     name: string; 
     price: number; 
 }
 
-/**
- * Interface for Delivery Option details.
- */
 export interface DeliveryOption {
-    id: string;     
+    id: number;     
     name: string;   
-    description: string; 
 }
 
 export interface FabricType {
-    id: string; 
+    id: number; 
     name: string; 
 }
 
 export interface PaymentMethod {
-    id: string; 
+    id: number; 
     name: string; 
 }
 
-/**
- * The complete structure returned when fetching full shop details.
- */
 export interface FullShopDetails {
-    shop: Shop; // Detailed info for the selected shop
+    shop: Shop; 
     services: Service[];
     addOns: AddOn[];
     deliveryOptions: DeliveryOption[];
@@ -67,13 +57,27 @@ export interface FullShopDetails {
     paymentMethods: PaymentMethod[];
 }
 
+// 🔑 NEW: Interface for In-House Delivery Settings
+export interface OwnDeliverySettings {
+    ShopBaseFare: number;
+    ShopBaseKm: number;
+    ShopDistanceRate: number;
+    ShopServiceStatus: 'Active' | 'Inactive';
+}
 
-// --- API FUNCTIONS ---
+// 🔑 NEW: Interface for Linked 3rd Party Apps
+export interface LinkedApp {
+    DlvryAppID: number;
+    DlvryAppName: string;
+    AppBaseFare: number;
+    AppBaseKm: number;
+    AppDistanceRate: number;
+}
 
-/**
- * Fetches a list of shops near the provided geographic coordinates.
- * Corresponds to: GET /api/shops/nearby
- */
+// =================================================================
+// 2. API FUNCTIONS
+// =================================================================
+
 export const fetchNearbyShops = async (latitude: number, longitude: number): Promise<Shop[]> => {
     try {
         const response = await axios.get(`${API_URL}/shops/nearby`, {
@@ -81,56 +85,121 @@ export const fetchNearbyShops = async (latitude: number, longitude: number): Pro
         });
 
         if (response.data.success && Array.isArray(response.data.shops)) {
-            // 🔑 CRITICAL FIX: Map the PascalCase keys returned by the backend SQL query 
-            // to the camelCase/snake_case keys expected by the React Native interfaces.
             return response.data.shops.map((s: any): Shop => ({
-                id: s.id?.toString() || s.ShopID?.toString() || '', // Use 'id' if backend alias succeeded, otherwise use fallback
-                name: s.name || s.ShopName,
-                address: s.address || s.ShopAddress,
-                description: s.description || s.ShopDescrp,
-                image_url: s.image_url || s.ShopImage_url, 
-                contact: s.contact || s.ShopPhone,
-                hours: s.hours || s.ShopOpeningHours,
-                availability: s.availability || s.ShopStatus, // Map ShopStatus to availability
+                id: parseInt(s.id || s.ShopID, 10),
+                name: s.name,
+                address: s.address,
+                description: s.description,
+                image_url: s.image_url, 
+                contact: s.contact,
+                hours: s.hours,
+                availability: s.availability,
                 rating: s.rating?.toString() || '0.0',
-                distance: s.distance, // distance should already be correct from the backend AS clause
+                distance: typeof s.distance === 'number' ? s.distance : parseFloat(s.distance || '0'), 
             }));
         }
-        
-        console.error("Backend reported error fetching shops:", response.data.message);
         return [];
-
     } catch (error) {
-        console.error("Error in fetchNearbyShops (Network/Server):", error);
+        console.error("Error in fetchNearbyShops:", error);
         return []; 
     }
 };
 
-/**
- * Fetches the full details (services, add-ons, and delivery options) for a specific shop.
- * Corresponds to: GET /api/shops/:shopId/full-details
- */
-export const fetchShopDetails = async (shopId: string): Promise<FullShopDetails | null> => {
+export const fetchShopDetails = async (shopId: string | number): Promise<FullShopDetails | null> => {
     try {
         const response = await axios.get(`${API_URL}/shops/${shopId}/full-details`);
 
         if (response.data.success && response.data.shop) {
-            // This route's backend query uses explicit aliases, so only minimal checking is needed here.
+            const toInt = (val: any) => parseInt(val, 10);
+            const shopData = response.data.shop;
+            
+            const shop: Shop = {
+                ...shopData,
+                id: toInt(shopData.id),
+                rating: shopData.rating?.toString() || '0.0',
+                distance: typeof shopData.distance === 'number' ? shopData.distance : parseFloat(shopData.distance || '0')
+            };
+
+            const mappedServices: Service[] = (response.data.services || []).map((s: any) => ({
+                id: toInt(s.id),
+                name: s.name,
+                price: parseFloat(s.price),
+                minWeight: s.minWeight || s.minLoad || 1 
+            }));
+
+            const mappedAddOns: AddOn[] = (response.data.addOns || []).map((a: any) => ({
+                id: toInt(a.id),
+                name: a.name,
+                price: parseFloat(a.price)
+            }));
+            
+            const mappedDelivery: DeliveryOption[] = (response.data.deliveryOptions || []).map((d: any) => ({
+                id: toInt(d.id),
+                name: d.name,
+            }));
+
+            const mappedFabrics: FabricType[] = (response.data.fabricTypes || []).map((f: any) => ({
+                id: toInt(f.id),
+                name: f.name
+            }));
+
+            const mappedPayments: PaymentMethod[] = (response.data.paymentMethods || []).map((p: any) => ({
+                id: toInt(p.id),
+                name: p.name
+            }));
+
             return {
-                shop: response.data.shop as Shop,
-                services: response.data.services || [],
-                addOns: response.data.addOns || [],
-                deliveryOptions: response.data.deliveryOptions || [], 
-                fabricTypes: response.data.fabricTypes || [], 
-                paymentMethods: response.data.paymentMethods || [],
+                shop,
+                services: mappedServices,
+                addOns: mappedAddOns,
+                deliveryOptions: mappedDelivery,
+                fabricTypes: mappedFabrics,
+                paymentMethods: mappedPayments,
             };
         }
-        
-        console.error(`Shop details not found or failed to load for ShopID ${shopId}:`, response.data.error);
         return null;
-
     } catch (error) {
-        console.error(`Error in fetchShopDetails for ${shopId} (Network/Server):`, error);
+        console.error(`Error in fetchShopDetails for ${shopId}:`, error);
         return null;
+    }
+};
+
+// 🔑 NEW: Fetch In-House Settings
+export const fetchOwnDeliverySettings = async (shopId: string | number): Promise<OwnDeliverySettings | null> => {
+    try {
+        const response = await axios.get(`${API_URL}/shops/${shopId}/own-delivery`);
+        if (response.data.success && response.data.settings) {
+            const s = response.data.settings;
+            return {
+                ShopBaseFare: parseFloat(s.ShopBaseFare),
+                ShopBaseKm: parseInt(s.ShopBaseKm, 10),
+                ShopDistanceRate: parseFloat(s.ShopDistanceRate),
+                ShopServiceStatus: s.ShopServiceStatus
+            };
+        }
+        return null;
+    } catch (error) {
+        console.error("Error fetching own delivery settings:", error);
+        return null;
+    }
+};
+
+// 🔑 NEW: Fetch Linked Apps
+export const fetchLinkedApps = async (shopId: string | number): Promise<LinkedApp[]> => {
+    try {
+        const response = await axios.get(`${API_URL}/shops/${shopId}/delivery-apps`);
+        if (response.data.success && Array.isArray(response.data.apps)) {
+            return response.data.apps.map((app: any) => ({
+                DlvryAppID: parseInt(app.DlvryAppID, 10),
+                DlvryAppName: app.DlvryAppName,
+                AppBaseFare: parseFloat(app.AppBaseFare),
+                AppBaseKm: parseInt(app.AppBaseKm, 10),
+                AppDistanceRate: parseFloat(app.AppDistanceRate)
+            }));
+        }
+        return [];
+    } catch (error) {
+        console.error("Error fetching linked apps:", error);
+        return [];
     }
 };

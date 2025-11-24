@@ -7,16 +7,19 @@ import { API_URL } from "./api";
 
 /**
  * Defines the structure for the payload sent to POST /api/orders.
+ * 🔑 UPDATED: IDs are now numbers to match database INT columns.
  */
 export interface CreateOrderPayload {
-    CustID: string;
-    ShopID: string; 
-    SvcID: string; 
-    deliveryId: string; 
+    CustID: string;   // VARCHAR
+    ShopID: number;   // INT
+    SvcID: number;    // INT
+    deliveryId: number; // INT
     weight: number; 
     instructions: string;
-    fabrics: string[]; 
-    addons: string[]; 
+    fabrics: number[]; 
+    addons: number[];
+    finalDeliveryFee: number;
+    deliveryOptionName: string;
 }
 
 
@@ -63,11 +66,11 @@ export interface CustomerOrderDetails {
     customerName: string;
     customerPhone: string;
     customerAddress: string;
-    shopId: string;
+    shopId: number; // INT
     shopName: string;
-    shopAddress: string; //added
-    shopPhone: string; //added
-    invoiceId: string; //added
+    shopAddress: string;
+    shopPhone: string;
+    invoiceId: string;
     serviceName: string;
     servicePrice: number;
     weight: number;
@@ -75,11 +78,13 @@ export interface CustomerOrderDetails {
     deliveryType: string;
     deliveryFee: number;
     orderStatus: string; 
-    invoiceStatus: string;
+    invoiceStatus: string; // Maps to Invoices.PaymentStatus
     fabrics: string[];
     addons: AddOnDetail[];
     totalAmount: number;
     paymentMethodName?: string;
+    reason?: string; // Rejection Reason
+    note?: string;   // Rejection Note
 }
 
 /**
@@ -122,7 +127,6 @@ export async function createNewOrder(
 export async function fetchCustomerOrders(
     customerId: string
 ): Promise<CustomerOrderPreview[]> {
-    
     try {
         const response = await fetch(`${API_URL}/orders/customer/${customerId}`);
 
@@ -132,7 +136,6 @@ export async function fetchCustomerOrders(
         }
 
         const data: CustomerOrderPreview[] = await response.json();
-        
         return data;
     } catch (error) {
         console.error("Error fetching customer order list:", error);
@@ -165,13 +168,16 @@ export async function fetchOrderDetails(
     }
 }
 
-export const confirmPayment = async (
+/**
+ * Confirms payment (e.g., Cash or GCash)
+ */
+export const submitPayment = async (
     orderId: string, 
-    methodId: string, // 'M01' for GCash/Paypal, 'M02' for Cash
+    methodId: number, // INT
     amount: number
 ): Promise<boolean> => {
     try {
-        const response = await fetch(`${API_URL}/orders/payment-confirmation`, {
+        const response = await fetch(`${API_URL}/orders/customer/payment-submission`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ orderId, methodId, amount }),
@@ -184,7 +190,34 @@ export const confirmPayment = async (
         const data = await response.json();
         return data.success;
     } catch (error) {
-        console.error("Error in confirmPayment:", error);
+        console.error("Error in submitPayment:", error);
+        return false;
+    }
+};
+
+/**
+ * 🔑 NEW: Confirms delivery fee payment (Updates Delivery_Payments to 'Paid')
+ */
+export const submitDeliveryPayment = async (
+    orderId: string, 
+    methodId: number, // INT
+    amount: number
+): Promise<boolean> => {
+    try {
+        const response = await fetch(`${API_URL}/orders/customer/delivery-payment-submission`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId, methodId, amount }),
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to confirm delivery payment');
+        }
+        
+        const data = await response.json();
+        return data.success;
+    } catch (error) {
+        console.error("Error in submitDeliveryPayment:", error);
         return false;
     }
 };

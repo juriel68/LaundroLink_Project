@@ -1,7 +1,8 @@
-// auth.ts (Staff) - REVISED for Page Load Gating
+// Staff/lib/auth.ts
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_URL } from "@/lib/api"; 
+import axios from 'axios';
+import { API_URL } from "./api"; 
 
 // Define the shape of the user object
 export interface UserSession { 
@@ -13,13 +14,13 @@ export interface UserSession {
 }
 
 let currentUser: UserSession | null = null;
+
 // --- UPDATED ENDPOINT ---
 const MAINTENANCE_STATUS_ENDPOINT = `${API_URL}/admin/config/maintenance-status`; 
 // ------------------------
 
-// Helper to save the session internally (omitted for brevity, assume unchanged)
+// Helper to save the session internally
 const saveSession = async (user: UserSession): Promise<void> => {
-    // ... (implementation)
     currentUser = user;
     try {
         await AsyncStorage.setItem('user_session', JSON.stringify(user));
@@ -36,28 +37,22 @@ const saveSession = async (user: UserSession): Promise<void> => {
  */
 async function checkMaintenanceStatus(): Promise<boolean> {
     try {
-        const response = await fetch(MAINTENANCE_STATUS_ENDPOINT);
+        // Axios throws an error automatically for non-2xx responses (404, 500, etc.)
+        const response = await axios.get(MAINTENANCE_STATUS_ENDPOINT);
         
-        // 1. If response is NOT ok (e.g., 503, 500, 403, 404), maintenance is assumed ON (Fail-Safe).
-        if (!response.ok) {
-            return true; 
-        }
-
-        // 2. If status is 200 OK, check the JSON body for the explicit flag.
-        try {
-            const data = await response.json();
-            if (typeof data.maintenanceMode === 'boolean' && data.maintenanceMode === true) {
-                 return true; // Maintenance is ACTIVE (Confirmed by JSON)
-            }
-        } catch (e) {
-            // Ignore parsing errors; fall through to return false.
+        // If we reach here, status is 200 OK. Check the JSON body.
+        const data = response.data;
+        
+        if (typeof data.maintenanceMode === 'boolean' && data.maintenanceMode === true) {
+             return true; // Maintenance is ACTIVE (Confirmed by JSON)
         }
         
         return false; // Maintenance is INACTIVE
-        
+
     } catch (error: any) {
-        // 3. Network error (server unreachable) -> fail-safe block.
-        // Assume maintenance is ON for non-admins if we can't confirm status.
+        // 1. Network error (server unreachable)
+        // 2. HTTP Error (404, 500, 503)
+        // -> Fail-safe block: Assume maintenance is ON for non-admins if we can't confirm status.
         return true; 
     }
 }
@@ -73,17 +68,13 @@ export const login = async (email: string, password: string): Promise<UserSessio
     console.log("--- auth.ts: Attempting Staff Login (via 'login' function) ---");
     
     try {
-        const res = await fetch(loginUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, password }),
-        });
+        const response = await axios.post(loginUrl, { email, password });
+        const data = response.data;
 
-        const data = await res.json();
-        console.log("Response Status:", res.status);
+        console.log("Response Status:", response.status);
         console.log("Response Data:", data);
 
-        if (res.ok && data.success) {
+        if (data.success) {
             const userData = data.user as UserSession; 
 
             if (!userData) {
@@ -91,20 +82,29 @@ export const login = async (email: string, password: string): Promise<UserSessio
             }
             
             await saveSession(userData);
-            
             return userData;
         } else {
-            // Throw a specific error message for the component to handle (e.g., invalid credentials)
+            // Logic handled by backend returning success: false
             throw new Error(data.message || "Invalid email or password.");
         }
     } catch (error: any) {
-        // Re-throw network or parsing errors, or invalid credential errors
-        console.error("Staff Login API error:", error.message);
-        throw error;
+        // Handle Axios specific error structures if needed
+        let errorMessage = error.message;
+
+        if (error.response) {
+            // Server responded with a status code other than 2xx
+            console.error("Staff Login API error (Server):", error.response.data);
+            errorMessage = error.response.data.message || "Invalid credentials or server error.";
+        } else if (error.request) {
+            // Request was made but no response received
+            console.error("Staff Login API error (Network):", error.request);
+            errorMessage = "Network error. Please check your connection.";
+        }
+
+        console.error("Staff Login API error:", errorMessage);
+        throw new Error(errorMessage);
     }
 };
-
-// ... (getCurrentUser, loadUserFromStorage, and logout functions remain unchanged in practice)
 
 /**
  * Retrieves the currently logged-in user's data.

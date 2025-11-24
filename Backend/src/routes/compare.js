@@ -99,35 +99,38 @@ router.post("/", async (req, res) => {
             );
         }
 
-        // 6. CHECK DELIVERY TYPE TO SET STATUS
-        const [optionResult] = await connection.query(
-            "SELECT DlvryTypeID FROM Shop_Delivery_Options WHERE DlvryID = ?",
-            [deliveryId]
+        // 6. Initial Status
+        await connection.query(
+            "INSERT INTO Order_Status (OrderID, OrderStatus, OrderUpdatedAt) VALUES (?, 'Pending', NOW())",
+            [newOrderID]
         );
 
-        if (optionResult.length > 0) {
-            const typeID = optionResult[0].DlvryTypeID;
-            let initialStatus = 'Pending'; // Default for Pick-up/P&D until paid
-
-            // Global IDs: 1 = Drop-off Only, 3 = For Delivery (Client sends via courier)
-            if (typeID === 1 || typeID === 3) {
-                 initialStatus = 'To Weigh';
-            }
+        // 7. Initial Invoice (Service Fee is 0.00 until staff weighs)
+        const newInvoiceID = generateID('INV');
+        await connection.query(
+            "INSERT INTO Invoices (InvoiceID, OrderID, PayAmount, PaymentStatus, PmtCreatedAt) VALUES (?, ?, 0.00, 'To Confirm', NOW())",
+            [newInvoiceID, newOrderID] 
+        );
+        
+        if (deliveryOptionName && finalDeliveryFee > 0) {
+            const name = String(deliveryOptionName).toLowerCase();
             
-            // Insert the status (Pending OR To Weigh)
-            await connection.query(
-                `INSERT INTO Order_Status (OrderID, OrderStatus, OrderUpdatedAt)
-                 VALUES (?, ?, NOW())`,
-                [newOrderID, initialStatus]
-            );
+            let status = null;
+            
+            // Scenario: Drop-off or For Delivery -> Needs to update order status to 'To Weigh'
+            if (name.includes("for delivery") || name.includes("drop-off")) {
+                status = 'To Weigh';
+            }
+
+            if (status) {
+                // Order Status of Pick-up or Pick-up & Delivery are default null in the database
+                await connection.query(
+                    `INSERT INTO Order_Status (OrderID, OrderStatus, OrderUpdatedAt)
+                    VALUES (?, ?, NOW())`,
+                    [newOrderID, status]
+                );
+            }
         }
-    
-        // 7. DlvryPayID is AUTO_INCREMENT, MethodID/PaymentProofImage/DlvryProofImage/DlvryPaymentStatus are NULL
-            await connection.query(
-                `INSERT INTO Delivery_Payments (OrderID, DlvryAmount, CreatedAt) 
-                VALUES (?, ?, NOW())`,
-                [newOrderID, finalDeliveryFee]
-            );
         
         await logUserActivity(CustID, 'Customer', 'Create Order', `New order created: ${newOrderID}`);
 
@@ -208,20 +211,8 @@ router.get("/shop/:shopId", async (req, res) => {
         const [rows] = await db.query(
             `
             WITH LatestOrderStatus AS (
-                SELECT 
-                    OrderID, 
-                    OrderStatus, 
-                    OrderUpdatedAt, 
-                    ROW_NUMBER() OVER (PARTITION BY OrderID ORDER BY OrderUpdatedAt DESC) as rn
+                SELECT OrderID, OrderStatus, OrderUpdatedAt, ROW_NUMBER() OVER (PARTITION BY OrderID ORDER BY OrderUpdatedAt DESC) as rn
                 FROM Order_Status
-            ),
-            LatestDeliveryStatus AS (
-                SELECT 
-                    OrderID, 
-                    DlvryStatus, 
-                    UpdatedAt, 
-                    ROW_NUMBER() OVER (PARTITION BY OrderID ORDER BY UpdatedAt DESC) as drn
-                FROM Delivery_Status
             )
             SELECT 
                 o.OrderID AS orderId,
@@ -229,59 +220,23 @@ router.get("/shop/:shopId", async (req, res) => {
                 o.ShopID AS shopId,
                 ld.SvcID AS serviceId,
                 ld.LndryDtlID AS laundryDetailId,
-                ld.DlvryID AS deliveryOptionId,
+                ld.DlvryID AS deliveryId,
                 o.OrderCreatedAt AS createdAt,
-                
-                -- Order Status info
-                los.OrderStatus AS laundryStatus,
+                los.OrderStatus AS status,
                 los.OrderUpdatedAt AS updatedAt,
-                
-                -- Customer & Service info
                 c.CustName AS customerName,
                 s.SvcName AS serviceName,
-                
-                -- Invoice info
+                rej.RejectionReason as reason,
+                rej.RejectionNote as note,
                 i.PaymentStatus as invoiceStatus,
-                i.PayAmount as totalAmount, 
-
-                -- Processing info
-                (SELECT op.OrderProcStatus 
-                 FROM Order_Processing op 
-                 WHERE op.OrderID = o.OrderID 
-                 ORDER BY op.OrderProcUpdatedAt DESC LIMIT 1) AS latestProcessStatus,
-
-                -- Delivery Info
-                lds.DlvryStatus AS deliveryStatus,            
-                dp.DlvryPaymentStatus AS deliveryPaymentStatus,
-                dp.DlvryAmount AS deliveryAmount,
-                
-                -- Extra details for Payment Modal
-                pm.MethodName AS deliveryPaymentMethod,
-                dp.StatusUpdatedAt AS deliveryPaymentDate,
-                
-                -- 🟢 UPDATED: Using subquery to fetch image from Delivery_Booking_Proofs 
-                -- instead of the dropped DlvryProofImage column in Delivery_Payments
-                (SELECT ImageUrl FROM Delivery_Booking_Proofs WHERE OrderID = o.OrderID ORDER BY UploadedAt DESC LIMIT 1) AS deliveryProofImage
-
+                (SELECT op.OrderProcStatus FROM Order_Processing op WHERE op.OrderID = o.OrderID ORDER BY op.OrderProcUpdatedAt DESC LIMIT 1) AS latestProcessStatus
             FROM Orders o
             JOIN Laundry_Details ld ON o.OrderID = ld.OrderID
             JOIN Customers c ON o.CustID = c.CustID
             JOIN Services s ON ld.SvcID = s.SvcID
-            
-            -- Join Latest Order Status
-            LEFT JOIN LatestOrderStatus los ON o.OrderID = los.OrderID AND los.rn = 1
-            
-            -- Join Latest Delivery Status using OrderID
-            LEFT JOIN LatestDeliveryStatus lds ON o.OrderID = lds.OrderID AND lds.drn = 1
-            
-            -- Join Delivery Payments using OrderID
-            LEFT JOIN Delivery_Payments dp ON o.OrderID = dp.OrderID
-            
-            -- Join Payment Methods specifically for Delivery Payments
-            LEFT JOIN Payment_Methods pm ON dp.MethodID = pm.MethodID
-
+            JOIN LatestOrderStatus los ON o.OrderID = los.OrderID AND los.rn = 1
+            LEFT JOIN Rejected_Orders rej ON o.OrderID = rej.OrderID
             LEFT JOIN Invoices i ON o.OrderID = i.OrderID
-            
             WHERE o.ShopID = ? 
             ORDER BY o.OrderCreatedAt DESC;
             `,
@@ -294,20 +249,11 @@ router.get("/shop/:shopId", async (req, res) => {
     }
 });
 
-
 router.get("/:orderId", async (req, res) => {
     const { orderId } = req.params;
     const connection = await db.getConnection();
     try {
         const orderQuery = `
-            WITH LatestDeliveryStatus AS (
-                SELECT 
-                    OrderID, 
-                    DlvryStatus, 
-                    UpdatedAt, 
-                    ROW_NUMBER() OVER (PARTITION BY OrderID ORDER BY UpdatedAt DESC) as drn
-                FROM Delivery_Status
-            )
             SELECT 
                 o.OrderID AS orderId,
                 o.OrderCreatedAt AS createdAt,
@@ -330,7 +276,8 @@ router.get("/:orderId", async (req, res) => {
                 PM.MethodName AS paymentMethodName, 
                 (SELECT os.OrderStatus FROM Order_Status os WHERE os.OrderID = o.OrderID ORDER BY os.OrderUpdatedAt DESC LIMIT 1) AS orderStatus,
                 i.PaymentStatus as invoiceStatus,
-                lds.DlvryStatus AS deliveryStatus
+                rej.RejectionReason as reason,
+                rej.RejectionNote as note
             FROM Orders o
             JOIN Laundry_Details ld ON o.OrderID = ld.OrderID
             LEFT JOIN Customers c ON o.CustID = c.CustID
@@ -339,10 +286,10 @@ router.get("/:orderId", async (req, res) => {
             LEFT JOIN Shop_Services ss ON o.ShopID = ss.ShopID AND ld.SvcID = ss.SvcID
             LEFT JOIN Shop_Delivery_Options SDO ON ld.DlvryID = SDO.DlvryID 
             LEFT JOIN Delivery_Types dt ON SDO.DlvryTypeID = dt.DlvryTypeID
+            LEFT JOIN Rejected_Orders rej ON o.OrderID = rej.OrderID
             LEFT JOIN Invoices i ON o.OrderID = i.OrderID 
             LEFT JOIN Payment_Methods PM ON i.MethodID = PM.MethodID
             LEFT JOIN Delivery_Payments dp ON o.OrderID = dp.OrderID
-            LEFT JOIN LatestDeliveryStatus lds ON o.OrderID = lds.OrderID AND lds.drn = 1
             WHERE o.OrderID = ?;
         `;
         const [[orderDetails]] = await connection.query(orderQuery, [orderId]);
@@ -404,6 +351,12 @@ router.post("/cancel", async (req, res) => {
             "UPDATE Invoices SET PaymentStatus = 'Voided', StatusUpdatedAt = NOW() WHERE OrderID = ?",
             [orderId]
         );
+
+        // 3. Rejected Orders Record (AUTO_INCREMENT ID, do not insert ID)
+        await connection.query(
+            "INSERT INTO Rejected_Orders (OrderID, RejectionReason, RejectedAt) VALUES (?, 'Customer Cancelled', NOW())",
+            [orderId]
+        );
         
         await logUserActivity(userId, userRole, 'Cancel Order', `Order ${orderId} cancelled.`);
         await connection.commit();
@@ -418,7 +371,7 @@ router.post("/cancel", async (req, res) => {
 });
 
 router.post("/status", async (req, res) => {
-    const { orderId, newStatus, userId, userRole } = req.body;
+    const { orderId, newStatus, reason, note, userId, userRole } = req.body;
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
@@ -428,6 +381,23 @@ router.post("/status", async (req, res) => {
             "INSERT INTO Order_Status (OrderID, OrderStatus, OrderUpdatedAt) VALUES (?, ?, NOW())",
             [orderId, newStatus]
         );
+
+        // 2. Handle Rejected/Cancelled logic
+        if (newStatus === "Rejected" || newStatus === "Cancelled") {
+            const invoiceStatusToUse = newStatus === "Rejected" ? 'Rejected' : 'Cancelled';
+            const rejectionReason = newStatus === "Rejected" ? (reason || 'Rejected by Shop') : 'Customer Cancelled';
+
+            // Rejected_Orders (AUTO_INCREMENT ID, do not insert ID)
+            await connection.query(
+                "INSERT INTO Rejected_Orders (OrderID, RejectionReason, RejectionNote, RejectedAt) VALUES (?, ?, ?, NOW())",
+                [orderId, rejectionReason, note || null]
+            );
+
+            await connection.query(
+                "UPDATE Invoices SET PaymentStatus = ?, StatusUpdatedAt = NOW() WHERE OrderID = ?",
+                [invoiceStatusToUse, orderId]
+            );
+        }
         
         await logUserActivity(userId, userRole, 'Update Order Status', `Order ${orderId} status: ${newStatus}`);
         await connection.commit();
@@ -435,6 +405,72 @@ router.post("/status", async (req, res) => {
     } catch (error) {
         await connection.rollback();
         res.status(500).json({ error: "Failed to update status" });
+    } finally {
+        connection.release();
+    }
+});
+
+router.post("/approve-payment", async (req, res) => {
+    const { orderId, userId, userRole } = req.body;
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // Update Invoices -> Paid
+        await connection.query(
+            "UPDATE Invoices SET PaymentStatus = 'Paid', StatusUpdatedAt = NOW() WHERE OrderID = ?",
+            [orderId]
+        );
+
+        // Order Status -> Processing (AUTO_INCREMENT ID, do not insert ID)
+        await connection.query(
+            "INSERT INTO Order_Status (OrderID, OrderStatus, OrderUpdatedAt) VALUES (?, 'Processing', NOW())",
+            [orderId]
+        );
+
+        await logUserActivity(userId, userRole, 'Confirm Payment', `Order ${orderId} Payment Confirmed.`);
+        await connection.commit();
+        res.json({ success: true, message: "Payment confirmed." });
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({ success: false, message: "Failed to approve payment." });
+    } finally {
+        connection.release();
+    }
+});
+
+router.post("/delivery-booking", upload.single("proofImage"), async (req, res) => {
+    const { orderId, fee, total, userId, userRole } = req.body;
+    if (!orderId || !fee || !total || !req.file) return res.status(400).json({ message: "Missing fields" });
+
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        const b64 = Buffer.from(req.file.buffer).toString("base64");
+        const dataURI = "data:" + req.file.mimetype + ";base64," + b64;
+        const uploadResult = await cloudinary.uploader.upload(dataURI, { folder: "laundrolink_delivery_proofs" });
+
+        // Insert into Delivery_Payments (DlvryPayID is AUTO_INCREMENT)
+        await connection.query(
+            `INSERT INTO Delivery_Payments (OrderID, DlvryAmount, MethodID, DlvryProofImage, DlvryPaymentStatus, CreatedAt) 
+             VALUES (?, ?, 1, ?, 'To Confirm', NOW())`,
+            [orderId, fee, uploadResult.secure_url]
+        );
+
+        // Update Order Status (OrderStatID is AUTO_INCREMENT)
+        await connection.query(
+            "INSERT INTO Order_Status (OrderID, OrderStatus, OrderUpdatedAt) VALUES (?, 'To Pick-up', NOW())",
+            [orderId]
+        );
+
+        await logUserActivity(userId, userRole, 'Delivery Booking', `Order ${orderId} delivery booked.`);
+        await connection.commit();
+        res.json({ success: true, message: "Delivery booking saved." });
+    } catch (error) {
+        await connection.rollback();
+        console.error(error);
+        res.status(500).json({ message: "Failed to save delivery." });
     } finally {
         connection.release();
     }
@@ -495,7 +531,7 @@ router.patch("/weight", async (req, res) => {
     }
 });
 
-router.post("/customer/payment-submission", async (req, res) => {
+router.post("/payment-submission", async (req, res) => {
     const { orderId, methodId, amount } = req.body;
     try {
         await db.query(
@@ -509,7 +545,7 @@ router.post("/customer/payment-submission", async (req, res) => {
     }
 });
 
-router.post("/customer/delivery-payment-submission", async (req, res) => {
+router.post("/delivery-payment-submission", async (req, res) => {
     const { orderId, methodId, amount } = req.body;
     
     if (!orderId || !methodId) {
@@ -525,6 +561,9 @@ router.post("/customer/delivery-payment-submission", async (req, res) => {
             "UPDATE Delivery_Payments SET MethodID = ?, DlvryPaymentStatus = 'To Confirm', StatusUpdatedAt = NOW() WHERE OrderID = ?",
             [methodId, orderId]
         );
+
+        // Optional: You might want to update order status here if needed, e.g., to "To Pick-up"
+        // For now, we stick to the specific request of updating the payment status.
 
         await connection.commit();
         res.json({ success: true, message: "Delivery payment submitted for confirmation." });
@@ -558,6 +597,7 @@ router.post("/staff/confirm-service-payment", async (req, res) => {
         );
 
         // 2. Move Order Status to 'Processing' (since it is now paid)
+        // Note: Only if it's currently Pending/Unpaid
         await connection.query(
             "INSERT INTO Order_Status (OrderID, OrderStatus, OrderUpdatedAt) VALUES (?, 'Processing', NOW())",
             [orderId]
@@ -576,7 +616,7 @@ router.post("/staff/confirm-service-payment", async (req, res) => {
     }
 });
 
-// 2. Staff confirms Delivery Payment
+// 2. Staff confirms Delivery Payment (e.g. Lalamove/Rider fee)
 router.post("/staff/confirm-delivery-payment", async (req, res) => {
     const { orderId, userId, userRole } = req.body;
 
@@ -592,12 +632,9 @@ router.post("/staff/confirm-delivery-payment", async (req, res) => {
             [orderId]
         );
 
-        // 1. Mark Delivery Status as To Pick-up 
-        await connection.query(
-            "INSERT INTO Delivery_Status (OrderID, DlvryStatus, UpdatedAt) VALUES (?, 'To Pick-up', NOW())",
-            [orderId]
-        );
-
+        // Optional: If delivery is paid, maybe status moves to "Ready for Pickup" or "To Pick-up"?
+        // For now, we just log it and confirm the money.
+        
         await logUserActivity(userId, userRole, 'Confirm Delivery Pay', `Delivery payment confirmed for Order ${orderId}`);
         await connection.commit();
         res.json({ success: true, message: "Delivery payment confirmed." });
@@ -606,90 +643,6 @@ router.post("/staff/confirm-delivery-payment", async (req, res) => {
         await connection.rollback();
         console.error("Staff confirm delivery payment error:", error);
         res.status(500).json({ error: "Failed to confirm delivery payment." });
-    } finally {
-        connection.release();
-    }
-});
-
-// =================================================================
-// 🟢 NEW: DELIVERY WORKFLOW ROUTES
-// =================================================================
-
-// 1. Upload Booking Proof (Step 1 of 3rd Party App)
-router.post("/delivery/upload-booking", upload.single("proofImage"), async (req, res) => {
-    const { orderId, userId, userRole } = req.body;
-    
-    if (!orderId || !req.file) {
-        return res.status(400).json({ message: "Missing Order ID or Proof Image" });
-    }
-
-    const connection = await db.getConnection();
-    try {
-        await connection.beginTransaction();
-
-        const b64 = Buffer.from(req.file.buffer).toString("base64");
-        const dataURI = "data:" + req.file.mimetype + ";base64," + b64;
-        const uploadResult = await cloudinary.uploader.upload(dataURI, { folder: "laundrolink_delivery_proofs" });
-
-        await connection.query(
-            "INSERT INTO Delivery_Status (OrderID, DlvryStatus, UpdatedAt) VALUES (?, 'Rider Booked', NOW())",
-            [orderId]
-        );
-        
-        await connection.query(
-            `INSERT INTO Delivery_Booking_Proofs (OrderID, ImageUrl, UploadedAt) VALUES (?, ?, NOW())`,
-            [orderId, uploadResult.secure_url]
-        );
-
-        await logUserActivity(userId, userRole, 'Delivery Booking', `Proof uploaded for Order ${orderId}`);
-
-        await connection.commit();
-        res.json({ success: true });
-    } catch (error) {
-        await connection.rollback();
-        console.error("Error uploading booking proof:", error);
-        res.status(500).json({ message: "Failed to upload proof." });
-    } finally {
-        connection.release();
-    }
-});
-
-// 2. Update Delivery & Order Status (Generic Status Update)
-// Handles: Delivered In Shop -> To Weigh, Arrived at Customer -> To Weigh, Delivered To Customer -> Completed
-router.post("/delivery/update-status", async (req, res) => {
-    const { orderId, newDlvryStatus, newOrderStatus, userId, userRole } = req.body;
-    
-    if (!orderId) return res.status(400).json({ message: "Missing Order ID" });
-
-    const connection = await db.getConnection();
-    try {
-        await connection.beginTransaction();
-
-        // Insert Delivery Status
-        if (newDlvryStatus) {
-            await connection.query(
-                "INSERT INTO Delivery_Status (OrderID, DlvryStatus, UpdatedAt) VALUES (?, ?, NOW())",
-                [orderId, newDlvryStatus]
-            );
-        }
-
-        // Insert Order Status
-        if (newOrderStatus) {
-            await connection.query(
-                "INSERT INTO Order_Status (OrderID, OrderStatus, OrderUpdatedAt) VALUES (?, ?, NOW())",
-                [orderId, newOrderStatus]
-            );
-        }
-
-        // Log
-        await logUserActivity(userId, userRole, 'Update Delivery Status', `Order ${orderId}: ${newDlvryStatus}, ${newOrderStatus}`);
-
-        await connection.commit();
-        res.json({ success: true });
-    } catch (error) {
-        await connection.rollback();
-        console.error("Error updating delivery status:", error);
-        res.status(500).json({ message: "Failed to update status." });
     } finally {
         connection.release();
     }

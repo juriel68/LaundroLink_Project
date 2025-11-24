@@ -13,13 +13,31 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+
+// 🛠️ CHANGED: Using relative paths to ensure resolution
 import { fetchOrderDetails, CustomerOrderDetails } from "@/lib/orders";
 
 export default function ReceiptScreen() {
   const router = useRouter();
-  const { orderId } = useLocalSearchParams<{ orderId: string }>();
+  
+  // 🔑 MODIFIED: Accept new params from pay.tsx
+  const { 
+    orderId, 
+    amount, 
+    method, 
+    isFirstPayment 
+  } = useLocalSearchParams<{ 
+    orderId: string, 
+    amount: string, 
+    method: string,
+    isFirstPayment: string
+  }>();
+
   const [order, setOrder] = useState<CustomerOrderDetails | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const isDeliveryReceipt = isFirstPayment === 'true';
+  const paidAmount = parseFloat(amount || "0");
 
   useEffect(() => {
     const loadData = async () => {
@@ -35,11 +53,14 @@ export default function ReceiptScreen() {
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#2ecc71" /></View>;
   if (!order) return <View style={styles.center}><Text>Order not found</Text></View>;
 
-  // Calculations
+  // Calculations for Standard Receipt
   const serviceFee = parseFloat(order.servicePrice.toString()) || 0;
   const deliveryFee = parseFloat(order.deliveryFee.toString()) || 0;
   const addonsFee = order.addons.reduce((sum, item) => sum + parseFloat(item.price.toString()), 0);
-  const total = parseFloat(order.totalAmount.toString()) || (serviceFee + addonsFee + deliveryFee);
+  
+  // If it's a delivery receipt, total is just what was paid. 
+  // Otherwise, calculate grand total or use paidAmount.
+  const displayTotal = paidAmount; 
 
   return (
     <SafeAreaView style={styles.container}>
@@ -52,7 +73,9 @@ export default function ReceiptScreen() {
                 <View style={styles.iconCircle}>
                     <Ionicons name="checkmark" size={40} color="#fff" />
                 </View>
-                <Text style={styles.statusTitle}>Payment Successful</Text>
+                <Text style={styles.statusTitle}>
+                    {isDeliveryReceipt ? "Delivery Fee Paid" : "Payment Successful"}
+                </Text>
                 <Text style={styles.statusSub}>Waiting for staff confirmation</Text>
             </View>
 
@@ -68,14 +91,28 @@ export default function ReceiptScreen() {
 
                     <View style={styles.headerDivider} />
 
-                    <View style={styles.metaRow}>
-                        <Text style={styles.metaLabel}>Invoice ID</Text>
-                        <Text style={styles.metaValue}>#{order.invoiceId}</Text>
+                    {/* 🔑 NEW: Customer Details Section */}
+                    <View style={styles.customerSection}>
+                        <Text style={styles.sectionLabel}>Customer Details</Text>
+                        <Text style={styles.customerName}>{order.customerName}</Text>
+                        <Text style={styles.customerPhone}>{order.customerPhone}</Text>
+                        <Text style={styles.customerPhone}>{order.customerAddress}</Text>
                     </View>
+
+                    <View style={styles.headerDivider} />
+
                     <View style={styles.metaRow}>
                         <Text style={styles.metaLabel}>Order ID</Text>
                         <Text style={styles.metaValue}>#{order.orderId}</Text>
                     </View>
+                    
+                    {!isDeliveryReceipt && (
+                        <View style={styles.metaRow}>
+                            <Text style={styles.metaLabel}>Invoice ID</Text>
+                            <Text style={styles.metaValue}>#{order.invoiceId}</Text>
+                        </View>
+                    )}
+
                     <View style={styles.metaRow}>
                         <Text style={styles.metaLabel}>Date Paid</Text>
                         <Text style={styles.metaValue}>{new Date().toLocaleDateString()}</Text>
@@ -85,7 +122,7 @@ export default function ReceiptScreen() {
                     <View style={styles.metaRow}>
                         <Text style={styles.metaLabel}>Payment Method</Text>
                         <Text style={[styles.metaValue, { color: '#004aad' }]}>
-                            {order.paymentMethodName || "Null"}
+                            {method || order.paymentMethodName || "Cash"}
                         </Text>
                     </View>
                 </View>
@@ -99,29 +136,40 @@ export default function ReceiptScreen() {
                 <View style={styles.body}>
                     <Text style={styles.sectionTitle}>Payment Summary</Text>
                     
-                    <View style={styles.row}>
-                        <Text style={styles.label}>Service ({order.serviceName})</Text>
-                        <Text style={styles.price}>₱{serviceFee.toFixed(2)}</Text>
-                    </View>
-                    
-                    {order.addons.length > 0 && (
+                    {isDeliveryReceipt ? (
+                        // 🔑 OPTION A: Delivery Fee Only Receipt
                         <View style={styles.row}>
-                            <Text style={styles.label}>Add-Ons</Text>
-                            <Text style={styles.price}>₱{addonsFee.toFixed(2)}</Text>
+                            <Text style={styles.label}>Delivery Fee (Upfront)</Text>
+                            <Text style={styles.price}>₱{displayTotal.toFixed(2)}</Text>
                         </View>
+                    ) : (
+                        // 🔑 OPTION B: Full Service Receipt
+                        <>
+                            <View style={styles.row}>
+                                <Text style={styles.label}>Service ({order.serviceName})</Text>
+                                <Text style={styles.price}>₱{serviceFee.toFixed(2)}</Text>
+                            </View>
+                            
+                            {order.addons.length > 0 && (
+                                <View style={styles.row}>
+                                    <Text style={styles.label}>Add-Ons</Text>
+                                    <Text style={styles.price}>₱{addonsFee.toFixed(2)}</Text>
+                                </View>
+                            )}
+                            
+                            <View style={styles.row}>
+                                <Text style={styles.label}>Delivery</Text>
+                                <Text style={styles.price}>₱{deliveryFee.toFixed(2)}</Text>
+                            </View>
+                        </>
                     )}
-                    
-                    <View style={styles.row}>
-                        <Text style={styles.label}>Delivery</Text>
-                        <Text style={styles.price}>₱{deliveryFee.toFixed(2)}</Text>
-                    </View>
 
                     {/* Total Divider */}
                     <View style={styles.solidDivider} />
 
                     <View style={styles.totalRow}>
-                        <Text style={styles.totalLabel}>Total Amount</Text>
-                        <Text style={styles.totalValue}>₱{total.toFixed(2)}</Text>
+                        <Text style={styles.totalLabel}>Total Paid</Text>
+                        <Text style={styles.totalValue}>₱{displayTotal.toFixed(2)}</Text>
                     </View>
                 </View>
                 
@@ -154,7 +202,7 @@ export default function ReceiptScreen() {
                 </View>
             </View>
 
-            {/* 🔑 ADDED: Track Order Button (Replaces Back to Home) */}
+            {/* Track Order Button */}
             <TouchableOpacity 
                 style={styles.trackButton} 
                 onPress={() => router.push({
@@ -205,6 +253,13 @@ const styles = StyleSheet.create({
   shopInfoContainer: { alignItems: 'center', marginBottom: 15 },
   shopNameHeader: { fontSize: 18, fontWeight: 'bold', color: '#004aad', marginBottom: 4, textAlign: 'center' },
   shopDetailsText: { fontSize: 13, color: '#666', textAlign: 'center', marginBottom: 2 },
+  
+  // Customer Section
+  customerSection: { marginBottom: 15 },
+  sectionLabel: { fontSize: 12, color: '#999', textTransform: 'uppercase', marginBottom: 4, fontWeight: '600' },
+  customerName: { fontSize: 15, fontWeight: '700', color: '#333' },
+  customerPhone: { fontSize: 13, color: '#666' },
+
   headerDivider: { height: 1, backgroundColor: '#e0e0e0', width: '100%', marginBottom: 15 },
 
   metaRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
@@ -244,7 +299,7 @@ const styles = StyleSheet.create({
   contactBtn: { flexDirection: 'row', backgroundColor: "#fff", paddingVertical: 10, paddingHorizontal: 20, borderRadius: 25, alignItems: 'center', shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
   contactBtnText: { marginLeft: 8, color: "#004aad", fontWeight: "600" },
 
-  // 🔑 NEW BUTTON STYLES
+  // Track Button
   trackButton: { 
     flexDirection: 'row',
     backgroundColor: "#fff", 

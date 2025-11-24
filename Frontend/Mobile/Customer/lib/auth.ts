@@ -1,4 +1,4 @@
-// lib/auth.ts
+// Customer/lib/auth.ts
 
 import { API_URL } from "./api"; 
 
@@ -8,21 +8,21 @@ import { API_URL } from "./api";
 
 /**
  * Interface for the detailed user object.
- * Matches the response structure from backend/routes/users.js
+ * Matches the combined response structure from backend joins.
  */
 export interface UserDetails {
-    UserID: string;
+    UserID: string;      // VARCHAR in DB
     UserEmail: string;
     UserRole: 'Customer' | 'Staff' | 'Shop Owner' | 'Admin';
     picture?: string;
     
-    // Profile Fields (Mapped from Customers/Staff tables)
+    // Profile Fields
     name?: string;
     phone?: string;
     address?: string;
 
     // Optional Role-Specific Fields
-    ShopID?: string;
+    ShopID?: number;     // 🔑 UPDATED: INT in DB, so number here
     ShopName?: string;
     StaffName?: string;
     StaffPosition?: string;
@@ -40,7 +40,7 @@ export interface LoginResponse {
 }
 
 /**
- * Interface for generic success/fail responses (e.g., Forgot Password)
+ * Interface for generic success/fail responses
  */
 export interface GenericAuthResponse {
     success: boolean;
@@ -58,11 +58,11 @@ const MAINTENANCE_STATUS_ENDPOINT = `${API_URL}/admin/config/maintenance-status`
  * Checks if the system is in Maintenance Mode.
  * Called by index.tsx on app load.
  */
-async function checkMaintenanceStatus(): Promise<boolean> {
+export async function checkMaintenanceStatus(): Promise<boolean> {
     try {
         const response = await fetch(MAINTENANCE_STATUS_ENDPOINT);
         
-        // 1. Server Error (500, 503) -> Assume Maintenance ON (Fail-Safe)
+        // 1. Server Error (500, 503, 404) -> Assume Maintenance ON (Fail-Safe)
         if (!response.ok) {
             return true; 
         }
@@ -210,19 +210,18 @@ export async function googleLogin(
 
 // Helper to handle response safely
 async function handleResponse(response: Response, actionName: string) {
-    const text = await response.text(); // Get raw text first
+    const text = await response.text(); 
     
-    // 🔍 DEBUG LOGGING: Print what the server actually sent
-    console.log(`[${actionName}] Status:`, response.status);
-    console.log(`[${actionName}] Response:`, text.substring(0, 500)); // Print first 500 chars
+    // console.log(`[${actionName}] Status:`, response.status);
+    // console.log(`[${actionName}] Response:`, text.substring(0, 500)); 
 
     if (!response.ok) {
-        // Try to parse JSON error if possible, otherwise throw text
         try {
             const json = JSON.parse(text);
             throw new Error(json.message || `Server Error: ${response.status}`);
-        } catch (e) {
-            throw new Error(`Server returned HTML/Text instead of JSON. Check console for details.`);
+        } catch (e: any) {
+            if (e.message && !e.message.includes("JSON")) throw e;
+            throw new Error(`Server returned HTML/Text instead of JSON. Status: ${response.status}`);
         }
     }
 
@@ -233,10 +232,10 @@ async function handleResponse(response: Response, actionName: string) {
     }
 }
 
-// --- UPDATED FUNCTIONS ---
+// --- UPDATED FUNCTIONS (Strict Typing: userId is string) ---
 
 export async function updateUserProfile(
-    userId: number | string, 
+    userId: string, // 🔑 FIX: Enforce string to match DB VARCHAR
     data: { name?: string; phone?: string | null; address?: string | null; picture?: string | null }
 ): Promise<any> {
     const response = await fetch(`${API_URL}/users/profile/${userId}`, {
@@ -247,7 +246,7 @@ export async function updateUserProfile(
     return handleResponse(response, "Update Profile");
 }
 
-export async function updateUserPassword(userId: number | string, newPassword: string): Promise<any> {
+export async function updateUserPassword(userId: string, newPassword: string): Promise<any> {
     const response = await fetch(`${API_URL}/users/set-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -264,4 +263,4 @@ export async function uploadUserImage(formData: FormData): Promise<any> {
     return handleResponse(response, "Upload Image");
 }
 
-export { checkMaintenanceStatus };
+export { };

@@ -1,5 +1,3 @@
-// routes/shops.js
-
 import express from "express";
 import db from "../db.js";
 
@@ -85,85 +83,69 @@ router.get("/nearby", async (req, res) => {
     }
 });
 
+
 // GET /api/shops/:shopId/full-details (Customer App)
 router.get("/:shopId/full-details", async (req, res) => {
     const { shopId } = req.params;
     const connection = await db.getConnection();
 
     try {
-        const [
-            [[shopDetails]], 
-            services,
-            addOns,
-            deliveryOptions,
-            fabricTypes,
-            paymentMethods,
-        ] = await Promise.all([
-            // 1. Basic Shop Details
-            connection.query(
-                `SELECT 
-                    LS.ShopID as id, LS.ShopName as name, LS.ShopAddress as address, 
-                    LS.ShopDescrp as description, LS.ShopImage_url as image_url, 
-                    LS.ShopPhone as contact, LS.ShopOpeningHours as hours, 
-                    LS.ShopStatus as availability,
-                    COALESCE(SR.ShopRating, 0.0) AS rating 
-                FROM Laundry_Shops AS LS
-                LEFT JOIN Shop_Rates AS SR ON LS.ShopID = SR.ShopID
-                WHERE LS.ShopID = ?`,
-                [shopId]
-            ),
-            
-            // 2. Services
-            connection.query(
-                `SELECT SS.SvcID as id, S.SvcName as name, SS.SvcPrice as price, SS.MinLoad as minLoad, SS.MaxLoad as maxLoad
-                  FROM Shop_Services SS JOIN Services S ON SS.SvcID = S.SvcID WHERE SS.ShopID = ?`,
-                [shopId]
-            ),
+        // 1. Fetch Basic Shop Details first to ensure existence
+        const [shopRows] = await connection.query(
+            `SELECT 
+                LS.ShopID as id, LS.ShopName as name, LS.ShopAddress as address, 
+                LS.ShopDescrp as description, LS.ShopImage_url as image_url, 
+                LS.ShopPhone as contact, LS.ShopOpeningHours as hours, 
+                LS.ShopStatus as availability,
+                COALESCE(SR.ShopRating, 0.0) AS rating 
+            FROM Laundry_Shops AS LS
+            LEFT JOIN Shop_Rates AS SR ON LS.ShopID = SR.ShopID
+            WHERE LS.ShopID = ?`,
+            [shopId]
+        );
 
-            // 3. Add-Ons
-            connection.query(
-                `SELECT SAO.AddOnID as id, AO.AddOnName as name, SAO.AddOnPrice as price
-                  FROM Shop_Add_Ons SAO JOIN Add_Ons AO ON SAO.AddOnID = AO.AddOnID WHERE SAO.ShopID = ?`,
-                [shopId]
-            ),
-            
-            // 4. Delivery Options (Modes)
-            connection.query(
-                `SELECT SDO.DlvryID as id, DT.DlvryTypeName as name, SDO.DlvryDescription as description
-                  FROM Shop_Delivery_Options SDO JOIN Delivery_Types DT ON SDO.DlvryTypeID = DT.DlvryTypeID WHERE SDO.ShopID = ?`,
-                [shopId]
-            ),
-
-            // 5. Fabric Types
-            connection.query(
-                `SELECT SF.FabID as id, F.FabName as name
-                  FROM Shop_Fabrics SF JOIN Fabrics F ON SF.FabID = F.FabID WHERE SF.ShopID = ?`,
-                [shopId]
-            ),
-
-            // 6. Payment Methods
-            connection.query(
-                `SELECT PM.MethodID as id, PM.MethodName as name
-                  FROM Payment_Methods PM`,
-                []
-            ),
-        ]);
-
-        if (!shopDetails) {
+        if (shopRows.length === 0) {
             return res.status(404).json({ success: false, error: "Shop not found." });
         }
+        const shopDetails = shopRows[0];
+
+        // 2. Fetch related data in parallel
+        const [
+            [services],
+            [addOns],
+            [deliveryOptions],
+            [fabricTypes],
+            [paymentMethods],
+            // 🟢 UPDATED: Fetch Delivery Configurations
+            [ownDeliverySettings],
+            [linkedDeliveryApps]
+        ] = await Promise.all([
+            connection.query(`SELECT SS.SvcID as id, S.SvcName as name, SS.SvcPrice as price, SS.MinWeight as minWeight FROM Shop_Services SS JOIN Services S ON SS.SvcID = S.SvcID WHERE SS.ShopID = ?`, [shopId]),
+            connection.query(`SELECT SAO.AddOnID as id, AO.AddOnName as name, SAO.AddOnPrice as price FROM Shop_Add_Ons SAO JOIN Add_Ons AO ON SAO.AddOnID = AO.AddOnID WHERE SAO.ShopID = ?`, [shopId]),
+            connection.query(`SELECT SDO.DlvryID as id, DT.DlvryTypeName as name FROM Shop_Delivery_Options SDO JOIN Delivery_Types DT ON SDO.DlvryTypeID = DT.DlvryTypeID WHERE SDO.ShopID = ?`, [shopId]),
+            connection.query(`SELECT SF.FabID as id, F.FabName as name FROM Shop_Fabrics SF JOIN Fabrics F ON SF.FabID = F.FabID WHERE SF.ShopID = ?`, [shopId]),
+            connection.query(`SELECT PM.MethodID as id, PM.MethodName as name FROM Payment_Methods PM`, []),
+            // 🟢 UPDATED: Fetch Own Service
+            connection.query(`SELECT ShopBaseFare, ShopBaseKm, ShopDistanceRate, ShopServiceStatus FROM Shop_Own_Service WHERE ShopID = ?`, [shopId]),
+            // 🟢 UPDATED: Fetch Linked Apps
+            connection.query(`SELECT DA.DlvryAppName FROM Shop_Delivery_App SDA JOIN Delivery_App DA ON SDA.DlvryAppID = DA.DlvryAppID WHERE SDA.ShopID = ?`, [shopId])
+        ]);
 
         res.json({
             success: true,
             shop: shopDetails,
-            services: services[0],
-            addOns: addOns[0],
-            deliveryOptions: deliveryOptions[0],
-            fabricTypes: fabricTypes[0],
-            paymentMethods: paymentMethods[0],
+            services: services,
+            addOns: addOns,
+            deliveryOptions: deliveryOptions,
+            fabricTypes: fabricTypes,
+            paymentMethods: paymentMethods,
+            // 🟢 UPDATED: Return Delivery Configs
+            ownDelivery: ownDeliverySettings[0] || null, 
+            deliveryApps: linkedDeliveryApps || []
         });
 
     } catch (error) {
+        console.error("Error fetching full details:", error);
         res.status(500).json({ success: false, error: "Failed to fetch shop details." });
     } finally {
         connection.release();
@@ -304,10 +286,10 @@ router.put("/:shopId", async (req, res) => {
         if (ShopLatitude && ShopLongitude) {
             await connection.query(
                 `INSERT INTO Shop_Distance (ShopID, ShopLatitude, ShopLongitude) 
-                 VALUES (?, ?, ?)
-                 ON DUPLICATE KEY UPDATE 
-                 ShopLatitude = VALUES(ShopLatitude), 
-                 ShopLongitude = VALUES(ShopLongitude)`,
+                VALUES (?, ?, ?)
+                ON DUPLICATE KEY UPDATE 
+                ShopLatitude = VALUES(ShopLatitude), 
+                ShopLongitude = VALUES(ShopLongitude)`,
                 [shopId, ShopLatitude, ShopLongitude]
             );
         }
@@ -420,19 +402,28 @@ router.post("/addons", async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// --- DELIVERY TYPES (Legacy/Modes) ---
+// =================================================================
+// 5. DELIVERY MODES 
+// =================================================================
+
+// --- GLOBAL DELIVERY TYPES ---
 router.get("/global/delivery-types", async (req, res) => {
     try {
-        const [deliveryTypes] = await db.query(`SELECT DlvryTypeID, DlvryTypeName, DlvryDescription FROM Delivery_Types`);
+        // 🔑 UPDATED: Removed DlvryDescription
+        const [deliveryTypes] = await db.query(`SELECT DlvryTypeID, DlvryTypeName FROM Delivery_Types`);
         res.json({ success: true, deliveryTypes });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+// --- SHOP DELIVERY OPTIONS ---
 router.get("/:shopId/delivery", async (req, res) => {
     try {
+        // 🔑 UPDATED: Removed DlvryDescription from SELECT
         const [delivery] = await db.query(
-            `SELECT SDO.DlvryID, DT.DlvryTypeName, SDO.DlvryDescription, SDO.DlvryTypeID
-             FROM Shop_Delivery_Options SDO JOIN Delivery_Types DT ON SDO.DlvryTypeID = DT.DlvryTypeID WHERE SDO.ShopID = ?`,
+            `SELECT SDO.DlvryID, DT.DlvryTypeName, SDO.DlvryTypeID
+             FROM Shop_Delivery_Options SDO 
+             JOIN Delivery_Types DT ON SDO.DlvryTypeID = DT.DlvryTypeID 
+             WHERE SDO.ShopID = ?`,
             [req.params.shopId]
         );
         res.json({ success: true, delivery });
@@ -440,15 +431,17 @@ router.get("/:shopId/delivery", async (req, res) => {
 });
 
 router.post("/delivery", async (req, res) => {
-    const { ShopID, DlvryTypeID, DlvryDescription } = req.body;
+    // 🔑 UPDATED: Removed DlvryDescription from body
+    const { ShopID, DlvryTypeID } = req.body; 
     try {
         const [existing] = await db.query(`SELECT DlvryID FROM Shop_Delivery_Options WHERE ShopID = ? AND DlvryTypeID = ?`, [ShopID, DlvryTypeID]);
         let dlvryIdToUse;
         if (existing.length > 0) {
             dlvryIdToUse = existing[0].DlvryID;
-            await db.query(`UPDATE Shop_Delivery_Options SET DlvryDescription = ? WHERE DlvryID = ?`, [DlvryDescription, dlvryIdToUse]);
+            // No update needed if description is gone, just confirm existence
         } else {
-            const [result] = await db.query(`INSERT INTO Shop_Delivery_Options (ShopID, DlvryTypeID, DlvryDescription) VALUES (?, ?, ?)`, [ShopID, DlvryTypeID, DlvryDescription]);
+            // 🔑 UPDATED: Insert only IDs
+            const [result] = await db.query(`INSERT INTO Shop_Delivery_Options (ShopID, DlvryTypeID) VALUES (?, ?)`, [ShopID, DlvryTypeID]);
             dlvryIdToUse = result.insertId;
         }
         res.status(201).json({ success: true, DlvryID: dlvryIdToUse });
@@ -456,10 +449,10 @@ router.post("/delivery", async (req, res) => {
 });
 
 // =================================================================
-// 4. LOGISTICS ROUTES (FINAL CLEANUP)
+// 4. LOGISTICS ROUTES (For Customer & Owner)
 // =================================================================
 
-// --- GLOBAL APPS ---
+// --- GLOBAL APPS (For Owner Config) ---
 router.get("/global/delivery-apps", async (req, res) => {
     try {
         const [apps] = await db.query("SELECT DlvryAppID, DlvryAppName, AppBaseFare, AppBaseKm, AppDistanceRate FROM Delivery_App");
@@ -469,7 +462,7 @@ router.get("/global/delivery-apps", async (req, res) => {
     }
 });
 
-// --- SHOP OWN SERVICE (Needs Status to preserve price settings) ---
+// --- SHOP OWN SERVICE (For Customer Calc & Owner Config) ---
 router.get("/:shopId/own-delivery", async (req, res) => {
     try {
         const [rows] = await db.query(
@@ -484,8 +477,6 @@ router.get("/:shopId/own-delivery", async (req, res) => {
 
 router.post("/own-delivery", async (req, res) => {
     const { ShopID, ShopBaseFare, ShopBaseKm, ShopDistanceRate, ShopServiceStatus } = req.body;
-    
-    // Default to 'Active' if not provided
     const statusToSave = ShopServiceStatus || 'Active'; 
 
     try {
@@ -505,7 +496,7 @@ router.post("/own-delivery", async (req, res) => {
     }
 });
 
-// --- LINKED DELIVERY APPS (No Status needed - Row existence = Active) ---
+// --- LINKED DELIVERY APPS (For Customer Calc & Owner Config) ---
 router.get("/:shopId/delivery-apps", async (req, res) => {
     try {
         const [apps] = await db.query(
@@ -524,7 +515,6 @@ router.get("/:shopId/delivery-apps", async (req, res) => {
 router.post("/delivery-apps", async (req, res) => {
     const { ShopID, DlvryAppID } = req.body;
     try {
-        // Simply insert. If it exists (duplicate), IGNORE handles it.
         await db.query(
             `INSERT IGNORE INTO Shop_Delivery_App (ShopID, DlvryAppID) VALUES (?, ?)`, 
             [ShopID, DlvryAppID]
@@ -538,7 +528,6 @@ router.post("/delivery-apps", async (req, res) => {
 router.post("/delivery-apps/unlink", async (req, res) => {
     const { ShopID, DlvryAppID } = req.body;
     try {
-        // Hard Delete is fine here because no custom data is lost
         await db.query("DELETE FROM Shop_Delivery_App WHERE ShopID = ? AND DlvryAppID = ?", [ShopID, DlvryAppID]);
         res.json({ success: true });
     } catch (error) {
