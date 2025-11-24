@@ -124,8 +124,8 @@ router.post("/", async (req, res) => {
     
         // 7. DlvryPayID is AUTO_INCREMENT, MethodID/PaymentProofImage/DlvryProofImage/DlvryPaymentStatus are NULL
             await connection.query(
-                `INSERT INTO Delivery_Payments (OrderID, DlvryAmount, CreatedAt) 
-                VALUES (?, ?, NOW())`,
+                `INSERT INTO Delivery_Payments (OrderID, DlvryAmount, DlvryPaymentStatus, CreatedAt) 
+                VALUES (?, ?, 'Pending', NOW())`,
                 [newOrderID, finalDeliveryFee]
             );
         
@@ -440,55 +440,110 @@ router.post("/status", async (req, res) => {
     }
 });
 
-router.patch("/weight", async (req, res) => {
-    const { orderId, newWeight, userId, userRole } = req.body; 
-    if (!orderId || newWeight === undefined) return res.status(400).json({ error: "Missing fields" });
+// 🟢 NEW ROUTE: Update Weight with Proof & Message (Logic Updated for Insert/Update)
+router.post("/weight/update-proof", upload.single("weightProof"), async (req, res) => {
+    const { orderId, weight, userId, userRole } = req.body;
+    
+    if (!orderId || weight === undefined || !req.file) {
+        return res.status(400).json({ message: "Missing Order ID, Weight, or Proof Image" });
+    }
 
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
 
-        // 1. Update Weight in Laundry_Details
+        // 1. Upload to Cloudinary
+        const b64 = Buffer.from(req.file.buffer).toString("base64");
+        const dataURI = "data:" + req.file.mimetype + ";base64," + b64;
+        const uploadResult = await cloudinary.uploader.upload(dataURI, { folder: "laundrolink_weight_proofs" });
+
+        // 2. Update Laundry Details (Weight & Proof)
         await connection.query(
-            `UPDATE Laundry_Details SET Kilogram = ? WHERE OrderID = ?`,
-            [newWeight, orderId]
+            `UPDATE Laundry_Details SET Kilogram = ?, WeightProofImage = ? WHERE OrderID = ?`,
+            [weight, uploadResult.secure_url, orderId]
         );
 
-        // 2. Recalculate Invoice
-        const [data] = await connection.query(`
-            SELECT ss.SvcPrice, i.InvoiceID,
-            (SELECT COALESCE(SUM(DlvryAmount),0) FROM Delivery_Payments WHERE OrderID = ?) as DlvryFee,
-            (SELECT COALESCE(SUM(sao.AddOnPrice),0) FROM Order_AddOns oao 
-             JOIN Laundry_Details ld ON oao.LndryDtlID = ld.LndryDtlID
-             JOIN Orders o ON ld.OrderID = o.OrderID
-             JOIN Shop_Add_Ons sao ON o.ShopID = sao.ShopID AND oao.AddOnID = sao.AddOnID
-             WHERE ld.OrderID = ?) as AddonTotal
+        // 3. Recalculate Invoice Amount
+        // 🟢 UPDATED: Removed Invoices table from this query to purely calculate total
+        const [calcData] = await connection.query(`
+            SELECT 
+                ss.SvcPrice, 
+                (SELECT DlvryAmount FROM Delivery_Payments WHERE OrderID = ? AND DlvryPaymentStatus = 'Pending') as DlvryFee,
+                (SELECT COALESCE(SUM(sao.AddOnPrice),0) FROM Order_AddOns oao 
+                 JOIN Laundry_Details ld ON oao.LndryDtlID = ld.LndryDtlID
+                 JOIN Orders o ON ld.OrderID = o.OrderID
+                 JOIN Shop_Add_Ons sao ON o.ShopID = sao.ShopID AND oao.AddOnID = sao.AddOnID
+                 WHERE ld.OrderID = ?) as AddonTotal
             FROM Orders o
             JOIN Laundry_Details ld ON o.OrderID = ld.OrderID
             JOIN Shop_Services ss ON o.ShopID = ss.ShopID AND ld.SvcID = ss.SvcID
-            JOIN Invoices i ON o.OrderID = i.OrderID
             WHERE o.OrderID = ?
         `, [orderId, orderId, orderId]);
 
-        if(data.length > 0) {
-            const { SvcPrice, AddonTotal, DlvryFee, InvoiceID } = data[0];
-            const newTotal = parseFloat(SvcPrice) + parseFloat(AddonTotal) + parseFloat(DlvryFee);
+        if (calcData.length > 0) {
+            const { SvcPrice, AddonTotal, DlvryFee } = calcData[0];
+            const numericWeight = parseFloat(weight);
+            const safeDlvryFee = parseFloat(DlvryFee) || 0; 
             
+            const newTotal = (parseFloat(SvcPrice) * numericWeight) + parseFloat(AddonTotal) + safeDlvryFee;
+            
+            // 🟢 Separate check for existing invoice
+            const [invoiceRows] = await connection.query("SELECT InvoiceID FROM Invoices WHERE OrderID = ?", [orderId]);
+
+            if (invoiceRows.length > 0) {
+                // Invoice exists (Re-weighing) -> UPDATE
+                await connection.query(
+                    "UPDATE Invoices SET PayAmount = ?, PaymentStatus = 'To Pay' WHERE InvoiceID = ?",
+                    [newTotal, invoiceRows[0].InvoiceID]
+                );
+            } else {
+                // Invoice missing (First weigh-in) -> INSERT
+                const newInvoiceID = generateID('INV');
+                await connection.query(
+                    "INSERT INTO Invoices (InvoiceID, OrderID, PayAmount, PaymentStatus, PmtCreatedAt) VALUES (?, ?, ?, 'To Pay', NOW())",
+                    [newInvoiceID, orderId, newTotal]
+                );
+            }
+        }
+
+        // 4. Insert Chat Message
+        const [[orderInfo]] = await connection.query("SELECT CustID FROM Orders WHERE OrderID = ?", [orderId]);
+        if (orderInfo) {
+            const receiverId = orderInfo.CustID;
+            
+            const participant1 = userId < receiverId ? userId : receiverId;
+            const participant2 = userId < receiverId ? receiverId : userId;
+            
+            let [[conversation]] = await connection.query(
+                "SELECT ConversationID FROM Conversations WHERE Participant1_ID = ? AND Participant2_ID = ?",
+                [participant1, participant2]
+            );
+
+            let conversationId;
+            if (conversation) {
+                conversationId = conversation.ConversationID;
+            } else {
+                const [convResult] = await connection.query(
+                    "INSERT INTO Conversations (Participant1_ID, Participant2_ID, UpdatedAt) VALUES (?, ?, NOW())",
+                    [participant1, participant2]
+                );
+                conversationId = convResult.insertId;
+            }
+
             await connection.query(
-                "UPDATE Invoices SET PayAmount = ? WHERE InvoiceID = ?",
-                [newTotal, InvoiceID]
+                `INSERT INTO Messages (ConversationID, SenderID, ReceiverID, MessageText, MessageStatus, CreatedAt) 
+                 VALUES (?, ?, ?, 'Weight has been updated, please proceed to payment.', 'Sent', NOW())`,
+                [conversationId, userId, receiverId]
             );
         }
 
-        // 3. Send Chat Message
-        // ... (Omitted for brevity, keeping existing chat logic is fine) ...
-        
-        await logUserActivity(userId, userRole, 'Update Weight', `Order ${orderId} weight: ${newWeight}kg`);
+        await logUserActivity(userId, userRole, 'Update Weight', `Order ${orderId} weight updated to ${weight}kg with proof.`);
         await connection.commit();
-        res.json({ success: true, message: "Weight updated." });
+        res.json({ success: true, message: "Weight updated and customer notified." });
+
     } catch (error) {
         await connection.rollback();
-        console.error(error);
+        console.error("Error updating weight with proof:", error);
         res.status(500).json({ message: "Failed to update weight." });
     } finally {
         connection.release();

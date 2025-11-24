@@ -26,7 +26,8 @@ export interface Order {
     deliveryStatus?: string; 
     deliveryPaymentStatus?: string;
     deliveryAmount?: number;
-    // 🟢 NEW: Fields for Delivery Payment Modal
+    
+    // Fields for Delivery Payment Modal
     deliveryPaymentMethod?: string;
     deliveryPaymentDate?: string;
     deliveryProofImage?: string;
@@ -198,66 +199,35 @@ export const updateProcessStatus = async (
 };
 
 /**
- * Updates the weight of an order
+ * Updates the weight of an order with proof image
  */
-export const updateOrderWeight = async (
-    orderId: string, 
-    newWeight: number, 
-    userId?: string, 
-    userRole?: string
+export const updateOrderWeightWithProof = async (
+    orderId: string,
+    weight: string,
+    imageUri: string,
+    userId: string,
+    userRole: string
 ): Promise<boolean> => {
     try {
-        const response = await axios.patch(`${API_URL}/orders/weight`, { 
-            orderId, 
-            newWeight, 
-            userId, 
-            userRole 
-        });
-        return response.data.success;
-    } catch (error) {
-        console.error("Error in updateOrderWeight:", error);
-        return false;
-    }
-};
+        const formData = new FormData();
+        formData.append('orderId', orderId);
+        formData.append('weight', weight);
+        formData.append('userId', userId);
+        formData.append('userRole', userRole);
 
-/**
- * Staff Confirms Service Payment (Wash & Dry, etc.)
- */
-export const confirmServicePayment = async (
-    orderId: string, 
-    userId?: string, 
-    userRole?: string
-): Promise<boolean> => {
-    try {
-        const response = await axios.post(`${API_URL}/orders/staff/confirm-service-payment`, { 
-            orderId, 
-            userId, 
-            userRole 
-        });
-        return response.data.success;
-    } catch (error) {
-        console.error("Error in confirmServicePayment:", error);
-        return false;
-    }
-};
+        const filename = imageUri.split('/').pop() || "weight_proof.jpg";
+        const match = /\.(\w+)$/.exec(filename);
+        const type = match ? `image/${match[1]}` : `image/jpeg`;
 
-/**
- * Staff Confirms Delivery Payment (Lalamove/Rider fee)
- */
-export const confirmDeliveryPayment = async (
-    orderId: string, 
-    userId?: string, 
-    userRole?: string
-): Promise<boolean> => {
-    try {
-        const response = await axios.post(`${API_URL}/orders/staff/confirm-delivery-payment`, { 
-            orderId, 
-            userId, 
-            userRole 
+        // @ts-ignore
+        formData.append('weightProof', { uri: imageUri, name: filename, type });
+
+        const response = await axios.post(`${API_URL}/orders/weight/update-proof`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
         });
         return response.data.success;
     } catch (error) {
-        console.error("Error in confirmDeliveryPayment:", error);
+        console.error("Error updating weight with proof:", error);
         return false;
     }
 };
@@ -322,6 +292,48 @@ export const updateDeliveryWorkflow = async (
         return response.data.success;
     } catch (error) {
         console.error("Error updating delivery workflow:", error);
+        return false;
+    }
+};
+
+/**
+ * Staff Confirms Service Payment (Wash & Dry, etc.)
+ */
+export const confirmServicePayment = async (
+    orderId: string, 
+    userId?: string, 
+    userRole?: string
+): Promise<boolean> => {
+    try {
+        const response = await axios.post(`${API_URL}/orders/staff/confirm-service-payment`, { 
+            orderId, 
+            userId, 
+            userRole 
+        });
+        return response.data.success;
+    } catch (error) {
+        console.error("Error in confirmServicePayment:", error);
+        return false;
+    }
+};
+
+/**
+ * Staff Confirms Delivery Payment (Lalamove/Rider fee)
+ */
+export const confirmDeliveryPayment = async (
+    orderId: string, 
+    userId?: string, 
+    userRole?: string
+): Promise<boolean> => {
+    try {
+        const response = await axios.post(`${API_URL}/orders/staff/confirm-delivery-payment`, { 
+            orderId, 
+            userId, 
+            userRole 
+        });
+        return response.data.success;
+    } catch (error) {
+        console.error("Error in confirmDeliveryPayment:", error);
         return false;
     }
 };

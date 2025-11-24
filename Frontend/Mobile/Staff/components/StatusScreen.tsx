@@ -37,7 +37,10 @@ export default function StatusScreen() {
           const allOrders = await fetchOrders(user.ShopID);
           
           const filtered = allOrders.filter((o) => {
+             // Filter based on the category selected in Home (Delivery vs Laundry)
              if (type === 'delivery') {
+                 // Match strict status or allow intermediate states like 'Rider Booked' if checking To Pick-up/For Delivery
+                 // For simplicity based on your Home links, we filter by the passed status.
                  return o.deliveryStatus === status;
              }
              return o.laundryStatus === status;
@@ -130,7 +133,7 @@ export default function StatusScreen() {
                         <Text style={styles.viewDetails}>View Details</Text>
                       </TouchableOpacity>
 
-                      {/* Update Laundry Button */}
+                      {/* 1. Update Laundry Button (Processing) */}
                       {order.laundryStatus === "Processing" && (
                         <TouchableOpacity
                           style={styles.updateBtn}
@@ -149,8 +152,27 @@ export default function StatusScreen() {
                         </TouchableOpacity>
                       )}
 
-                      {/* 🟢 NEW: Manage Delivery Button */}
-                      {type === 'delivery' && (order.deliveryStatus === 'To Pick-up' || order.deliveryStatus === 'Rider Booked' || order.deliveryStatus === 'For Delivery') && (
+                      {/* 2. Update Weight Button (To Weigh) */}
+                      {order.laundryStatus === "To Weigh" && (
+                        <TouchableOpacity
+                          style={[styles.updateBtn, { backgroundColor: '#7b1fa2', marginTop: 8 }]}
+                          onPress={() =>
+                            router.push({
+                              pathname: "/home/updateWeight",
+                              params: {
+                                orderId: order.orderId,
+                              },
+                            })
+                          }
+                        >
+                          <Text style={styles.updateText}>Update Weight</Text>
+                        </TouchableOpacity>
+                      )}
+
+                      {/* 3. Manage Delivery Button (Delivery Flows) */}
+                      {/* Checks if the current status allows for delivery updates */}
+                      {type === 'delivery' && 
+                        ['To Pick-up', 'Rider Booked', 'For Delivery', 'Outgoing Rider Booked'].includes(order.deliveryStatus || '') && (
                         <TouchableOpacity
                           style={[styles.updateBtn, { backgroundColor: '#ff9800', marginTop: 8 }]}
                           onPress={() =>

@@ -8,7 +8,7 @@ export default function HomeLayout() {
       <Stack.Screen name="status" options={{ headerShown: false }} />
       <Stack.Screen name="updateDelivery" options={{ headerShown: false }} />
       <Stack.Screen name="updateProcess" options={{ headerShown: false }} />
-      <Stack.Screen name="editWeight" options={{ headerShown: false }} />
+      <Stack.Screen name="updateWeight" options={{ headerShown: false }} />
     </Stack>
   );
 }
