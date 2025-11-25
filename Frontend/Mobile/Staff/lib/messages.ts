@@ -1,5 +1,4 @@
-// Staff/lib/messages.ts
-
+//Staff/orders.ts
 import axios from "axios";
 import { API_URL } from "./api";
 
@@ -13,6 +12,7 @@ export interface ConversationPreview {
     time: string;
     lastMessage: string | null; 
     unreadCount: number;
+    partnerPicture?: string; // 🟢 ADDED: Picture of the customer
 }
 
 // Matches the SQL output from GET /api/messages/history/:conversationId
@@ -35,6 +35,7 @@ export interface ChatMessage {
 export const fetchConversations = async (userId: string): Promise<ConversationPreview[]> => {
     try {
         const response = await axios.get(`${API_URL}/messages/conversations/${userId}`);
+        // 🔑 NOTE: Assuming backend returns conversationId as string here, per original type
         return response.data;
     } catch (error) {
         console.error("Error in fetchConversations:", error);
@@ -57,7 +58,6 @@ export const fetchConversationHistory = async (conversationId: string): Promise<
 
 /**
  * Sends a new message (text or image).
- * Warning: If 'image' is a large base64 string, ensure your server limit allows large JSON bodies.
  */
 export const sendMessage = async (
     senderId: string,

@@ -1,3 +1,4 @@
+//message.tsx
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -95,7 +96,7 @@ export default function MessageScreen() {
               >
                 {convo.lastMessage && convo.lastMessage.trim() !== ""
                   ? convo.lastMessage
-                  : convo.lastMessageImage
+                  : convo.lastMessage
                   ? "📷 Photo"
                   : "No messages yet"}
               </Text>

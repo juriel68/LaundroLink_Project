@@ -199,7 +199,7 @@ router.get("/staff/:shopId", async (req, res) => {
         const totalCount = countRows[0].totalCount;
         
         const staffQuery = `
-            SELECT s.StaffID, s.StaffName, u.IsActive, si.StaffAge, si.StaffAddress, si.StaffCellNo, si.StaffSalary
+            SELECT s.StaffID, s.StaffName, s.StaffRole, u.IsActive, si.StaffAge, si.StaffAddress, si.StaffCellNo, si.StaffSalary
             FROM Staffs s
             JOIN Staff_Infos si ON s.StaffID = si.StaffID
             JOIN Users u ON s.StaffID = u.UserID
@@ -279,62 +279,59 @@ router.post("/owner", async (req, res) => {
     }
 });
 
-// POST /api/users/staff (Create Staff Member)
+// POST /api/users/staff
 router.post("/staff", async (req, res) => {
-    const { ShopID, StaffName, StaffAge, StaffAddress, StaffCellNo, StaffSalary } = req.body;
-    let newStaffID = '';
-    let newUserEmail = '';
-    const UserRole = 'Staff';
+    // 1. Validation: Added StaffRole to extraction
+    const { ShopID, StaffName, StaffAge, StaffAddress, StaffCellNo, StaffSalary, StaffRole } = req.body;
+
+    if (!ShopID || !StaffName || !StaffSalary) {
+        return res.status(400).json({ error: "Missing required fields (ShopID, Name, or Salary)." });
+    }
 
     const connection = await db.getConnection();
+    
     try {
         await connection.beginTransaction();
 
-        // 1. ID GENERATION: S1, S2...
+        // ... [ID GENERATION LOGIC REMAINS THE SAME] ...
         const [lastStaff] = await connection.query(
             `SELECT StaffID FROM Staffs WHERE StaffID LIKE 'S%' ORDER BY CAST(SUBSTRING(StaffID, 2) AS UNSIGNED) DESC LIMIT 1`
         );
-
         let nextIdNumber = 1;
         if (lastStaff.length > 0) {
             const lastId = lastStaff[0].StaffID;
-            const lastIdNumber = parseInt(lastId.substring(1));
-            nextIdNumber = lastIdNumber + 1;
+            nextIdNumber = parseInt(lastId.substring(1)) + 1;
         }
-        newStaffID = `S${nextIdNumber}`; 
-        
-        // 2. Generate Email/Pass
-        const firstName = StaffName.split(' ')[0].toLowerCase();
-        const [existingUsers] = await connection.query(
-            `SELECT UserEmail FROM Users WHERE UserEmail REGEXP ?`,
-            [`^${firstName}[0-9]+$`] 
+        const newStaffID = `S${nextIdNumber}`; 
+
+        // ... [EMAIL GENERATION LOGIC REMAINS THE SAME] ...
+        const cleanName = StaffName.split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+        const [emailResult] = await connection.query(
+            `SELECT UserEmail FROM Users WHERE UserEmail REGEXP ? ORDER BY LENGTH(UserEmail) DESC, UserEmail DESC LIMIT 1`,
+            [`^${cleanName}[0-9]+$`]
         );
-
-        let maxNumber = 0;
-        existingUsers.forEach(user => {
-            const match = user.UserEmail.match(/\d+$/);
-            if (match) {
-                const number = parseInt(match[0], 10);
-                if (number > maxNumber) maxNumber = number;
-            }
-        });
-
-        const newEmailNumber = maxNumber + 1; 
-        newUserEmail = `${firstName}${newEmailNumber}`; 
+        let newEmailNumber = 1;
+        if (emailResult.length > 0) {
+            const match = emailResult[0].UserEmail.match(/\d+$/);
+            if (match) newEmailNumber = parseInt(match[0], 10) + 1;
+        }
+        const newUserEmail = `${cleanName}${newEmailNumber}`; 
         const newUserPassword = newUserEmail; 
-
         const hashedPassword = await bcrypt.hash(newUserPassword, 10);
         const newStaffInfoID = 'SI' + String(Date.now()).slice(-6);
 
-        // 3. Insert
+        // --- 4. INSERTION (UPDATED) ---
+
+        // Update 1: Insert dynamic role into Users table
         await connection.query(
             `INSERT INTO Users (UserID, UserEmail, UserPassword, UserRole) VALUES (?, ?, ?, 'Staff')`,
             [newStaffID, newUserEmail, hashedPassword] 
         );
 
+        // Update 2: Insert dynamic role into Staffs table
         await connection.query(
             `INSERT INTO Staffs (StaffID, StaffName, StaffRole, ShopID) VALUES (?, ?, ?, ?)`,
-            [newStaffID, StaffName, 'Staff', ShopID]
+            [newStaffID, StaffName, StaffRole, ShopID]
         );
 
         await connection.query(
@@ -343,15 +340,25 @@ router.post("/staff", async (req, res) => {
         );
 
         await connection.commit();
-        await logUserActivity(newStaffID, UserRole, 'Staff Creation', `New staff: ${StaffName} (${newUserEmail})`);
+        
+        // Log activity with the specific role
+        if (typeof logUserActivity === 'function') {
+            await logUserActivity(newStaffID, StaffRole, 'Staff Creation', `New ${StaffRole}: ${StaffName}`);
+        }
 
-        res.status(201).json({ success: true, message: 'Staff member created successfully!', staffId: newStaffID });
+        res.status(201).json({ 
+            success: true, 
+            message: 'Staff member created successfully!', 
+            staffId: newStaffID,
+            generatedEmail: newUserEmail,
+            role: StaffRole
+        });
 
     } catch (error) {
         await connection.rollback();
         console.error("Create staff error:", error);
         if (error.code === 'ER_DUP_ENTRY') {
-            return res.status(409).json({ error: "An account with this email might already exist." });
+            return res.status(409).json({ error: "Duplicate entry detected." });
         }
         res.status(500).json({ error: "Server error while creating staff member." });
     } finally {

@@ -9,10 +9,10 @@ import {
   ActivityIndicator,
   SafeAreaView
 } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router'; // 🔑 Import useRouter
 import Header from "@/components/Header";
 import { fetchOrders, confirmServicePayment, Order } from "@/lib/orders";
-import { getCurrentUser } from "@/lib/auth"; // 🔑 Import Auth
+import { getCurrentUser } from "@/lib/auth"; 
 
 // Helper to safely parse amounts from string/number/null
 const parseAmount = (value: string | number | undefined): number => {
@@ -23,6 +23,7 @@ const parseAmount = (value: string | number | undefined): number => {
 export default function LaundryPaymentScreen() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const router = useRouter(); // 🔑 Initialize router
 
   // 🔑 Get User Info
   const user = getCurrentUser();
@@ -74,6 +75,15 @@ export default function LaundryPaymentScreen() {
       ]
     );
   };
+  
+  // 🔑 New handler to navigate to details screen
+  const handleViewDetails = (orderId: string) => {
+    router.push({
+        pathname: "/home/orderDetail",
+        params: { orderId: orderId }
+    });
+  };
+
 
   const renderItem = ({ item }: { item: Order }) => {
     const displayAmount = parseAmount(item.totalAmount);
@@ -90,12 +100,21 @@ export default function LaundryPaymentScreen() {
           <Text style={styles.amount}>₱{displayAmount.toFixed(2)}</Text>
         </View>
 
-        <TouchableOpacity 
-          style={styles.confirmButton}
-          onPress={() => handleConfirm(item.orderId, displayAmount)}
-        >
-          <Text style={styles.buttonText}>Confirm Receipt</Text>
-        </TouchableOpacity>
+        <View style={styles.buttonContainer}>
+            <TouchableOpacity 
+                style={[styles.actionButton, styles.viewDetailsButton]}
+                onPress={() => handleViewDetails(item.orderId)}
+            >
+                <Text style={[styles.buttonText, { color: '#004aad' }]}>View Details</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+                style={styles.actionButton}
+                onPress={() => handleConfirm(item.orderId, displayAmount)}
+            >
+                <Text style={styles.buttonText}>Confirm Receipt</Text>
+            </TouchableOpacity>
+        </View>
       </View>
     );
   };
@@ -140,14 +159,28 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   orderId: { fontWeight: 'bold', fontSize: 16, color: '#333' },
   date: { color: '#888', fontSize: 14 },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   customer: { fontSize: 15, color: '#555' },
   amount: { fontSize: 18, fontWeight: 'bold', color: '#2ecc71' },
-  confirmButton: {
+  
+  // 🔑 NEW Button Styles
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  actionButton: {
+    flex: 1,
     backgroundColor: '#3498db',
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
+    marginHorizontal: 4,
+  },
+  viewDetailsButton: {
+    backgroundColor: '#eaf5ff',
+    borderColor: '#004aad',
+    borderWidth: 1,
   },
   buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
   emptyContainer: { marginTop: 100, alignItems: 'center' },

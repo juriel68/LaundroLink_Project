@@ -1,4 +1,4 @@
-// app/orders/[orderId].tsx (or wherever your route is defined)
+// orderDetail.tsx
 
 import React, { useEffect, useState } from "react";
 import { 

@@ -108,6 +108,17 @@
         background-color: #eef3ff;
     }
 
+    /* Role Badge */
+    .role-badge {
+        background: #eef; 
+        color: #004aad; 
+        padding: 2px 8px; 
+        border-radius: 4px; 
+        font-size: 12px; 
+        font-weight: bold;
+        border: 1px solid #cce5ff;
+    }
+
     /* Status Badge */
     .status-badge {
         padding: 4px 8px;
@@ -230,6 +241,13 @@
         gap: 10px;
     }
 
+    .popup-content label {
+        font-weight: 600;
+        font-size: 14px;
+        color: #333;
+        margin-bottom: -5px;
+    }
+
     .popup-content input, .popup-content select {
         width: 95%;
         padding: 10px;
@@ -295,7 +313,7 @@
             <tr>
                 <th>Staff ID</th>
                 <th>Staff Name</th>
-                <th>Age</th>
+                <th>Role</th> <th>Age</th>
                 <th>Address</th>
                 <th>Phone Number</th>
                 <th>Salary</th>
@@ -304,7 +322,7 @@
             </tr>
         </thead>
         <tbody id="employee-table-body">
-            <tr><td colspan="8" style="text-align:center;">Loading employee data...</td></tr>
+            <tr><td colspan="9" style="text-align:center;">Loading employee data...</td></tr>
         </tbody>
     </table>
     
@@ -318,11 +336,30 @@
         <div class="popup-content">
             <h2>Add Employee</h2>
             <form id="addForm">
-                <input type="text" name="StaffName" placeholder="Staff Name" required>
+                <label>Staff Role</label>
+                <select name="StaffRole" required>
+                    <option value="Staff" selected>Staff (General)</option>
+                    <option value="Manager">Manager</option>
+                    <option value="Cashier">Cashier</option>
+                    <option value="Delivery">Delivery Driver</option>
+                    <option value="Washer">Washer/Folder</option>
+                </select>
+
+                <label>Name</label>
+                <input type="text" name="StaffName" placeholder="Full Name" required>
+                
+                <label>Age</label>
                 <input type="number" name="StaffAge" placeholder="Age">
+                
+                <label>Address</label>
                 <input type="text" name="StaffAddress" placeholder="Address">
-                <input type="text" name="StaffCellNo" placeholder="Phone Number">
-                <input type="number" step="0.01" name="StaffSalary" placeholder="Salary">
+                
+                <label>Phone Number</label>
+                <input type="text" name="StaffCellNo" placeholder="09123456789">
+                
+                <label>Monthly Salary (₱)</label>
+                <input type="number" step="0.01" name="StaffSalary" placeholder="0.00" required>
+                
                 <div class="popup-buttons">
                     <button type="button" class="btn-cancel" id="addCancelBtn">Cancel</button>
                     <button type="submit" class="btn-save">Save</button>
@@ -336,16 +373,31 @@
             <h2>Update Employee</h2>
             <form id="updateForm">
                 <input type="hidden" id="updateStaffId">
+                
+                <label>Staff Role</label>
+                <select id="updateRole">
+                    <option value="Staff">Staff (General)</option>
+                    <option value="Manager">Manager</option>
+                    <option value="Cashier">Cashier</option>
+                    <option value="Delivery">Delivery Driver</option>
+                    <option value="Washer">Washer/Folder</option>
+                </select>
+
                 <label>Staff Name</label>
                 <input type="text" id="updateName" required>
+                
                 <label>Age</label>
                 <input type="number" id="updateAge">
+                
                 <label>Address</label>
                 <input type="text" id="updateAddress">
+                
                 <label>Phone Number</label>
                 <input type="text" id="updatePhone">
-                <label>Salary</label>
+                
+                <label>Salary (₱)</label>
                 <input type="number" step="0.01" id="updateSalary">
+                
                 <div class="popup-buttons">
                     <button type="button" class="btn-cancel" id="updateCancelBtn">Cancel</button>
                     <button type="submit" class="btn-save">Save Changes</button>
@@ -355,7 +407,7 @@
     </div>
 
     <script type="module">
-        // 🔑 FIX: Correct relative path to api.js
+        // 🔑 Adjust path if necessary
         import { API_BASE_URL } from '../api.js';
 
         // --- GLOBAL STATE & ELEMENTS ---
@@ -376,8 +428,9 @@
         let currentPage = 1;
         const ROWS_PER_PAGE = 10;
         let totalEmployees = 0;
-        const COLSPAN = 8; 
+        const COLSPAN = 9; // Updated colspan for new column
         
+        // --- EVENT LISTENERS (UI) ---
         document.getElementById('addEmployeeBtn').addEventListener('click', () => addPopup.style.display = 'flex');
         document.getElementById('addCancelBtn').addEventListener('click', () => { addForm.reset(); addPopup.style.display = 'none'; });
         document.getElementById('updateCancelBtn').addEventListener('click', () => updatePopup.style.display = 'none');
@@ -391,6 +444,8 @@
             if (currentPage < totalPages) fetchEmployees(sortSelect.value, currentPage + 1);
         });
         
+        // --- CORE FUNCTIONS ---
+
         const updatePaginationControls = () => {
             const totalPages = Math.ceil(totalEmployees / ROWS_PER_PAGE);
             const displayPage = totalPages > 0 ? currentPage : 1;
@@ -424,6 +479,7 @@
                 row.innerHTML = `
                     <td>${emp.StaffID}</td>
                     <td>${emp.StaffName}</td>
+                    <td><span class="role-badge">${emp.StaffRole || 'Staff'}</span></td>
                     <td>${emp.StaffAge || 'N/A'}</td>
                     <td>${emp.StaffAddress || 'N/A'}</td>
                     <td>${emp.StaffCellNo || 'N/A'}</td>
@@ -439,10 +495,12 @@
                     </td>
                 `;
                 
+                // Attach Event Listeners to Buttons
                 row.querySelector('.btn-update').addEventListener('click', () => {
                     currentStaffId = emp.StaffID;
                     document.getElementById('updateStaffId').value = emp.StaffID;
                     document.getElementById('updateName').value = emp.StaffName;
+                    document.getElementById('updateRole').value = emp.StaffRole || 'Staff'; // Set current role
                     document.getElementById('updateAge').value = emp.StaffAge;
                     document.getElementById('updateAddress').value = emp.StaffAddress;
                     document.getElementById('updatePhone').value = emp.StaffCellNo;
@@ -469,14 +527,14 @@
             
             try {
                 const shopId = loggedInUser.ShopID;
-                
                 const response = await fetch(`${API_BASE_URL}/users/staff/${shopId}?sortBy=${sortBy}&limit=${ROWS_PER_PAGE}&offset=${offset}`);
+                
                 if (!response.ok) throw new Error('Failed to fetch employees');
                 
                 const data = await response.json();
                 
-                // 🔑 KEY FIX: Handle { staff: [], totalCount: N } response structure
-                const employees = data.staff || []; 
+                // Safety check for null data
+                const employees = Array.isArray(data.staff) ? data.staff : []; 
                 totalEmployees = data.totalCount || 0; 
 
                 renderTable(employees);
@@ -496,7 +554,7 @@
             const actionText = action === 1 ? 'Reactivate' : 'Deactivate';
             const staffName = button.closest('tr').cells[1].textContent;
 
-            if (window.confirm(`Are you sure you want to ${actionText} ${staffName} (${staffId})?`)) {
+            if (window.confirm(`Are you sure you want to ${actionText} ${staffName}?`)) {
                 try {
                     const response = await fetch(`${API_BASE_URL}/users/${staffId}/status`, {
                         method: 'PUT',
@@ -507,24 +565,29 @@
                     const result = await response.json();
 
                     if (response.ok && result.success) {
-                        window.alert(result.message || `Employee ${staffName} successfully ${actionText}d.`);
                         fetchEmployees(sortSelect.value, currentPage); 
                     } else {
-                         window.alert(result.message || `Error toggling status.`);
+                        alert(result.message || `Error toggling status.`);
                     }
-
                 } catch (error) {
                     console.error("Status Toggle Error:", error);
-                    window.alert(`Network error: Failed to ${actionText} employee.`);
+                    alert(`Network error: Failed to ${actionText} employee.`);
                 }
             }
         }
         
+        // --- FORM SUBMISSIONS ---
+
         addForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const formData = new FormData(addForm);
             const data = Object.fromEntries(formData.entries());
             data.ShopID = loggedInUser.ShopID;
+
+            if(!data.StaffName || !data.StaffSalary) {
+                alert("Name and Salary are required.");
+                return;
+            }
 
             try {
                 const response = await fetch(`${API_BASE_URL}/users/staff`, {
@@ -532,10 +595,25 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
+                
                 const result = await response.json();
+
                 if (!response.ok) throw new Error(result.error || result.message);
                 
-                alert('Employee added successfully!');
+                // Show Credentials to Admin
+                const msg = `
+✅ Employee Created Successfully!
+
+-----------------------------------
+🆔 Staff ID: ${result.staffId}
+📧 Username: ${result.generatedEmail}
+🔑 Password: ${result.generatedEmail}
+-----------------------------------
+
+Please write this down. The password is the same as the username by default.
+                `;
+                alert(msg);
+
                 addForm.reset();
                 addPopup.style.display = 'none';
                 fetchEmployees(sortSelect.value, 1); 
@@ -549,6 +627,7 @@
             e.preventDefault();
             const data = {
                 StaffName: document.getElementById('updateName').value,
+                StaffRole: document.getElementById('updateRole').value, // Capture Role Update
                 StaffAge: document.getElementById('updateAge').value,
                 StaffAddress: document.getElementById('updateAddress').value,
                 StaffCellNo: document.getElementById('updatePhone').value,
@@ -573,6 +652,7 @@
             }
         });
 
+        // --- INITIALIZATION ---
         document.addEventListener('DOMContentLoaded', () => {
             sortSelect.addEventListener('change', () => {
                 fetchEmployees(sortSelect.value, 1);
