@@ -17,10 +17,11 @@ export interface ConversationPreview {
   lastMessage: string | null;
   lastMessageImage?: string | null; 
   unreadCount: number;
+  partnerPicture?: string; // 🟢 NEW: Partner's profile picture URL (or shop logo)
 }
 
 /**
- * Type for a single message in a chat (frontend: message_pay.tsx).
+ * Type for a single message in a chat (frontend: chat.tsx).
  */
 export interface ChatMessage {
   id: number;             // 🔑 UPDATED: INT (MessageID) in DB
@@ -42,7 +43,6 @@ export interface ChatMessage {
  * Corresponds to: GET /api/messages/conversations/:userId
  */
 export const fetchConversations = async (userId: string): Promise<ConversationPreview[]> => {
-  // console.log(`[FRONTEND-TS] Sending request for conversations for UserID: ${userId}`);
   try {
     const response = await fetch(`${API_URL}/messages/conversations/${userId}`);
     if (!response.ok) {
@@ -85,7 +85,7 @@ export const fetchConversationHistory = async (conversationId: number): Promise<
 };
 
 /**
- * Sends a new message (text or image) and updates the conversation.
+ * Sends a new text message.
  * Corresponds to: POST /api/messages
  * @returns A promise resolving to the created ChatMessage from the server.
  */
@@ -115,6 +115,48 @@ export const sendMessage = async (
     console.error("Error in sendMessage:", error);
     return null;
   }
+};
+
+/**
+ * Uploads an image and then sends the message with the resulting URL.
+ * Requires a dedicated backend upload endpoint.
+ */
+export const sendMessageWithImage = async (
+    senderId: string,
+    receiverId: string,
+    imageUri: string,
+    caption: string
+): Promise<{ message: ChatMessage | null; success: boolean }> => {
+    try {
+        // 1. Upload image file to Cloudinary via backend
+        const formData = new FormData();
+        const filename = imageUri.split('/').pop() || "chat_photo.jpg";
+        const match = /\.(\w+)$/.exec(filename);
+        const type = match ? `image/${match[1]}` : `image/jpeg`;
+
+        // @ts-ignore - React Native FormData handling
+        formData.append('file', { uri: imageUri, name: filename, type });
+
+        const uploadResponse = await fetch(`${API_URL}/messages/upload-image`, {
+            method: 'POST',
+            body: formData,
+        });
+
+        const uploadResult = await uploadResponse.json();
+        if (!uploadResponse.ok || !uploadResult.success) {
+            throw new Error(uploadResult.message || 'Image upload failed');
+        }
+        
+        const imageUrl = uploadResult.url;
+
+        // 2. Send message with the Cloudinary URL
+        const chatMessage = await sendMessage(senderId, receiverId, caption || '📷 Photo', imageUrl);
+
+        return { message: chatMessage, success: true };
+    } catch (error) {
+        console.error("Error in sendMessageWithImage:", error);
+        return { message: null, success: false };
+    }
 };
 
 

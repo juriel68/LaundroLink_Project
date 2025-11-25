@@ -4,7 +4,7 @@ export default function MessageStackLayout() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="message" options={{ headerShown: false}}/> 
-
+      <Stack.Screen name="chat" options={{ headerShown: false}}/> 
     </Stack>
   );
 }

@@ -1,29 +1,51 @@
 import express from "express";
 import db from "../db.js";
+import multer from 'multer';
+import { cloudinary } from "../config/externalServices.js";
 
 const router = express.Router();
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
+
+const getPartnerIdSql = `IF(c.Participant1_ID = ?, c.Participant2_ID, c.Participant1_ID)`;
 
 router.get("/conversations/:userId", async (req, res) => {
     const { userId } = req.params;
     
+    console.log(`[DEBUG] Received request for conversations. UserID: ${userId}`); 
     console.log(`[BACKEND] Attempting to fetch conversations for UserID: ${userId}`);
     
     try {
         const query = `
+WITH Partner AS (
+    SELECT
+        ${getPartnerIdSql} AS partnerId,
+        c.ConversationID,
+        c.UpdatedAt
+    FROM Conversations c
+    WHERE c.Participant1_ID = ? OR c.Participant2_ID = ?
+)
 SELECT
-    c.ConversationID AS conversationId,
-    c.UpdatedAt AS time,
+    p.ConversationID AS conversationId,
+    p.UpdatedAt AS time,
+    p.partnerId,
     
-    -- 1. Calculate the Partner ID directly
-    IF(c.Participant1_ID = ?, c.Participant2_ID, c.Participant1_ID) AS partnerId,
-    
-    -- 2. Use COALESCE to get the name from either Customers or Staffs
+    -- 2. COALESCE Name: Check Customer, Staff, Owner, then default to partnerId
     COALESCE(
         cu.CustName, 
-        st.StaffName
+        st.StaffName,
+        so.OwnerName,
+        p.partnerId 
     ) AS name,
 
-    -- 3. Get the last message text or image
+    -- 3. COALESCE Picture: Check Shop Image, Profile Picture, then Placeholder
+    COALESCE(
+        ls.ShopImage_url, 
+        cc.picture,
+        'https://placehold.co/40x40/d9edf7/004aad'
+    ) AS partnerPicture,
+
+    -- 4. Get the last message text or image
     (
         SELECT 
             CASE 
@@ -32,52 +54,54 @@ SELECT
                 ELSE ''
             END
         FROM Messages m
-        WHERE m.ConversationID = c.ConversationID 
+        WHERE m.ConversationID = p.ConversationID 
         ORDER BY m.CreatedAt DESC 
         LIMIT 1
     ) AS lastMessage,
 
-    -- 4. Count unread messages
+    -- 5. Count unread messages
     (
         SELECT COUNT(*) 
         FROM Messages m 
-        WHERE m.ConversationID = c.ConversationID 
-            AND m.ReceiverID = ? 
-            AND m.MessageStatus = 'Delivered'
+        WHERE m.ConversationID = p.ConversationID 
+            AND m.ReceiverID = ? AND m.MessageStatus = 'Delivered'
     ) AS unreadCount
 
-FROM Conversations c
--- 5. LEFT JOIN to Customers table
-LEFT JOIN Customers cu ON cu.CustID = IF(c.Participant1_ID = ?, c.Participant2_ID, c.Participant1_ID)
-    
--- 6. LEFT JOIN to Staffs table
-LEFT JOIN Staffs st ON st.StaffID = IF(c.Participant1_ID = ?, c.Participant2_ID, c.Participant1_ID)
+FROM Partner p
 
--- 7. Filter conversations involving the current user
-WHERE c.Participant1_ID = ? OR c.Participant2_ID = ?
-ORDER BY c.UpdatedAt DESC;
+LEFT JOIN Customers cu ON cu.CustID = p.partnerId
+LEFT JOIN Cust_Credentials cc ON cc.CustID = p.partnerId
+
+LEFT JOIN Staffs st ON st.StaffID = p.partnerId
+LEFT JOIN Shop_Owners so ON so.OwnerID = p.partnerId
+
+-- 🟢 FIX: Link to Laundry_Shops using the correct keys for each role:
+--   Staffs link via ShopID (st.ShopID = ls.ShopID)
+--   Owners link via OwnerID (p.partnerId = ls.OwnerID)
+LEFT JOIN Laundry_Shops ls ON 
+    ls.ShopID = st.ShopID 
+    OR ls.OwnerID = p.partnerId
+    
+ORDER BY p.UpdatedAt DESC;
         `;
         
+        // Bindings: [userId (IF), userId (WHERE P1), userId (WHERE P2), userId (Unread Count)]
         const cleanBindings = [
-            userId, // 1. partnerId IF condition
-            userId, // 2. unreadCount ReceiverID
-            userId, // 3. Customer JOIN ON condition
-            userId, // 4. Staff JOIN ON condition
-            userId, // 5. WHERE P1
-            userId  // 6. WHERE P2
+            userId, 
+            userId, 
+            userId, 
+            userId, 
         ];
 
         const [conversations] = await db.query(query, cleanBindings);
         
         console.log(`[BACKEND] Found ${conversations.length} conversations for UserID: ${userId}`);
-        if (conversations.length > 0) {
-            console.log("[BACKEND] Sample conversation data:", conversations[0]);
-        }
 
         res.json(conversations);
     } catch (error) {
-        console.error("Error fetching conversations:", error);
-        res.status(500).json({ error: "Failed to fetch conversations" });
+        // Log the severe SQL error for full inspection
+        console.error("❌ FATAL SQL ERROR fetching conversations:", error);
+        res.status(500).json({ error: "Failed to fetch conversations due to a server error." });
     }
 });
 
@@ -108,6 +132,36 @@ router.get("/history/:conversationId", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch message history" });
   }
 });
+
+/**
+ * POST /api/messages/upload-image - Uploads image proof and returns URL
+ */
+router.post("/upload-image", upload.single("file"), async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ success: false, message: "No image file provided." });
+    }
+    
+    try {
+        const b64 = Buffer.from(req.file.buffer).toString("base64");
+        const dataURI = "data:" + req.file.mimetype + ";base64," + b64;
+        
+        // Upload to Cloudinary
+        const uploadResult = await cloudinary.uploader.upload(dataURI, { 
+            folder: "laundrolink_chat_images"
+        });
+
+        res.json({ 
+            success: true, 
+            message: "Image uploaded successfully.",
+            url: uploadResult.secure_url 
+        });
+
+    } catch (error) {
+        console.error("Cloudinary chat image upload error:", error);
+        res.status(500).json({ success: false, message: "Failed to upload image." });
+    }
+});
+
 
 router.post("/", async (req, res) => {
   const { senderId, receiverId, text, image } = req.body;
@@ -145,7 +199,7 @@ router.post("/", async (req, res) => {
     const [msgResult] = await connection.query(
       `INSERT INTO Messages 
         (ConversationID, SenderID, ReceiverID, MessageText, MessageImage, CreatedAt, MessageStatus) 
-       VALUES (?, ?, ?, ?, ?, NOW(), 'Sent')`,
+        VALUES (?, ?, ?, ?, ?, NOW(), 'Sent')`,
       [conversationId, senderId, receiverId, text || null, image || null]
     );
     const newMessageId = msgResult.insertId;

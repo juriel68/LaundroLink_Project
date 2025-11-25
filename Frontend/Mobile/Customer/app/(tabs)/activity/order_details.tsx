@@ -2,10 +2,10 @@ import { FontAwesome5, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import React, { useLayoutEffect, useState, useEffect } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator, Alert } from "react-native";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator, Alert, Image } from "react-native";
 import { fetchOrderDetails, CustomerOrderDetails, AddOnDetail } from "@/lib/orders";
 
-// Helper to safely parse and format currency (FIXED: Function now defined)
+// Helper to safely parse and format currency
 const safeParseAndFormat = (value: any): string => {
     // Ensure value is present, then convert to string and parse as float.
     const numericValue = parseFloat(String(value) || '0');
@@ -22,6 +22,30 @@ export default function OrderDetails() {
 
     const [order, setOrder] = useState<CustomerOrderDetails | null>(null);
     const [loading, setLoading] = useState(true);
+
+    // --- Helper Components defined INSIDE to access styles ---
+    const DetailRow = ({ icon, label, value, valueStyle, multiline = false }: { icon: React.ReactNode, label: string, value: string, valueStyle?: object, multiline?: boolean }) => (
+        <View style={[styles.rowBetween, styles.detailRowContainer, multiline && { alignItems: 'flex-start' }]}>
+            <View style={styles.row}>
+                <View style={{ width: 30 }}>{icon}</View>
+                <Text style={styles.label}>{label}</Text>
+            </View>
+            <Text 
+                style={[styles.value, valueStyle, multiline && styles.multilineValue]} 
+                numberOfLines={multiline ? undefined : 1}
+            >
+                {value}
+            </Text>
+        </View>
+    );
+
+    const PriceDisplayRow = ({ label, amount }: { label: string, amount: number }) => (
+        <View style={[styles.rowBetween, { marginVertical: 4 }]}>
+            <Text style={[styles.detailText, styles.priceRowText]}>{label}</Text>
+            <Text style={[styles.value, styles.priceRowText]}>{safeParseAndFormat(amount)}</Text>
+        </View>
+    );
+
 
     // --- Data Fetching ---
     useEffect(() => {
@@ -86,13 +110,17 @@ export default function OrderDetails() {
         );
     }
 
-    // --- Dynamic Calculation (FIXED: Using parseFloat defensively) ---
-    // Safely calculate total add-ons cost
+    // --- Dynamic Calculations ---
+    const servicePricePerKg = parseFloat(String(order.servicePrice) || '0');
+    const totalWeight = parseFloat(String(order.weight) || '0');
+    const calculatedServiceFee = servicePricePerKg * totalWeight;
     const totalAddons = order.addons.reduce((sum, addon) => sum + parseFloat(String(addon.price) || '0'), 0);
+    const deliveryFee = parseFloat(String(order.deliveryFee) || '0');
+
 
     return (
         <View style={styles.container}>
-            <ScrollView>
+            <ScrollView contentContainerStyle={styles.scrollContent}>
                 <View style={styles.card}>
                     
                     {/* Customer Info */}
@@ -128,64 +156,82 @@ export default function OrderDetails() {
                         <Text style={styles.sectionTitle}>Service Details</Text>
 
                         {/* Service Type */}
-                        <View style={styles.rowBetween}>
-                            <MaterialIcons name="local-laundry-service" size={18} color="#666" />
-                            <Text style={styles.label}>Service Type:</Text>
-                            <Text style={styles.value}>{order.serviceName}</Text>
-                        </View>
-
+                        <DetailRow 
+                            icon={<MaterialIcons name="local-laundry-service" size={18} color="#666" />} 
+                            label="Service Type:" 
+                            value={order.serviceName} 
+                        />
+                        
                         {/* Weight */}
-                         <View style={styles.rowBetween}>
-                            <Ionicons name="scale-outline" size={18} color="#666" />
-                            <Text style={styles.label}>Weight:</Text>
-                            {/* FIX: Use toString() for safety before displaying */}
-                            <Text style={styles.value}>{order.initialWeight?.toString() || 'N/A'} kg</Text>
-                        </View>
+                        <DetailRow 
+                            icon={<Ionicons name="scale-outline" size={18} color="#666" />} 
+                            label="Final Weight:" 
+                            value={`${totalWeight.toFixed(1)} kg`} 
+                            valueStyle={{ fontWeight: '700' }}
+                        />
+                        
+                        {/* Weight Proof Image (If available) */}
+                        {order.weightProofImage && (
+                            <View style={{ marginBottom: 15 }}>
+                                <Text style={[styles.detailText, styles.proofLabel]}>Weight Proof:</Text>
+                                <Image source={{ uri: order.weightProofImage }} style={styles.proofImage} resizeMode="cover" />
+                            </View>
+                        )}
                         
                         {/* Base Price (Initial Estimate) */}
-                        <View style={styles.rowBetween}>
-                            <Ionicons name="pricetag-outline" size={18} color="#666" />
-                            <Text style={styles.label}>Base Price ({order.serviceName}):</Text>
-                            {/* FIX: Use safeParseAndFormat helper */}
-                            <Text style={styles.value}>{safeParseAndFormat(order.servicePrice)}</Text>
-                        </View>
-
+                        <DetailRow 
+                            icon={<Ionicons name="pricetag-outline" size={18} color="#666" />} 
+                            label={`Rate (${order.serviceName}):`} 
+                            value={`${safeParseAndFormat(order.servicePrice)} / kg`} 
+                        />
+                        
                         {/* Add-on Summary */}
                         {order.addons.length > 0 && (
-                            <View style={styles.section}>
-                                <Text style={[styles.sectionTitle, { fontSize: 14, marginTop: 10 }]}>Add-ons ({order.addons.length})</Text>
-                                {order.addons.map((addon) => (
-                                    <View key={addon.name} style={[styles.rowBetween, { marginVertical: 2 }]}>
-                                        <Text style={[styles.detailText, { marginLeft: 10 }]}>• {addon.name}</Text>
-                                        {/* FIX: Use safeParseAndFormat helper */}
-                                        <Text style={styles.value}>+ {safeParseAndFormat(addon.price)}</Text>
+                            <View style={{ marginTop: 10 }}>
+                                <Text style={[styles.sectionTitle, { fontSize: 14, marginBottom: 8 }]}>Add-ons ({order.addons.length})</Text>
+                                {order.addons.map((addon, index) => (
+                                    <View key={index} style={[styles.rowBetween, { marginVertical: 2, paddingLeft: 20 }]}>
+                                        <Text style={styles.detailText}>• {addon.name}</Text>
+                                        <Text style={styles.value}>{safeParseAndFormat(addon.price)}</Text>
                                     </View>
                                 ))}
-                                <View style={[styles.rowBetween, { marginTop: 8 }]}>
+                                <View style={[styles.rowBetween, { marginTop: 8, paddingLeft: 20 }]}>
                                     <Text style={[styles.detailText, { fontWeight: "600" }]}>Total Add-ons:</Text>
                                     <Text style={[styles.value, { fontWeight: "600" }]}>{safeParseAndFormat(totalAddons)}</Text>
                                 </View>
                             </View>
                         )}
                         
+                    </View>
 
-                        {/* Total Amount */}
-                        <View style={[styles.rowBetween, { marginTop: 10, borderTopWidth: 1, borderTopColor: '#e0e0e0', paddingTop: 10 }]}>
-                            <FontAwesome5 name="money-bill-wave" size={16} color="#004aad" />
-                            <Text style={styles.label}>TOTAL AMOUNT:</Text>
-                            <Text style={[styles.value, { color: "#004aad", fontWeight: "700", fontSize: 15 }]}>
-                                {/* FIX: Use safeParseAndFormat helper for final total */}
+                    <View style={styles.divider} />
+
+                    {/* FINAL TOTALS */}
+                    <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>Payment Status</Text>
+
+                        <PriceDisplayRow label="Calculated Service Fee" amount={calculatedServiceFee} />
+                        <PriceDisplayRow label="Add-Ons Fee" amount={totalAddons} />
+                        <PriceDisplayRow label="Delivery Fee" amount={deliveryFee} />
+
+                        <View style={[styles.rowBetween, { marginTop: 15, borderTopWidth: 1, borderTopColor: '#e0e0e0', paddingTop: 10 }]}>
+                            <Text style={styles.totalLabel}>FINAL TOTAL:</Text>
+                            <Text style={[styles.totalValue, { color: "#004aad" }]}>
                                 {safeParseAndFormat(order.totalAmount)}
                             </Text>
                         </View>
-
-                        {/* Payment Method - NOW DYNAMIC */}
-                        <View style={styles.rowBetween}>
-                            <Ionicons name="card-outline" size={18} color="#666" />
-                            <Text style={styles.label}>Payment Method:</Text>
-                            {/* FIX: Use the dynamically fetched method name */}
-                            <Text style={[styles.value, { fontWeight: "600" }]}>
-                                {order.paymentMethodName || 'Not Paid/Method Unknown'}
+                        
+                        <View style={styles.paymentStatusRow}>
+                            <Text style={[styles.detailText, { fontWeight: '600' }]}>Payment Status:</Text>
+                            <Text style={[styles.value, styles.statusTag]}>
+                                {order.invoiceStatus || 'PENDING INVOICE'}
+                            </Text>
+                        </View>
+                        
+                        <View style={styles.paymentStatusRow}>
+                            <Text style={[styles.detailText, { fontWeight: '600' }]}>Delivery Status:</Text>
+                            <Text style={[styles.value, styles.statusTag]}>
+                                {order.deliveryStatus || 'PENDING'}
                             </Text>
                         </View>
                     </View>
@@ -195,18 +241,17 @@ export default function OrderDetails() {
                     {/* Delivery Info */}
                     <View style={styles.section}>
                         <Text style={styles.sectionTitle}>Delivery Information</Text>
-                        <View style={styles.rowBetween}>
-                            <Ionicons name="cube-outline" size={18} color="#666" />
-                            <Text style={styles.label}>Type:</Text>
-                            <Text style={styles.value}>{order.deliveryType}</Text>
-                        </View>
-                        <View style={styles.rowBetween}>
-                            <Ionicons name="location-outline" size={18} color="#666" />
-                            <Text style={styles.label}>Address:</Text>
-                            <Text style={[styles.value, { flex: 1, textAlign: "right" }]}>
-                                {order.customerAddress}
-                            </Text>
-                        </View>
+                        <DetailRow 
+                            icon={<Ionicons name="cube-outline" size={18} color="#666" />} 
+                            label="Mode:" 
+                            value={order.deliveryType} 
+                        />
+                        <DetailRow 
+                            icon={<Ionicons name="location-outline" size={18} color="#666" />} 
+                            label="Address:" 
+                            value={order.customerAddress} 
+                            multiline
+                        />
                     </View>
                 </View>
             </ScrollView>
@@ -215,9 +260,9 @@ export default function OrderDetails() {
             <View style={styles.footer}>
                 <TouchableOpacity
                     style={styles.button}
-                    onPress={() => router.dismiss()} 
+                    onPress={() => router.back()} // Changed to router.back() for standard navigation return
                 >
-                    <Text style={styles.buttonText}>Done</Text>
+                    <Text style={styles.buttonText}>Back to Activity</Text>
                 </TouchableOpacity>
             </View>
         </View>
@@ -225,89 +270,158 @@ export default function OrderDetails() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f3f4f6",
-  },
-  card: {
-    backgroundColor: "#fff",
-    margin: 16,
-    padding: 20,
-    borderRadius: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
-  section: {
-    marginBottom: 12,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  customerName: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#000",
-  },
-  customerPhone: {
-    fontSize: 14,
-    color: "#555",
-  },
-  divider: {
-    borderBottomWidth: 1,
-    borderColor: "#e0e0e0",
-    marginVertical: 14,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 6,
-    color: "#004aad",
-  },
-  detailText: {
-    fontSize: 14,
-    color: "#333",
-  },
-  rowBetween: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginVertical: 6,
-    gap: 6,
-  },
-  label: {
-    fontSize: 14,
-    color: "#666",
-    flex: 1,
-  },
-  value: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#111",
-  },
-  footer: {
-    borderColor: "#e0e0e0",
-    backgroundColor: "#fff",
-  },
+    container: {
+        flex: 1,
+        backgroundColor: "#f3f4f6",
+    },
+    scrollContent: {
+        paddingBottom: 80, // Space for footer
+    },
+    card: {
+        backgroundColor: "#fff",
+        margin: 16,
+        padding: 20,
+        borderRadius: 16,
+        shadowColor: "#000",
+        shadowOpacity: 0.08,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 2 },
+        elevation: 3,
+    },
+    section: {
+        marginBottom: 8,
+    },
+    row: {
+        flexDirection: "row",
+        alignItems: "center",
+        flexShrink: 1, // Allow row to shrink if content is too long
+    },
+    customerName: {
+        fontSize: 18,
+        fontWeight: "600",
+        color: "#000",
+    },
+    customerPhone: {
+        fontSize: 14,
+        color: "#555",
+    },
+    divider: {
+        borderBottomWidth: 1,
+        borderColor: "#e0e0e0",
+        marginVertical: 14,
+    },
+    sectionTitle: {
+        fontSize: 16,
+        fontWeight: "600",
+        marginBottom: 6,
+        color: "#004aad",
+    },
+    detailText: {
+        fontSize: 14,
+        color: "#333",
+    },
+    rowBetween: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 6,
+    },
+    detailRowContainer: {
+        marginVertical: 6,
+        // Removed paddingHorizontal: 5
+    },
+    label: {
+        fontSize: 14,
+        color: "#666",
+        // Removed flex: 1, now it will only take content width
+        marginLeft: 10,
+        flexShrink: 1, // Allow label to shrink if needed
+    },
+    value: {
+        fontSize: 14,
+        fontWeight: "500",
+        color: "#111",
+        flex: 1, // Allow value to take up remaining space
+        textAlign: 'right',
+        flexShrink: 1, // Allow value to shrink
+    },
+    multilineValue: {
+        textAlign: 'right',
+        // Max width adjusted for better wrapping
+        maxWidth: '75%', // Increased from 70%
+    },
+    paymentStatusRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginTop: 10,
+        paddingTop: 8,
+        borderTopWidth: 1,
+        borderTopColor: '#f0f0f0',
+    },
+    statusTag: {
+        backgroundColor: '#e6f3ff',
+        color: '#004aad',
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 5,
+        fontWeight: '700',
+        fontSize: 12,
+    },
+    proofLabel: {
+        marginBottom: 8,
+        marginTop: 10,
+        fontWeight: '600',
+        color: '#888'
+    },
+    proofImage: {
+        width: '100%',
+        height: 200,
+        borderRadius: 8,
+        backgroundColor: '#f0f0f0'
+    },
+    footer: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        borderColor: "#e0e0e0",
+        backgroundColor: "#fff",
+        borderTopWidth: 1,
+    },
 
-  button: {
-    margin: 20,
-    backgroundColor: "#004aad",
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
+    button: {
+        margin: 20,
+        backgroundColor: "#004aad",
+        paddingVertical: 16,
+        borderRadius: 12,
+        alignItems: "center",
+        shadowColor: "#000",
+        shadowOpacity: 0.15,
+        shadowOffset: { width: 0, height: 3 },
+        shadowRadius: 6,
+        elevation: 3,
+    },
+    buttonText: {
+        color: "#fff",
+        fontSize: 16,
+        fontWeight: "600",
+    },
+    priceRowText: {
+        fontSize: 14, 
+        color: '#333'
+    },
+    totalLabel: { 
+        fontSize: 16,
+        fontWeight: "700",
+        color: "#222",
+        flex: 1, // Allow total label to take space
+    },
+    totalValue: { 
+        fontSize: 16,
+        fontWeight: "700",
+        color: "#004aad",
+        flexShrink: 1, // Allow total value to shrink
+        textAlign: 'right',
+    }
 });

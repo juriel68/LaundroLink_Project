@@ -1,4 +1,3 @@
-// routes/auth.js
 import express from "express";
 import bcrypt from "bcryptjs";
 import db from "../db.js";
@@ -15,7 +14,7 @@ function generateOTP() {
     return Math.floor(100000 + Math.random() * 900000).toString(); 
 }
 
-// 💡 RESTORED: Original Sequential ID Generation for Customers (C1, C2, etc.)
+// 💡 Original Sequential ID Generation for Customers (C1, C2, etc.)
 async function generateNewCustID(connection) {
     const [rows] = await connection.query(
         `SELECT MAX(CAST(SUBSTRING(CustID, 2) AS UNSIGNED)) AS last_id_number
@@ -39,6 +38,26 @@ async function sendEmail(to, subject, html) {
     } catch (error) {
         console.error('❌ Error sending email:', error.response ? error.response.body.errors : error);
     }
+}
+
+// 🟢 NEW: Helper to fetch and consolidate the complete customer profile
+async function fetchCustomerDetails(userId, connection) {
+    const [rows] = await connection.query(`
+        SELECT 
+            u.UserID, 
+            u.UserEmail, 
+            u.UserRole, 
+            c.CustName AS name, 
+            c.CustPhone AS phone, 
+            c.CustAddress AS address, 
+            cc.picture
+        FROM Users u
+        JOIN Customers c ON u.UserID = c.CustID
+        LEFT JOIN Cust_Credentials cc ON u.UserID = cc.CustID
+        WHERE u.UserID = ? AND u.UserRole = 'Customer'`, 
+        [userId]
+    );
+    return rows.length > 0 ? rows[0] : null;
 }
 
 // =================================================================
@@ -72,13 +91,11 @@ router.post("/login", async (req, res) => {
         // 2. Password Validation (Hybrid: Hashed OR Plain Text for Seed Data)
         let passwordMatch = false;
         
-        // First, try to compare as a Bcrypt hash
         const isHash = user.UserPassword && (user.UserPassword.startsWith('$2a$') || user.UserPassword.startsWith('$2b$'));
         
         if (isHash) {
             passwordMatch = await bcrypt.compare(password, user.UserPassword);
         } else {
-            // Fallback: Check plain text (Only for your Initial Data like 'mj1')
             passwordMatch = (password === user.UserPassword);
         }
 
@@ -122,7 +139,7 @@ router.post("/login", async (req, res) => {
             UserRole: user.UserRole
         };
         
-        // Fetch Role-Specific Details
+        // Fetch Role-Specific Details (Staff/Owner - kept original logic)
         if (user.UserRole === 'Shop Owner') {
             const [ownerDetails] = await db.query(
                 `SELECT o.OwnerID, o.OwnerName, s.ShopID, s.ShopName
@@ -167,15 +184,14 @@ router.post("/google-login", async (req, res) => {
 
         // Check for existing user
         const [existingUser] = await connection.query(
-            "SELECT T1.*, T2.google_id, T2.picture FROM Users T1 LEFT JOIN Cust_Credentials T2 ON T1.UserID = T2.CustID WHERE T2.google_id = ? OR T1.UserEmail = ?", 
-            [google_id, email]
+            "SELECT T1.UserID FROM Users T1 WHERE T1.UserEmail = ?", 
+            [email]
         );
         
-        let user;
-        
-        if (existingUser.length === 0) {
+        let userId = existingUser.length > 0 ? existingUser[0].UserID : null;
+
+        if (!userId) {
             // --- NEW USER ---
-            // 💡 USING SEQUENTIAL GENERATION: C1, C2...
             const newCustID = await generateNewCustID(connection);
         
             // 1. Users Table
@@ -197,42 +213,36 @@ router.post("/google-login", async (req, res) => {
             );
 
             await connection.commit();
-            
-            // Fetch the new full user object
-            const [newUser] = await db.query("SELECT * FROM Users WHERE UserID = ?", [newCustID]);
-            user = newUser[0];
-            
-            await logUserActivity(newCustID, 'Customer', 'Sign-up', 'User created via Google');
+            userId = newCustID;
+            await logUserActivity(userId, 'Customer', 'Sign-up', 'User created via Google');
             
         } else {
             // --- EXISTING USER ---
-            user = existingUser[0];
-
-            if (user.IsActive === 0) {
+            const [userRow] = await connection.query("SELECT IsActive FROM Users WHERE UserID = ?", [userId]);
+            if (userRow[0].IsActive === 0) {
                 await connection.rollback();
                 return res.status(403).json({ success: false, message: "Account is deactivated." });
             }
             
-            // Update Google Info if changed
-            if (!user.google_id || user.picture !== picture) { 
-                const [updateResult] = await connection.query(
-                    "UPDATE Cust_Credentials SET google_id = ?, picture = ?, is_verified = 1 WHERE CustID = ?", 
-                    [google_id, picture, user.UserID]
-                );
-                
-                // If user exists in Users but not Cust_Credentials (legacy edge case), insert credential
-                if (updateResult.affectedRows === 0) {
-                    await connection.query(
-                        `INSERT INTO Cust_Credentials (CustID, google_id, is_verified, picture) VALUES (?, ?, 1, ?)`, 
-                        [user.UserID, google_id, picture]
-                    );
-                }
-            }
+            // Update Cust_Credentials table
+            await connection.query(
+                `INSERT INTO Cust_Credentials (CustID, google_id, is_verified, picture) VALUES (?, ?, 1, ?)
+                 ON DUPLICATE KEY UPDATE google_id = VALUES(google_id), picture = VALUES(picture), is_verified = 1`,
+                [userId, google_id, picture]
+            );
+            
             await connection.commit();
-            await logUserActivity(user.UserID, user.UserRole, 'Login', 'Google Login Success');
+            await logUserActivity(userId, 'Customer', 'Login', 'Google Login Success');
         }
         
-        return res.json({ success: true, message: "Google login successful", user: user });
+        // 🟢 FINAL STEP: Fetch all customer details for session object
+        const fullUserDetails = await fetchCustomerDetails(userId, db); 
+        
+        if (!fullUserDetails) {
+             return res.status(500).json({ success: false, message: "Error retrieving full profile data." });
+        }
+
+        return res.json({ success: true, message: "Google login successful", user: fullUserDetails });
 
     } catch (error) {
         if (connection) await connection.rollback();
@@ -244,33 +254,55 @@ router.post("/google-login", async (req, res) => {
 });
 
 router.post("/verify-otp", async (req, res) => {
+    let connection;
     try {
         const { userId, otp } = req.body;
         if (!userId || !otp) return res.status(400).json({ success: false, message: "Missing User ID or OTP." });
 
-        const [otpRows] = await db.query("SELECT * FROM otps WHERE user_id = ? AND otp_code = ? AND expires_at > NOW()", [userId, otp]);
+        connection = await db.getConnection();
+        await connection.beginTransaction();
+
+        const [otpRows] = await connection.query("SELECT * FROM otps WHERE user_id = ? AND otp_code = ? AND expires_at > NOW()", [userId, otp]);
         
         if (otpRows.length === 0) { 
             await logUserActivity(userId, 'Customer', 'OTP Failure', 'Invalid/Expired OTP');
+            await connection.rollback();
             return res.status(400).json({ success: false, message: "Invalid or expired OTP." }); 
         }
 
         // Clear OTP
-        await db.query("DELETE FROM otps WHERE user_id = ?", [userId]);
+        await connection.query("DELETE FROM otps WHERE user_id = ?", [userId]);
 
-        const [users] = await db.query("SELECT * FROM Users WHERE UserID = ?", [userId]);
-        if (users.length === 0) return res.status(404).json({ success: false, message: "User not found." });
+        const [users] = await connection.query("SELECT IsActive, UserRole FROM Users WHERE UserID = ?", [userId]);
+        if (users.length === 0) {
+             await connection.rollback();
+             return res.status(404).json({ success: false, message: "User not found." });
+        }
         
         if (users[0].IsActive === 0) {
+            await connection.rollback();
             return res.status(403).json({ success: false, message: "Account is deactivated." });
         }
         
-        await logUserActivity(userId, users[0].UserRole, 'Login', 'OTP Verified Success');
-        res.json({ success: true, message: "Login successful", user: users[0] });
+        // 🟢 FINAL STEP: Fetch all customer details for session object
+        const fullUserDetails = await fetchCustomerDetails(userId, connection);
+
+        if (!fullUserDetails) {
+             await connection.rollback();
+             return res.status(500).json({ success: false, message: "Error retrieving full profile data." });
+        }
+        
+        await connection.commit();
+        await logUserActivity(userId, fullUserDetails.UserRole, 'Login', 'OTP Verified Success');
+        
+        res.json({ success: true, message: "Login successful", user: fullUserDetails });
 
     } catch (error) {
+        if (connection) await connection.rollback();
         console.error("❌ verify-otp error:", error);
         res.status(500).json({ success: false, message: "Failed to verify OTP." });
+    } finally {
+        if (connection) connection.release();
     }
 });
 

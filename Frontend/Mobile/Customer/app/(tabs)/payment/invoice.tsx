@@ -9,14 +9,22 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   SafeAreaView,
+  Image,
 } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { fetchOrderDetails, CustomerOrderDetails } from "@/lib/orders"; 
+import { fetchOrderDetails, CustomerOrderDetails, submitPayment, submitDeliveryPayment } from "@/lib/orders"; 
+
+// Helper to safely parse amounts
+const parseAmount = (value: string | number | undefined): number => {
+  const numericValue = parseFloat(String(value));
+  return !isNaN(numericValue) ? numericValue : 0;
+};
 
 export default function InvoiceScreen() {
   const router = useRouter();
-  const { orderId } = useLocalSearchParams<{ orderId: string }>();
+  const { orderId, type } = useLocalSearchParams<{ orderId: string, type: 'laundry' | 'delivery' | 'history' }>();
+  
   const [order, setOrder] = useState<CustomerOrderDetails | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -35,7 +43,7 @@ export default function InvoiceScreen() {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#004aad" />
-        <Text style={{ marginTop: 10, color: "#555" }}>Generating Invoice...</Text>
+        <Text style={{ marginTop: 10, color: "#555" }}>Loading details...</Text>
       </View>
     );
   }
@@ -47,28 +55,113 @@ export default function InvoiceScreen() {
       </View>
     );
   }
+  
+  // 🔑 CORE PAYMENT LOGIC SETUP
+  // Check if the current payment action is for the primary laundry service invoice
+  const isLaundryPayment = type === 'laundry' && order.invoiceStatus === 'To Pay';
+  // Check if the current payment action is for the delivery fee
+  const isDeliveryPayment = type === 'delivery' && order.deliveryPaymentStatus === 'Pending';
+  // If not a pending payment action, treat it as history view
+  const isHistoryView = type === 'history' || (!isLaundryPayment && !isDeliveryPayment); 
 
-  // 🔑 PREPARE VALUES
-  const serviceFee = parseFloat(order.servicePrice.toString()) || 0;
-  const deliveryFee = parseFloat(order.deliveryFee.toString()) || 0;
-  const totalAmount = parseFloat(order.totalAmount.toString()) || 0;
-  const addonsFee = order.addons.reduce((sum, item) => sum + parseFloat(item.price.toString()), 0);
+  const serviceFee = parseAmount(order.servicePrice) * parseAmount(order.weight);
+  const deliveryFee = parseAmount(order.deliveryFee);
+  const totalAmount = parseAmount(order.totalAmount);
+  const addonsFee = order.addons.reduce((sum, item) => sum + parseAmount(item.price), 0);
+
+  // Determine the amount the customer is currently focused on paying
+  const focusedAmount = isDeliveryPayment ? deliveryFee : totalAmount;
+  
+  // Determine if payment is needed
+  const needsPayment = isLaundryPayment || isDeliveryPayment;
+
+  // --- Render Functions ---
+
+  const renderServiceBreakdown = () => {
+    // Determine delivery status color/text for the summary line
+    const isDeliveryPaid = order.deliveryPaymentStatus === 'Paid' || order.deliveryPaymentStatus === 'To Confirm';
+    const deliveryStatusText = isDeliveryPaid ? 'Paid' : (order.deliveryPaymentStatus === 'Pending Later' ? 'Pending (Later)' : 'Pending');
+    const deliveryStatusColor = isDeliveryPaid ? '#27ae60' : (order.deliveryPaymentStatus === 'Pending Later' ? '#ff8f00' : '#c0392b');
+
+    return (
+      <>
+        {/* --- SERVICE BREAKDOWN SECTION --- */}
+        <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Service Breakdown</Text>
+            
+            <PriceRow label={`${order.serviceName} (${order.weight} kg @ ₱${parseAmount(order.servicePrice).toFixed(2)}/kg)`} amount={serviceFee} />
+            <PriceRow label="Add-Ons Fee" amount={addonsFee} />
+            
+            {/* 🟢 UPDATED: Display Delivery Fee with Status */}
+            <View style={styles.row}>
+                <Text style={styles.label}>Delivery Fee</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={[styles.statusTag, { backgroundColor: deliveryStatusColor, color: '#fff' }]}>{deliveryStatusText}</Text>
+                    <Text style={styles.price}>₱{deliveryFee.toFixed(2)}</Text>
+                </View>
+            </View>
+            {/* End Update */}
+            
+            <View style={styles.dividerLine} />
+            
+            <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Total Laundry Service Invoice</Text>
+                <Text style={styles.totalValue}>₱{totalAmount.toFixed(2)}</Text>
+            </View>
+
+            {order.weightProofImage && (
+              <>
+                <View style={[styles.dividerLine, { marginVertical: 20}]} />
+                <Text style={styles.sectionTitle}>Proof of Weight</Text>
+                <Image 
+                  source={{ uri: order.weightProofImage }} 
+                  style={styles.proofImage} 
+                  resizeMode="contain"
+                />
+              </>
+            )}
+
+        </View>
+      </>
+    );
+  };
+
+  const renderDeliveryBreakdown = () => (
+    <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Delivery Fee</Text>
+        <PriceRow label={`Delivery Fee for ${order.deliveryType}`} amount={deliveryFee} />
+        <View style={styles.dividerLine} />
+        <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Amount Due</Text>
+            <Text style={[styles.totalValue, { color: '#9b59b6' }]}>₱{deliveryFee.toFixed(2)}</Text>
+        </View>
+    </View>
+  );
+
+  const renderHistoryDetails = () => (
+    <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Order Totals</Text>
+        <PriceRow label="Final Service Total" amount={totalAmount} />
+        <PriceRow label="Status" value={order.invoiceStatus} />
+        <PriceRow label="Payment Method" value={order.paymentMethodName || "N/A"} />
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
       <Stack.Screen 
         options={{ 
-            title: "Review Invoice", 
-            headerShown: true,
-            headerStyle: { backgroundColor: "#87CEFA" }, 
-            headerTintColor: "#000",
-            headerTitleStyle: { fontWeight: "bold" },
-            headerLeft: () => (
-                <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 0, padding: 10 }}>
-                    <Ionicons name="arrow-back" size={24} color="#000" />
-                </TouchableOpacity>
-            ),
-            headerShadowVisible: false, 
+          title: needsPayment ? "Payment Due" : "Invoice Details", 
+          headerShown: true,
+          headerStyle: { backgroundColor: needsPayment ? "#ff9800" : "#87CEFA" },
+          headerTintColor: "#000",
+          headerTitleStyle: { fontWeight: "bold" },
+          headerLeft: () => (
+            <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 0, padding: 10 }}>
+                <Ionicons name="arrow-back" size={24} color="#000" />
+            </TouchableOpacity>
+          ),
+          headerShadowVisible: false, 
         }} 
       />
       
@@ -81,118 +174,46 @@ export default function InvoiceScreen() {
           </View>
           <Text style={styles.shopName}>{order.shopName}</Text>
           <Text style={styles.orderId}>Order ID: #{order.orderId}</Text>
-          
-          <View style={styles.divider} />
-          
-          <View style={styles.headerRow}>
-              <Text style={styles.headerLabel}>Customer:</Text>
-              <Text style={styles.headerValue}>{order.customerName}</Text>
-          </View>
-          <View style={styles.headerRow}>
-              <Text style={styles.headerLabel}>Created At:</Text>
-              <Text style={styles.headerValue}>{new Date(order.createdAt).toLocaleString()}</Text>
-          </View>
         </View>
 
-        {/* --- ORDER DETAILS SECTION (STACKED LAYOUT) --- */}
-        <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Order Details</Text>
-            
-            {/* 1. Basic Info */}
-            <StackedRow label="Laundry Weight" value={`${order.weight} kg`} icon="scale-outline" />
-            <StackedRow label="Service Name" value={order.serviceName} icon="basket-outline" />
-            <StackedRow label="Delivery Type" value={order.deliveryType} icon="bicycle-outline" />
-            
-            {/* 2. Stacked Fabrics (NEW) */}
-            <View style={styles.stackedItem}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                    <Ionicons name="shirt-outline" size={16} color="#666" style={{ marginRight: 6 }} />
-                    <Text style={styles.label}>Fabrics / Clothes</Text>
-                </View>
-                <View style={styles.addOnBox}>
-                    {order.fabrics && order.fabrics.length > 0 ? (
-                        order.fabrics.map((fabric, index) => (
-                            <View key={index} style={styles.addOnRow}>
-                                <Ionicons name="pricetag-outline" size={14} color="#004aad" style={{ marginRight: 8 }} />
-                                <Text style={styles.addOnText}>{fabric}</Text>
-                            </View>
-                        ))
-                    ) : (
-                        <Text style={styles.valueStacked}>Regular Clothes</Text>
-                    )}
-                </View>
-            </View>
-
-            {/* 3. Stacked Add-Ons */}
-            <View style={styles.stackedItem}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                    <Ionicons name="layers-outline" size={16} color="#666" style={{ marginRight: 6 }} />
-                    <Text style={styles.label}>Add-Ons</Text>
-                </View>
-                <View style={styles.addOnBox}>
-                    {order.addons.length > 0 ? (
-                        order.addons.map((addon, index) => (
-                            <View key={index} style={styles.addOnRow}>
-                                <Ionicons name="checkmark-circle" size={16} color="#27ae60" style={{ marginRight: 6 }} />
-                                <Text style={styles.addOnText}>{addon.name}</Text>
-                            </View>
-                        ))
-                    ) : (
-                        <Text style={styles.valueStacked}>None</Text>
-                    )}
-                </View>
-            </View>
-            
-            {/* 4. Stacked Instructions */}
-            <View style={styles.stackedItem}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                    <Ionicons name="create-outline" size={16} color="#666" style={{ marginRight: 6 }} />
-                    <Text style={styles.label}>Special Instructions</Text>
-                </View>
-                <View style={[styles.addOnBox, { backgroundColor: '#fff3cd', borderColor: '#ffeeba' }]}>
-                    <Text style={[styles.valueStacked, { color: '#856404', fontStyle: 'italic' }]}>
-                        {order.instructions || "None"}
-                    </Text>
-                </View>
-            </View>
-        </View>
-
-        {/* --- PAYMENT DETAILS SECTION --- */}
-        <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Payment Details</Text>
-            
-            <PriceRow label="Service Fee" amount={serviceFee} />
-            <PriceRow label="Add-Ons Fee" amount={addonsFee} />
-            <PriceRow label="Delivery Fee" amount={deliveryFee} />
-            
-            <View style={styles.dividerLine} />
-            
-            <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Total Amount</Text>
-                <Text style={styles.totalValue}>₱{totalAmount.toFixed(2)}</Text>
-            </View>
-        </View>
-
+        {/* --- DYNAMIC CONTENT --- */}
+        {isLaundryPayment && renderServiceBreakdown()}
+        {isDeliveryPayment && renderDeliveryBreakdown()}
+        {isHistoryView && renderHistoryDetails()}
+        
       </ScrollView>
 
-      {/* --- FOOTER BUTTON --- */}
+      {/* --- FOOTER BUTTON (Action or Back) --- */}
       <View style={styles.footer}>
-        <TouchableOpacity 
-            style={styles.payButton}
-            onPress={() => {
-                router.push({
-                    pathname: "/(tabs)/payment/pay",
-                    params: { 
-                        orderId: order.orderId,
-                        shopName: order.shopName,
-                        totalAmount: totalAmount.toFixed(2) 
-                    }
-                });
-            }}
-        >
-            <Text style={styles.payButtonText}>Proceed to Payment</Text>
-            <Ionicons name="arrow-forward" size={20} color="#fff" style={{ marginLeft: 5 }} />
-        </TouchableOpacity>
+        {needsPayment ? (
+            <TouchableOpacity 
+                style={[styles.payButton, isDeliveryPayment && { backgroundColor: '#9b59b6' }]}
+                onPress={() => {
+                    // Navigate to the specific payment processing screen
+                    router.push({
+                        pathname: "/(tabs)/payment/pay",
+                        params: { 
+                            orderId: order.orderId,
+                            shopName: order.shopName,
+                            amount: focusedAmount.toFixed(2),
+                            isDelivery: isDeliveryPayment ? 'true' : 'false'
+                        }
+                    });
+                }}
+            >
+                <Text style={styles.payButtonText}>
+                  {isDeliveryPayment ? `Pay Delivery Fee ₱${focusedAmount.toFixed(2)}` : `Pay Total ₱${focusedAmount.toFixed(2)}`}
+                </Text>
+                <Ionicons name="arrow-forward" size={20} color="#fff" style={{ marginLeft: 5 }} />
+            </TouchableOpacity>
+        ) : (
+            <TouchableOpacity 
+                style={[styles.payButton, { backgroundColor: '#555' }]}
+                onPress={() => router.back()}
+            >
+                <Text style={styles.payButtonText}>Back to Payments</Text>
+            </TouchableOpacity>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -200,20 +221,14 @@ export default function InvoiceScreen() {
 
 // --- Helper Components ---
 
-const StackedRow = ({ label, value, icon }: { label: string, value: string, icon: any }) => (
-    <View style={styles.stackedItem}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-            <Ionicons name={icon} size={16} color="#666" style={{ marginRight: 6 }} />
-            <Text style={styles.label}>{label}</Text>
-        </View>
-        <Text style={styles.valueStacked}>{value}</Text>
-    </View>
-);
-
-const PriceRow = ({ label, amount }: { label: string, amount: number }) => (
+const PriceRow = ({ label, amount, value }: { label: string, amount?: number, value?: string }) => (
     <View style={styles.row}>
         <Text style={styles.label}>{label}</Text>
-        <Text style={styles.price}>₱{amount.toFixed(2)}</Text>
+        {value ? (
+            <Text style={styles.price}>{value}</Text>
+        ) : (
+            <Text style={styles.price}>₱{amount ? amount.toFixed(2) : '0.00'}</Text>
+        )}
     </View>
 );
 
@@ -243,6 +258,16 @@ const styles = StyleSheet.create({
   },
   shopName: { fontSize: 22, fontWeight: "bold", color: "#fff", marginBottom: 4 },
   orderId: { fontSize: 14, color: "rgba(255,255,255,0.8)", fontWeight: '600' },
+  statusBadge: { 
+    marginTop: 10,
+    paddingHorizontal: 12, 
+    paddingVertical: 5, 
+    borderRadius: 15, 
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14
+  },
   divider: { width: "100%", height: 1, backgroundColor: "rgba(255,255,255,0.2)", marginVertical: 15 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 5 },
   headerLabel: { color: "rgba(255,255,255,0.7)", fontSize: 14 },
@@ -300,6 +325,25 @@ const styles = StyleSheet.create({
   totalRow: { flexDirection: "row", justifyContent: 'space-between', alignItems: 'center', marginTop: 5 },
   totalLabel: { fontSize: 16, fontWeight: "bold", color: "#222" },
   totalValue: { fontSize: 20, fontWeight: "bold", color: "#27ae60" },
+
+  // Image Proof
+  proofImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+    marginTop: 10,
+    backgroundColor: '#f0f0f0'
+  },
+
+  // NEW Status Tag for PriceRow
+  statusTag: {
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 6,
+      fontSize: 12,
+      fontWeight: '600',
+      marginRight: 10,
+  },
 
   // Footer
   footer: {

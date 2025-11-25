@@ -1,5 +1,4 @@
-// Customer/lib/auth.ts
-
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from "./api"; 
 
 // =================================================================
@@ -8,21 +7,21 @@ import { API_URL } from "./api";
 
 /**
  * Interface for the detailed user object.
- * Matches the combined response structure from backend joins.
+ * Matches the combined response structure from backend joins (Users, Customers, Cust_Credentials).
  */
 export interface UserDetails {
     UserID: string;      // VARCHAR in DB
     UserEmail: string;
     UserRole: 'Customer' | 'Staff' | 'Shop Owner' | 'Admin';
-    picture?: string;
     
-    // Profile Fields
+    // 🟢 CUSTOMER PROFILE FIELDS (Returned by auth routes)
+    picture?: string;
     name?: string;
     phone?: string;
     address?: string;
 
-    // Optional Role-Specific Fields
-    ShopID?: number;     // 🔑 UPDATED: INT in DB, so number here
+    // Optional Role-Specific Fields (Needed for Staff/Owner flows)
+    ShopID?: number;     
     ShopName?: string;
     StaffName?: string;
     StaffPosition?: string;
@@ -49,48 +48,92 @@ export interface GenericAuthResponse {
 }
 
 // =================================================================
-// 2. Utility Functions (System Gating)
+// 2. Session Management (Global State)
+// =================================================================
+
+let currentUser: UserDetails | null = null;
+
+/**
+ * Internal helper to save user session to storage and memory.
+ */
+const saveSession = async (user: UserDetails): Promise<void> => {
+    currentUser = user;
+    try {
+        // 🔑 NOTE: Using 'user' key for simplicity across the app
+        await AsyncStorage.setItem('user', JSON.stringify(user));
+        console.log("✅ Session saved for:", user.UserEmail);
+    } catch (e) {
+        console.error("Failed to save customer session.", e);
+    }
+};
+
+/**
+ * Checks storage on app start to see if a user was already logged in.
+ */
+export const loadUserFromStorage = async (): Promise<UserDetails | null> => {
+    try {
+        const userJson = await AsyncStorage.getItem('user');
+        if (userJson) {
+            currentUser = JSON.parse(userJson);
+            return currentUser;
+        }
+    } catch (e) {
+        console.error("Failed to load customer session.", e);
+    }
+    return null;
+};
+
+/**
+ * Retrieves the currently logged-in user's data from memory.
+ * Very efficient (0ms).
+ */
+export const getCurrentUser = (): UserDetails | null => {
+    return currentUser;
+};
+
+/**
+ * Clears the user data from memory and storage on logout.
+ */
+export const logout = async (): Promise<void> => {
+    currentUser = null;
+    try {
+        await AsyncStorage.removeItem('user'); // Use 'user' key
+    } catch (e) {
+        console.error("Failed to remove customer session.", e);
+    }
+};
+
+// =================================================================
+// 3. Utility Functions (System Gating)
 // =================================================================
 
 const MAINTENANCE_STATUS_ENDPOINT = `${API_URL}/admin/config/maintenance-status`;
 
-/**
- * Checks if the system is in Maintenance Mode.
- * Called by index.tsx on app load.
- */
 export async function checkMaintenanceStatus(): Promise<boolean> {
     try {
         const response = await fetch(MAINTENANCE_STATUS_ENDPOINT);
         
-        // 1. Server Error (500, 503, 404) -> Assume Maintenance ON (Fail-Safe)
-        if (!response.ok) {
-            return true; 
-        }
+        if (!response.ok) return true; 
 
-        // 2. Check explicit flag from valid JSON response
         try {
             const data = await response.json();
-            if (data.maintenanceMode === true) {
-                 return true; 
-            }
+            if (data.maintenanceMode === true) return true; 
         } catch (e) {
-            // JSON parse failed but status was 200 -> Assume OFF
+            // JSON parse error but 200 OK -> Assume active
         }
         
-        return false; // Maintenance is INACTIVE
-        
+        return false; 
     } catch (error) {
-        // 3. Network Unreachable -> Assume Maintenance ON
         return true; 
     }
 }
 
 // =================================================================
-// 3. Core Authentication Functions
+// 4. Core Authentication Functions
 // =================================================================
 
 /**
- * Standard Email/Password Login
+ * Standard Email/Password Login (Initiates OTP for Customers)
  */
 export async function handleUserLogin(
     email: string,
@@ -117,7 +160,7 @@ export async function handleUserLogin(
 }
 
 /**
- * Verify OTP (Step 2 of Login)
+ * Verify OTP (Step 2 of Login) -> SAVES SESSION ON SUCCESS
  */
 export async function verifyUserOTP(
     userId: string,
@@ -135,55 +178,16 @@ export async function verifyUserOTP(
         throw new Error(data.message || 'OTP verification failed.');
     }
 
+    // 🟢 SUCCESS: Save the session 
+    if (data.user) {
+        await saveSession(data.user);
+    }
+
     return data;
 }
 
 /**
- * Initiate Forgot Password (Send Email)
- */
-export async function initiateForgotPassword(
-    email: string
-): Promise<GenericAuthResponse> {
-    const response = await fetch(`${API_URL}/auth/forgot-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier: email }), 
-    });
-
-    const data: GenericAuthResponse = await response.json();
-    
-    if (response.ok) {
-        return data;
-    }
-    
-    throw new Error(data.message || 'Failed to initiate password reset.');
-}
-
-/**
- * Complete Password Reset (Verify & Change)
- */
-export async function resetUserPassword(
-    email: string,
-    otp: string,
-    newPassword: string
-): Promise<GenericAuthResponse> {
-    const response = await fetch(`${API_URL}/auth/reset-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp, newPassword }),
-    });
-
-    const data: GenericAuthResponse = await response.json();
-
-    if (!response.ok && !data.success) {
-        throw new Error(data.message || 'Failed to reset password.');
-    }
-    
-    return data;
-}
-
-/**
- * Google Login Wrapper
+ * Google Login Wrapper -> SAVES SESSION ON SUCCESS
  */
 export async function googleLogin(
     google_id: string,
@@ -204,16 +208,55 @@ export async function googleLogin(
         throw new Error(data.message || 'Google login failed.');
     }
 
+    // 🟢 SUCCESS: Save the session
+    if (data.user) {
+        await saveSession(data.user as UserDetails);
+    }
+
     return data;
 }
 
+export async function initiateForgotPassword(
+    email: string
+): Promise<GenericAuthResponse> {
+    const response = await fetch(`${API_URL}/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: email }), 
+    });
+
+    const data: GenericAuthResponse = await response.json();
+    
+    if (response.ok) {
+        return data;
+    }
+    
+    throw new Error(data.message || 'Failed to initiate password reset.');
+}
+
+export async function resetUserPassword(
+    email: string,
+    otp: string,
+    newPassword: string
+): Promise<GenericAuthResponse> {
+    const response = await fetch(`${API_URL}/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp, newPassword }),
+    });
+
+    const data: GenericAuthResponse = await response.json();
+
+    if (!response.ok && !data.success) {
+        throw new Error(data.message || 'Failed to reset password.');
+    }
+    
+    return data;
+}
 
 // Helper to handle response safely
 async function handleResponse(response: Response, actionName: string) {
     const text = await response.text(); 
-    
-    // console.log(`[${actionName}] Status:`, response.status);
-    // console.log(`[${actionName}] Response:`, text.substring(0, 500)); 
 
     if (!response.ok) {
         try {
@@ -232,10 +275,34 @@ async function handleResponse(response: Response, actionName: string) {
     }
 }
 
-// --- UPDATED FUNCTIONS (Strict Typing: userId is string) ---
+/**
+ * 🟢 CONSOLIDATED: Fetch full profile details (used by profile.tsx)
+ * NOTE: This relies on the new /users/profile/:UserID endpoint in the backend.
+ */
+export async function fetchFullCustomerProfile(userId: string): Promise<UserDetails | null> {
+    try {
+        const response = await fetch(`${API_URL}/users/profile/${userId}`);
+        
+        if (response.status === 404) return null;
+
+        if (!response.ok) throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
+
+        const data = await response.json();
+        
+        if (data.success && data.user) {
+            return data.user as UserDetails;
+        }
+        
+        return null;
+
+    } catch (error) {
+        console.error("Error fetching complete profile:", error);
+        return null;
+    }
+}
 
 export async function updateUserProfile(
-    userId: string, // 🔑 FIX: Enforce string to match DB VARCHAR
+    userId: string, 
     data: { name?: string; phone?: string | null; address?: string | null; picture?: string | null }
 ): Promise<any> {
     const response = await fetch(`${API_URL}/users/profile/${userId}`, {

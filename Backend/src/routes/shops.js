@@ -1,7 +1,15 @@
 import express from "express";
 import db from "../db.js";
+// 🔑 REQUIRED IMPORTS for file handling
+import multer from 'multer'; 
+import { cloudinary } from "../config/externalServices.js"; 
 
 const router = express.Router();
+
+// 🔑 SETUP MULTER: Define storage and the 'upload' middleware instance
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
+
 
 // =================================================================
 // 1. PUBLIC & APP LISTING ROUTES
@@ -116,7 +124,6 @@ router.get("/:shopId/full-details", async (req, res) => {
             [deliveryOptions],
             [fabricTypes],
             [paymentMethods],
-            // 🟢 UPDATED: Fetch Delivery Configurations
             [ownDeliverySettings],
             [linkedDeliveryApps]
         ] = await Promise.all([
@@ -125,9 +132,7 @@ router.get("/:shopId/full-details", async (req, res) => {
             connection.query(`SELECT SDO.DlvryID as id, DT.DlvryTypeName as name FROM Shop_Delivery_Options SDO JOIN Delivery_Types DT ON SDO.DlvryTypeID = DT.DlvryTypeID WHERE SDO.ShopID = ?`, [shopId]),
             connection.query(`SELECT SF.FabID as id, F.FabName as name FROM Shop_Fabrics SF JOIN Fabrics F ON SF.FabID = F.FabID WHERE SF.ShopID = ?`, [shopId]),
             connection.query(`SELECT PM.MethodID as id, PM.MethodName as name FROM Payment_Methods PM`, []),
-            // 🟢 UPDATED: Fetch Own Service
             connection.query(`SELECT ShopBaseFare, ShopBaseKm, ShopDistanceRate, ShopServiceStatus FROM Shop_Own_Service WHERE ShopID = ?`, [shopId]),
-            // 🟢 UPDATED: Fetch Linked Apps
             connection.query(`SELECT DA.DlvryAppName FROM Shop_Delivery_App SDA JOIN Delivery_App DA ON SDA.DlvryAppID = DA.DlvryAppID WHERE SDA.ShopID = ?`, [shopId])
         ]);
 
@@ -139,7 +144,6 @@ router.get("/:shopId/full-details", async (req, res) => {
             deliveryOptions: deliveryOptions,
             fabricTypes: fabricTypes,
             paymentMethods: paymentMethods,
-            // 🟢 UPDATED: Return Delivery Configs
             ownDelivery: ownDeliverySettings[0] || null, 
             deliveryApps: linkedDeliveryApps || []
         });
@@ -157,6 +161,35 @@ router.get("/:shopId/full-details", async (req, res) => {
 // 2. OWNER MANAGEMENT ROUTES
 // =================================================================
 
+// 🟢 NEW ROUTE: Dedicated Image Upload Endpoint for Owner UI
+router.post("/upload-image", upload.single("image"), async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ success: false, message: "No image file provided." });
+    }
+    
+    try {
+        const b64 = Buffer.from(req.file.buffer).toString("base64");
+        const dataURI = "data:" + req.file.mimetype + ";base64," + b64;
+        
+        // Upload to Cloudinary
+        const uploadResult = await cloudinary.uploader.upload(dataURI, { 
+            folder: "laundrolink_shop_images",
+            public_id: `shop_${Date.now()}`
+        });
+
+        res.json({ 
+            success: true, 
+            message: "Image uploaded successfully.",
+            url: uploadResult.secure_url 
+        });
+
+    } catch (error) {
+        console.error("Cloudinary upload error:", error);
+        res.status(500).json({ success: false, message: "Failed to upload image to cloud storage." });
+    }
+});
+
+
 // GET /api/shops/:shopId/full-details-owner (Owner Dashboard)
 router.get("/:shopId/full-details-owner", async (req, res) => {
     const { shopId } = req.params;
@@ -171,7 +204,7 @@ router.get("/:shopId/full-details-owner", async (req, res) => {
             connection.query(
                 `SELECT 
                     LS.ShopID, LS.ShopName, LS.ShopDescrp, LS.ShopAddress, 
-                    LS.ShopPhone, LS.ShopOpeningHours, LS.ShopStatus,
+                    LS.ShopPhone, LS.ShopOpeningHours, LS.ShopStatus, LS.ShopImage_url,
                     COALESCE(AVG(SR.ShopRating), 0.0) AS averageRating
                 FROM Laundry_Shops AS LS
                 LEFT JOIN Shop_Rates AS SR ON LS.ShopID = SR.ShopID
@@ -268,7 +301,7 @@ router.put("/:shopId", async (req, res) => {
     const { shopId } = req.params;
     const { 
         ShopName, ShopDescrp, ShopAddress, ShopPhone, ShopOpeningHours, 
-        ShopStatus, ShopLatitude, ShopLongitude
+        ShopStatus, ShopLatitude, ShopLongitude, ShopImage_url 
     } = req.body;
     
     const connection = await db.getConnection();
@@ -278,9 +311,10 @@ router.put("/:shopId", async (req, res) => {
         await connection.query(
             `UPDATE Laundry_Shops SET 
                 ShopName = ?, ShopDescrp = ?, ShopAddress = ?, 
-                ShopPhone = ?, ShopOpeningHours = ?, ShopStatus = ?
+                ShopPhone = ?, ShopOpeningHours = ?, ShopStatus = ?,
+                ShopImage_url = ?  
             WHERE ShopID = ?`,
-            [ShopName, ShopDescrp, ShopAddress, ShopPhone, ShopOpeningHours, ShopStatus, shopId]
+            [ShopName, ShopDescrp, ShopAddress, ShopPhone, ShopOpeningHours, ShopStatus, ShopImage_url, shopId] 
         );
         
         if (ShopLatitude && ShopLongitude) {

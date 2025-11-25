@@ -47,6 +47,10 @@ export interface CustomerOrderPreview {
     serviceName: string;
     status: string;
     totalAmount: number;
+    invoiceStatus?: string; // Added
+    deliveryAmount?: number; // Added
+    deliveryPaymentStatus?: string; // Added
+    deliveryStatus?: string; // Added for Activity screen filtering
 }
 
 /**
@@ -74,25 +78,46 @@ export interface CustomerOrderDetails {
     serviceName: string;
     servicePrice: number;
     weight: number;
+    
+    // Weight Proof
+    weightProofImage?: string;
+
     instructions: string;
     deliveryType: string;
     deliveryFee: number;
     orderStatus: string; 
     invoiceStatus: string; // Maps to Invoices.PaymentStatus
+    
+    // Delivery Status
+    deliveryStatus?: string;
+    deliveryPaymentStatus?: string;
+    
     fabrics: string[];
     addons: AddOnDetail[];
     totalAmount: number;
     paymentMethodName?: string;
-    reason?: string; // Rejection Reason
-    note?: string;   // Rejection Note
 }
 
 /**
  * Interface for a single chronological step in the Order_Processing timeline.
  */
 export interface OrderProcessStep {
-    status: string; // e.g., 'Pending', 'Washed', 'Out for Delivery', 'Completed'
-    time: string;   // Timestamp of the status update
+    status: string; 
+    time: string;   
+}
+
+/**
+ * Interface for raw statuses fetched for tracking timeline construction.
+ * Used by GET /orders/:orderId/raw-statuses
+ */
+export interface StatusTimeMap {
+    [status: string]: { time: string };
+}
+
+export interface RawStatuses {
+    orderStatus: StatusTimeMap;
+    deliveryStatus: StatusTimeMap;
+    orderProcessing: StatusTimeMap;
 }
 
 
@@ -169,11 +194,33 @@ export async function fetchOrderDetails(
 }
 
 /**
+ * Fetches all raw, timestamped statuses for the tracking timeline.
+ */
+export async function fetchRawStatuses(
+    orderId: string
+): Promise<RawStatuses | null> {
+    try {
+        const response = await fetch(`${API_URL}/orders/${orderId}/raw-statuses`);
+
+        if (!response.ok) {
+            console.error(`[API ERROR] Failed to fetch raw statuses: ${response.status} ${response.statusText}`);
+            throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
+        }
+
+        const data: RawStatuses = await response.json();
+        return data;
+    } catch (error) {
+        console.error(`Error fetching raw statuses for order ${orderId}:`, error);
+        return null;
+    }
+}
+
+/**
  * Confirms payment (e.g., Cash or GCash)
  */
 export const submitPayment = async (
     orderId: string, 
-    methodId: number, // INT
+    methodId: number, 
     amount: number
 ): Promise<boolean> => {
     try {
@@ -200,7 +247,7 @@ export const submitPayment = async (
  */
 export const submitDeliveryPayment = async (
     orderId: string, 
-    methodId: number, // INT
+    methodId: number, 
     amount: number
 ): Promise<boolean> => {
     try {
@@ -258,6 +305,8 @@ export async function cancelCustomerOrder(
 export async function fetchProcessHistory(
     orderId: string
 ): Promise<OrderProcessStep[]> {
+    // This function is still needed by the legacy /process-history route, but it's 
+    // recommended to use fetchRawStatuses for building the new timeline.
     try {
         const response = await fetch(`${API_URL}/orders/${orderId}/process-history`);
 

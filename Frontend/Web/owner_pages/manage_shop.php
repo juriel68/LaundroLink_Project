@@ -51,6 +51,27 @@
             margin-bottom: 25px; 
         }
 
+        /* 🔑 Shop Image Display */
+        .shop-image-display {
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin: 0 auto 20px;
+            border: 4px solid #f0f4f8;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .image-placeholder {
+            width: 100%;
+            height: 100%;
+            background: #e9ecef;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #ccc;
+        }
+
         .shop-name { 
             font-weight: 700; 
             font-size: 28px; 
@@ -263,7 +284,7 @@
             margin-top: 12px; 
         }
 
-        .popup-content input, 
+        .popup-content input:not([type="file"]), 
         .popup-content textarea, 
         .popup-content select { 
             width: 100%; 
@@ -273,6 +294,26 @@
             border: 1px solid #ccc; 
             font-size: 14px; 
             box-sizing: border-box; 
+        }
+        
+        .image-upload-area {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 10px;
+        }
+
+        #imagePreview {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            margin-bottom: 10px;
+            object-fit: cover;
+            border: 2px solid #ddd;
+        }
+
+        #shopImageFile {
+            width: auto;
         }
 
         .popup-buttons { 
@@ -349,6 +390,10 @@
         <div class="details-column">
             <div class="shop-card">
                 <div class="shop-header">
+                    <!-- 🔑 Shop Image Display -->
+                    <div class="shop-image-display" id="shop-image-display">
+                        <div class="image-placeholder"><i class="fas fa-camera" style="font-size: 30px;"></i></div>
+                    </div>
                     <h2 class="shop-name" id="shop-name-display"></h2>
                     <p class="shop-descrp" id="shop-descrp-display"></p>
                 </div>
@@ -395,7 +440,16 @@
             <h2>Manage Shop</h2>
             <form id="manageForm">
                 <input type="hidden" id="shopID">
+                <input type="hidden" id="shopImageURL"> <!-- To hold existing image URL -->
                 
+                <!-- 🔑 Image Upload Section -->
+                <label>Shop Logo / Image (Optional)</label>
+                <div class="image-upload-area">
+                    <img id="imagePreview" src="https://placehold.co/100x100/e9ecef/ccc?text=Logo" alt="Shop Image" style="display: none;">
+                    <input type="file" id="shopImageFile" accept="image/*">
+                </div>
+                <!-- End Image Upload -->
+
                 <label>Shop Name</label>
                 <input type="text" id="shopName" required>
                 
@@ -455,14 +509,60 @@
         const avgRatingScoreEl = document.getElementById('avg-rating-score');
         const ratingStarsEl = document.getElementById('rating-stars');
         const ratingCountEl = document.getElementById('rating-count');
-
+        const shopImageDisplay = document.getElementById('shop-image-display');
+        
+        // Form inputs for image and location
         const shopAddressInput = document.getElementById('shopAddress');
         const shopLatitudeInput = document.getElementById('shopLatitude');
         const shopLongitudeInput = document.getElementById('shopLongitude');
         const pinpointBtn = document.getElementById('pinpointBtn');
         const locationStatus = document.getElementById('locationStatus');
-        
+        const shopImageURLInput = document.getElementById('shopImageURL');
+        const shopImageFile = document.getElementById('shopImageFile');
+        const imagePreview = document.getElementById('imagePreview');
+
         let shopCoordinates = {}; 
+
+        // --- IMAGE UPLOAD HANDLER (TARGETS BACKEND ROUTE) ---
+        const uploadImageToBackend = async (file) => {
+            const formData = new FormData();
+            formData.append('image', file); // 'image' must match the multer single field name
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/shops/upload-image`, {
+                    method: 'POST',
+                    body: formData,
+                    // NOTE: Do not set Content-Type header when using FormData with fetch
+                });
+
+                if (!response.ok) throw new Error('Server upload failed.');
+                
+                const result = await response.json();
+                if (!result.success) throw new Error(result.message || 'Image upload failed.');
+                
+                return result.url; 
+            } catch (error) {
+                console.error("Upload error:", error);
+                alert("Image upload failed. Using existing URL or skipping image.");
+                return shopImageURLInput.value; 
+            }
+        };
+
+        // --- HANDLE FILE INPUT CHANGE FOR PREVIEW ---
+        shopImageFile.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    imagePreview.src = e.target.result;
+                    imagePreview.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            } else {
+                imagePreview.style.display = 'none';
+            }
+        });
+
 
         // --- MAPS DATA FROM API TO HTML ELEMENTS ---
         const updateShopInfo = (details) => {
@@ -473,6 +573,15 @@
             shopHoursEl.textContent = details.ShopOpeningHours;
             shopStatusEl.textContent = details.ShopStatus;
             shopStatusEl.className = `shop-status status-${details.ShopStatus.toLowerCase()}`;
+
+            // 🔑 Display Shop Image in the main view
+            if (details.ShopImage_url) {
+                shopImageDisplay.innerHTML = `<img src="${details.ShopImage_url}" alt="Shop Logo" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
+            } else {
+                 shopImageDisplay.innerHTML = `<div class="image-placeholder"><i class="fas fa-camera" style="font-size: 30px;"></i></div>`;
+            }
+            // Store the current URL in the hidden field for use during update
+            shopImageURLInput.value = details.ShopImage_url || '';
         };
 
         const updateRatingSummary = (rating) => {
@@ -570,8 +679,6 @@
                     ShopLongitude: details.ShopLongitude
                 };
                 
-                // We keep these in memory to populate the hidden fields on edit
-                
                 updateShopInfo(details);
                 updateRatingSummary(rating);
 
@@ -581,7 +688,7 @@
             }
         };
 
-// --- GEOLOCATION LOGIC (HIGH PRECISION UPDATE) ---
+        // --- GEOLOCATION LOGIC (HIGH PRECISION UPDATE) ---
         pinpointBtn.addEventListener('click', () => {
             if (!navigator.geolocation) {
                 alert("Geolocation is not supported by your browser.");
@@ -614,7 +721,6 @@
                             const props = data.features[0].properties;
                             
                             // Build specific address parts
-                            // We prioritize: Name (e.g. Shop Name/Building) -> House Number -> Street -> District -> City
                             const parts = [
                                 props.name,
                                 props.housenumber,
@@ -625,7 +731,6 @@
                                 props.country
                             ].filter(Boolean); // Remove undefined/null/empty strings
 
-                            // Deduplicate parts (sometimes name and street are same)
                             const uniqueParts = [...new Set(parts)];
 
                             if (uniqueParts.length > 0) {
@@ -690,6 +795,16 @@
             shopLatitudeInput.value = shopCoordinates.ShopLatitude || '';
             shopLongitudeInput.value = shopCoordinates.ShopLongitude || '';
             
+            // 🔑 Set Image Preview and hidden URL input
+            const currentImageUrl = shopImageURLInput.value;
+            if (currentImageUrl) {
+                imagePreview.src = currentImageUrl;
+                imagePreview.style.display = 'block';
+            } else {
+                imagePreview.style.display = 'none';
+            }
+            shopImageFile.value = ''; // Clear file input
+            
             locationStatus.textContent = ""; // Clear status
 
             document.querySelector('#managePopup h2').textContent = 'Manage Shop';
@@ -710,6 +825,10 @@
                 
                 shopLatitudeInput.value = '';
                 shopLongitudeInput.value = '';
+                shopImageURLInput.value = ''; // Clear existing image URL
+                imagePreview.style.display = 'none';
+                shopImageFile.value = ''; 
+
                 locationStatus.textContent = "";
 
                 document.querySelector('#managePopup h2').textContent = 'Create New Shop';
@@ -725,44 +844,57 @@
             const shopId = document.getElementById('shopID').value;
             const isCreating = !shopId; 
             
-            // Validation: Ensure Lat/Long are set
-            const lat = shopLatitudeInput.value;
-            const lon = shopLongitudeInput.value;
-
-            if (!lat || !lon) {
-                alert("Please use the 'Pinpoint Location' button to set the shop's map coordinates.");
-                return;
-            }
-
-            const baseData = {
-                ShopName: document.getElementById('shopName').value,
-                ShopDescrp: document.getElementById('shopDescrp').value,
-                ShopAddress: document.getElementById('shopAddress').value,
-                ShopPhone: document.getElementById('shopPhone').value,
-                ShopOpeningHours: document.getElementById('shopHours').value,
-                ShopStatus: document.getElementById('shopStatus').value,
-                ShopLatitude: parseFloat(lat),
-                ShopLongitude: parseFloat(lon)
-            };
-
-            let url = '';
-            let method = '';
-            let data = {};
-
-            if (isCreating) {
-                data = {
-                    ...baseData,
-                    OwnerID: loggedInUser?.OwnerID 
-                };
-                url = `${API_BASE_URL}/shops/create`;
-                method = 'POST';
-            } else {
-                data = baseData;
-                url = `${API_BASE_URL}/shops/${shopId}`;
-                method = 'PUT';
-            }
+            const saveBtn = document.querySelector('.btn-save');
+            const originalBtnText = saveBtn.textContent;
+            saveBtn.textContent = 'Processing...';
+            saveBtn.disabled = true;
 
             try {
+                // Validation: Ensure Lat/Long are set
+                const lat = shopLatitudeInput.value;
+                const lon = shopLongitudeInput.value;
+
+                if (!lat || !lon) {
+                    alert("Please use the 'Pinpoint Location' button to set the shop's map coordinates.");
+                    return;
+                }
+
+                let finalImageUrl = shopImageURLInput.value || ''; // Start with existing URL
+
+                // 1. Check if a new file was selected and upload it
+                if (shopImageFile.files.length > 0) {
+                    finalImageUrl = await uploadImageToBackend(shopImageFile.files[0]);
+                }
+                
+                const baseData = {
+                    ShopName: document.getElementById('shopName').value,
+                    ShopDescrp: document.getElementById('shopDescrp').value,
+                    ShopAddress: document.getElementById('shopAddress').value,
+                    ShopPhone: document.getElementById('shopPhone').value,
+                    ShopOpeningHours: document.getElementById('shopHours').value,
+                    ShopStatus: document.getElementById('shopStatus').value,
+                    ShopLatitude: parseFloat(lat),
+                    ShopLongitude: parseFloat(lon),
+                    ShopImage_url: finalImageUrl // Include the final image URL
+                };
+
+                let url = '';
+                let method = '';
+                let data = {};
+
+                if (isCreating) {
+                    data = {
+                        ...baseData,
+                        OwnerID: loggedInUser?.OwnerID 
+                    };
+                    url = `${API_BASE_URL}/shops/create`;
+                    method = 'POST';
+                } else {
+                    data = baseData;
+                    url = `${API_BASE_URL}/shops/${shopId}`;
+                    method = 'PUT';
+                }
+
                 const response = await fetch(url, {
                     method: method,
                     headers: { 'Content-Type': 'application/json' },
@@ -770,7 +902,7 @@
                 });
                 const result = await response.json();
                 
-                if (!response.ok) throw new Error(result.error || result.message);
+                if (!response.ok) throw new Error(result.error || result.message || response.statusText);
                 
                 alert(isCreating ? 'Shop created and linked successfully!' : 'Shop updated successfully!');
                 managePopup.style.display = 'none';
@@ -786,11 +918,22 @@
 
             } catch (error) {
                 alert(`Error: ${error.message}`);
+            } finally {
+                saveBtn.textContent = originalBtnText;
+                saveBtn.disabled = false;
             }
         });
 
-        document.getElementById('cancelBtn').addEventListener('click', () => { managePopup.style.display = 'none'; });
-        window.onclick = (event) => { if (event.target === managePopup) managePopup.style.display = 'none'; };
+        document.getElementById('cancelBtn').addEventListener('click', () => { 
+            managePopup.style.display = 'none'; 
+            shopImageFile.value = ''; // Clear file input on cancel
+        });
+        window.onclick = (event) => { 
+            if (event.target === managePopup) {
+                managePopup.style.display = 'none'; 
+                shopImageFile.value = ''; // Clear file input on modal close
+            }
+        };
         
         document.addEventListener('DOMContentLoaded', () => {
             if (configureShopBtn) {

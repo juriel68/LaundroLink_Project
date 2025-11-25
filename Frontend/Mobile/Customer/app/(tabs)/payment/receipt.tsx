@@ -25,18 +25,19 @@ export default function ReceiptScreen() {
     orderId, 
     amount, 
     method, 
-    isFirstPayment 
+    isDelivery 
   } = useLocalSearchParams<{ 
     orderId: string, 
     amount: string, 
     method: string,
-    isFirstPayment: string
+    isDelivery: string // 'true' or 'false'
   }>();
 
   const [order, setOrder] = useState<CustomerOrderDetails | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const isDeliveryReceipt = isFirstPayment === 'true';
+  // Use the new, clean 'isDelivery' flag
+  const isDeliveryReceipt = isDelivery === 'true'; 
   const paidAmount = parseFloat(amount || "0");
 
   useEffect(() => {
@@ -53,15 +54,11 @@ export default function ReceiptScreen() {
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#2ecc71" /></View>;
   if (!order) return <View style={styles.center}><Text>Order not found</Text></View>;
 
-  // Calculations for Standard Receipt
-  const serviceFee = parseFloat(order.servicePrice.toString()) || 0;
-  const deliveryFee = parseFloat(order.deliveryFee.toString()) || 0;
-  const addonsFee = order.addons.reduce((sum, item) => sum + parseFloat(item.price.toString()), 0);
+  // Calculations for Standard Receipt (used only if it's NOT a delivery-only receipt)
+  const serviceFee = parseAmount(order.servicePrice) * parseAmount(order.weight);
+  const deliveryFee = parseAmount(order.deliveryFee);
+  const addonsFee = order.addons.reduce((sum, item) => sum + parseAmount(item.price), 0);
   
-  // If it's a delivery receipt, total is just what was paid. 
-  // Otherwise, calculate grand total or use paidAmount.
-  const displayTotal = paidAmount; 
-
   return (
     <SafeAreaView style={styles.container}>
         <Stack.Screen options={{ headerShown: false }} />
@@ -91,7 +88,7 @@ export default function ReceiptScreen() {
 
                     <View style={styles.headerDivider} />
 
-                    {/* 🔑 NEW: Customer Details Section */}
+                    {/* Customer Details Section */}
                     <View style={styles.customerSection}>
                         <Text style={styles.sectionLabel}>Customer Details</Text>
                         <Text style={styles.customerName}>{order.customerName}</Text>
@@ -140,7 +137,7 @@ export default function ReceiptScreen() {
                         // 🔑 OPTION A: Delivery Fee Only Receipt
                         <View style={styles.row}>
                             <Text style={styles.label}>Delivery Fee (Upfront)</Text>
-                            <Text style={styles.price}>₱{displayTotal.toFixed(2)}</Text>
+                            <Text style={[styles.price, { color: '#9b59b6' }]}>₱{paidAmount.toFixed(2)}</Text>
                         </View>
                     ) : (
                         // 🔑 OPTION B: Full Service Receipt
@@ -169,7 +166,7 @@ export default function ReceiptScreen() {
 
                     <View style={styles.totalRow}>
                         <Text style={styles.totalLabel}>Total Paid</Text>
-                        <Text style={styles.totalValue}>₱{displayTotal.toFixed(2)}</Text>
+                        <Text style={styles.totalValue}>₱{paidAmount.toFixed(2)}</Text>
                     </View>
                 </View>
                 
@@ -218,6 +215,12 @@ export default function ReceiptScreen() {
     </SafeAreaView>
   );
 }
+
+// Helper to safely parse amounts
+const parseAmount = (value: string | number | undefined): number => {
+  const numericValue = parseFloat(String(value));
+  return !isNaN(numericValue) ? numericValue : 0;
+};
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#004aad" }, 
@@ -276,7 +279,7 @@ const styles = StyleSheet.create({
   label: { fontSize: 15, color: "#444", flex: 1 },
   price: { fontSize: 15, fontWeight: "600", color: "#222" },
 
-  solidDivider: { height: 1, backgroundColor: "#eee", marginVertical: 15 },
+  solidDivider: { height: 1, backgroundColor: "#ccc", marginVertical: 15 }, // Changed from #eee for visibility
   
   totalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: 'center' },
   totalLabel: { fontSize: 18, fontWeight: "bold", color: "#222" },

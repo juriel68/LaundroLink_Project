@@ -1,7 +1,7 @@
 // Customer/lib/shops.ts
 
 import axios from "axios";
-import { API_URL } from "@/lib/api";
+import { API_URL } from "./api";
 
 // =================================================================
 // 1. DOMAIN ENTITIES (INTERFACES)
@@ -48,16 +48,7 @@ export interface PaymentMethod {
     name: string; 
 }
 
-export interface FullShopDetails {
-    shop: Shop; 
-    services: Service[];
-    addOns: AddOn[];
-    deliveryOptions: DeliveryOption[];
-    fabricTypes: FabricType[];
-    paymentMethods: PaymentMethod[];
-}
-
-// 🔑 NEW: Interface for In-House Delivery Settings
+// Interface for In-House Delivery Settings
 export interface OwnDeliverySettings {
     ShopBaseFare: number;
     ShopBaseKm: number;
@@ -65,13 +56,21 @@ export interface OwnDeliverySettings {
     ShopServiceStatus: 'Active' | 'Inactive';
 }
 
-// 🔑 NEW: Interface for Linked 3rd Party Apps
+// Interface for Linked 3rd Party Apps
 export interface LinkedApp {
-    DlvryAppID: number;
     DlvryAppName: string;
-    AppBaseFare: number;
-    AppBaseKm: number;
-    AppDistanceRate: number;
+}
+
+export interface FullShopDetails {
+    shop: Shop; 
+    services: Service[];
+    addOns: AddOn[];
+    deliveryOptions: DeliveryOption[];
+    fabricTypes: FabricType[];
+    paymentMethods: PaymentMethod[];
+    // 🟢 NEW: Include Delivery Configs here for easy access
+    ownDelivery: OwnDeliverySettings | null;
+    deliveryApps: LinkedApp[];
 }
 
 // =================================================================
@@ -148,6 +147,14 @@ export const fetchShopDetails = async (shopId: string | number): Promise<FullSho
                 name: p.name
             }));
 
+            // 🟢 NEW: Map the delivery settings included in the response
+            const ownDelivery = response.data.ownDelivery ? {
+                ShopBaseFare: parseFloat(response.data.ownDelivery.ShopBaseFare),
+                ShopBaseKm: parseInt(response.data.ownDelivery.ShopBaseKm, 10),
+                ShopDistanceRate: parseFloat(response.data.ownDelivery.ShopDistanceRate),
+                ShopServiceStatus: response.data.ownDelivery.ShopServiceStatus
+            } : null;
+
             return {
                 shop,
                 services: mappedServices,
@@ -155,6 +162,8 @@ export const fetchShopDetails = async (shopId: string | number): Promise<FullSho
                 deliveryOptions: mappedDelivery,
                 fabricTypes: mappedFabrics,
                 paymentMethods: mappedPayments,
+                ownDelivery: ownDelivery,
+                deliveryApps: response.data.deliveryApps || []
             };
         }
         return null;
@@ -164,7 +173,7 @@ export const fetchShopDetails = async (shopId: string | number): Promise<FullSho
     }
 };
 
-// 🔑 NEW: Fetch In-House Settings
+// Independent fetchers kept for flexibility if needed elsewhere
 export const fetchOwnDeliverySettings = async (shopId: string | number): Promise<OwnDeliverySettings | null> => {
     try {
         const response = await axios.get(`${API_URL}/shops/${shopId}/own-delivery`);
@@ -184,7 +193,6 @@ export const fetchOwnDeliverySettings = async (shopId: string | number): Promise
     }
 };
 
-// 🔑 NEW: Fetch Linked Apps
 export const fetchLinkedApps = async (shopId: string | number): Promise<LinkedApp[]> => {
     try {
         const response = await axios.get(`${API_URL}/shops/${shopId}/delivery-apps`);

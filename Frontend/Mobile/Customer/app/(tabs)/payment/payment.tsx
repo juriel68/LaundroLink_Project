@@ -1,9 +1,14 @@
-import { router, useNavigation } from "expo-router";
-import { useLayoutEffect } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { router, useNavigation, useFocusEffect } from "expo-router";
+import { useLayoutEffect, useState, useCallback } from "react";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, RefreshControl, ActivityIndicator } from "react-native";
+import { fetchCustomerOrders, CustomerOrderPreview } from "@/lib/orders";
+import { getCurrentUser } from "@/lib/auth";
 
 export default function Payment() {
   const navigation = useNavigation();
+  const [orders, setOrders] = useState<CustomerOrderPreview[]>([]);
+  const [loading, setLoading] = useState(true);
+  const user = getCurrentUser();
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -17,14 +22,7 @@ export default function Payment() {
       headerShadowVisible: false, 
       headerTitle: () => (
         <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <Text
-            style={{
-              color: "#2d2d2dff",
-              marginLeft: 5,
-              fontSize: 20,
-              fontWeight: "700",
-            }}
-          >
+          <Text style={{ color: "#2d2d2dff", marginLeft: 5, fontSize: 20, fontWeight: "700" }}>
             Payment
           </Text>
         </View>
@@ -32,102 +30,161 @@ export default function Payment() {
     });
   }, [navigation]);
 
-  // Payment history data
-  const historyData = [
-    { date: "Apr 30", amount: "₱ 450.00", status: "Paid", invoice: "#LAU123456" },
-    { date: "Apr 02", amount: "₱ 250.00", status: "Cancelled", invoice: "#ABC078365" },
-    { date: "Mar 15", amount: "₱ 300.00", status: "Paid", invoice: "#IJE638975" },
-    { date: "Feb 27", amount: "₱ 400.00", status: "Refunded", invoice: "#CBI927648" },
-    { date: "Feb 10", amount: "₱ 350.00", status: "Paid", invoice: "#XYZ123456" },
-    { date: "Jan 25", amount: "₱ 500.00", status: "Paid", invoice: "#LMN654321" },
-    { date: "Jan 10", amount: "₱ 275.00", status: "Cancelled", invoice: "#QRS987654" },
-    { date: "Dec 30", amount: "₱ 600.00", status: "Paid", invoice: "#TUV321987" },
-    { date: "Dec 15", amount: "₱ 425.00", status: "Refunded", invoice: "#GHI456789" },
-    { date: "Nov 28", amount: "₱ 375.00", status: "Paid", invoice: "#JKL789123" },
-  ];
+  const loadData = useCallback(async () => {
+     if (user?.UserID) {
+         setLoading(true);
+         try {
+             const data = await fetchCustomerOrders(user.UserID);
+             setOrders(data);
+         } catch (e) {
+             console.error(e);
+         } finally {
+             setLoading(false);
+         }
+     }
+  }, [user?.UserID]);
+
+  useFocusEffect(
+      useCallback(() => {
+          loadData();
+      }, [loadData])
+  );
+
+  // Filter Pending Payments
+  const laundryPending = orders.filter(o => o.invoiceStatus === 'To Pay');
+  const deliveryPending = orders.filter(o => o.deliveryPaymentStatus === 'Pending');
+  
+  // Filter History (Paid or Completed items)
+  // You might want to refine this logic based on what exactly constitutes "history" for you
+  const historyData = orders.filter(o => o.invoiceStatus === 'Paid' || o.status === 'Cancelled');
 
   const getStatusStyle = (status: string) => {
     switch (status) {
-      case "Paid":
-        return { backgroundColor: "#d4edda", color: "#2e7d32" };
-      case "Cancelled":
-        return { backgroundColor: "#f8d7da", color: "#c62828" };
-      case "Refunded":
-        return { backgroundColor: "#fff3cd", color: "#ff8f00" };
-      default:
-        return { backgroundColor: "#e0e0e0", color: "#555" };
+      case "Paid": return { backgroundColor: "#d4edda", color: "#2e7d32" };
+      case "Cancelled": return { backgroundColor: "#f8d7da", color: "#c62828" };
+      case "Refunded": return { backgroundColor: "#fff3cd", color: "#ff8f00" };
+      default: return { backgroundColor: "#e0e0e0", color: "#555" };
     }
   };
+
+  if (loading && orders.length === 0) {
+      return <View style={styles.center}><ActivityIndicator size="large" color="#004aad" /></View>;
+  }
 
   return (
     <ScrollView 
       style={styles.container} 
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={loading} onRefresh={loadData} />}
     >
-      {/* Recent Payment */}
-      <Text style={styles.sectionTitle}>Recent Payment</Text>
-      <View style={styles.recentCard}>
-        <View style={styles.recentRow}>
-          <Text style={styles.date}>Apr 30, 2025</Text>
-          <Text style={styles.amount}>₱ 450.00</Text>
+      
+      {/* --- PENDING LAUNDRY PAYMENTS --- */}
+      {laundryPending.length > 0 && (
+        <View>
+            <Text style={styles.sectionTitle}>Pending Laundry Payments</Text>
+            {laundryPending.map((item) => (
+                <View key={item.id} style={styles.recentCard}>
+                    <View style={styles.recentRow}>
+                    <Text style={styles.date}>{new Date(item.createdAt).toLocaleDateString()}</Text>
+                    <Text style={styles.amount}>₱ {item.totalAmount ? Number(item.totalAmount).toFixed(2) : '0.00'}</Text>
+                    </View>
+                    <View style={styles.recentRow}>
+                    <Text style={styles.invoice}>Order #{item.id}</Text>
+                    <View style={[styles.statusBadge, { backgroundColor: "#fff3cd" }]}>
+                        <Text style={[styles.statusText, { color: "#ff8f00" }]}>To Pay</Text>
+                    </View>
+                    </View>
+                    <TouchableOpacity
+                    style={styles.button}
+                    activeOpacity={0.7}
+                    onPress={() =>
+                        router.push({
+                        pathname: "/(tabs)/payment/invoice",
+                        params: { orderId: item.id, type: 'laundry' },
+                        })
+                    }
+                    >
+                    <Text style={styles.buttonText}>Pay Now</Text>
+                    </TouchableOpacity>
+                </View>
+            ))}
         </View>
-        <View style={styles.recentRow}>
-          <Text style={styles.invoice}>#LAU123456</Text>
-          <View style={[styles.statusBadge, { backgroundColor: getStatusStyle("Paid").backgroundColor }]}>
-            <Text style={[styles.statusText, { color: getStatusStyle("Paid").color }]}>Paid</Text>
-          </View>
-        </View>
-        <TouchableOpacity
-          style={styles.button}
-          activeOpacity={0.7}
-          onPress={() =>
-            router.push({
-              pathname: "/(tabs)/payment/invoice",
-              params: { invoice: "#LAU123456", amount: "₱ 450.00", status: "Paid", date: "Apr 30, 2025" },
-            })
-          }
-        >
-          <Text style={styles.buttonText}>View Invoice</Text>
-        </TouchableOpacity>
-      </View>
+      )}
 
-      {/* Payment History */}
+      {/* --- PENDING DELIVERY PAYMENTS --- */}
+      {deliveryPending.length > 0 && (
+        <View style={{ marginTop: 20 }}>
+            <Text style={styles.sectionTitle}>Pending Delivery Fees</Text>
+            {deliveryPending.map((item) => (
+                <View key={item.id} style={styles.recentCard}>
+                    <View style={styles.recentRow}>
+                    <Text style={styles.date}>{new Date(item.createdAt).toLocaleDateString()}</Text>
+                    <Text style={styles.amount}>₱ {item.deliveryAmount ? Number(item.deliveryAmount).toFixed(2) : '0.00'}</Text>
+                    </View>
+                    <View style={styles.recentRow}>
+                    <Text style={styles.invoice}>Order #{item.id}</Text>
+                    <View style={[styles.statusBadge, { backgroundColor: "#fff3cd" }]}>
+                        <Text style={[styles.statusText, { color: "#ff8f00" }]}>Pending</Text>
+                    </View>
+                    </View>
+                    <TouchableOpacity
+                    style={[styles.button, { backgroundColor: '#9b59b6' }]}
+                    activeOpacity={0.7}
+                    onPress={() =>
+                        router.push({
+                        pathname: "/(tabs)/payment/invoice",
+                        params: { orderId: item.id, type: 'delivery' },
+                        })
+                    }
+                    >
+                    <Text style={styles.buttonText}>Pay Delivery</Text>
+                    </TouchableOpacity>
+                </View>
+            ))}
+        </View>
+      )}
+
+      {/* --- HISTORY --- */}
       <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Payment History</Text>
-      {historyData.map((item, index) => (
-        <TouchableOpacity
-          key={index}
-          style={styles.historyCard}
-          activeOpacity={0.8}
-          onPress={() =>
-            router.push({
-              pathname: "/(tabs)/payment/invoice",
-              params: { invoice: item.invoice, amount: item.amount, status: item.status, date: item.date },
-            })
-          }
-        >
-          <View style={styles.historyRow}>
-            <Text style={styles.historyDate}>{item.date}</Text>
+      {historyData.length > 0 ? (
+          historyData.map((item, index) => (
+            <TouchableOpacity
+              key={index}
+              style={styles.historyCard}
+              activeOpacity={0.8}
+              onPress={() =>
+                router.push({
+                  pathname: "/(tabs)/payment/invoice",
+                  params: { orderId: item.id, type: 'history' },
+                })
+              }
+            >
+              <View style={styles.historyRow}>
+                <Text style={styles.historyDate}>{new Date(item.createdAt).toLocaleDateString()}</Text>
 
-            {/* Right side grouped */}
-            <View style={styles.rightContainer}>
-              <Text style={styles.historyAmount}>{item.amount}</Text>
-              <View style={[
-                styles.statusBadge,
-                { backgroundColor: getStatusStyle(item.status).backgroundColor }
-              ]}>
-                <Text style={[
-                  styles.statusText,
-                  { color: getStatusStyle(item.status).color }
-                ]}>
-                  {item.status}
-                </Text>
+                {/* Right side grouped */}
+                <View style={styles.rightContainer}>
+                  <Text style={styles.historyAmount}>₱ {item.totalAmount ? Number(item.totalAmount).toFixed(2) : '0.00'}</Text>
+                  <View style={[
+                    styles.statusBadge,
+                    { backgroundColor: getStatusStyle(item.invoiceStatus || 'Paid').backgroundColor }
+                  ]}>
+                    <Text style={[
+                      styles.statusText,
+                      { color: getStatusStyle(item.invoiceStatus || 'Paid').color }
+                    ]}>
+                      {item.invoiceStatus || 'Paid'}
+                    </Text>
+                  </View>
+                </View>
               </View>
-            </View>
-          </View>
-          <Text style={styles.historyInvoice}>{item.invoice}</Text>
-        </TouchableOpacity>
-      ))}
+              <Text style={styles.historyInvoice}>Order #{item.id}</Text>
+            </TouchableOpacity>
+          ))
+      ) : (
+          <Text style={styles.emptyText}>No payment history yet.</Text>
+      )}
     </ScrollView>
   );
 }
@@ -136,6 +193,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#f6f6f6",
+  },
+  center: {
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
   },
   scrollContent: {
     padding: 16,
@@ -151,6 +213,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 14,
     padding: 16,
+    marginBottom: 12,
     shadowColor: "#000",
     shadowOpacity: 0.08,
     shadowRadius: 6,
@@ -250,4 +313,10 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "#333",
   },
+  emptyText: {
+      color: '#999',
+      textAlign: 'center',
+      marginTop: 20,
+      fontSize: 14
+  }
 });

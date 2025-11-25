@@ -105,8 +105,10 @@ router.post("/", async (req, res) => {
             [deliveryId]
         );
 
+        let typeID = null;
+
         if (optionResult.length > 0) {
-            const typeID = optionResult[0].DlvryTypeID;
+            typeID = optionResult[0].DlvryTypeID;
             let initialStatus = 'Pending'; // Default for Pick-up/P&D until paid
 
             // Global IDs: 1 = Drop-off Only, 3 = For Delivery (Client sends via courier)
@@ -122,12 +124,25 @@ router.post("/", async (req, res) => {
             );
         }
     
-        // 7. DlvryPayID is AUTO_INCREMENT, MethodID/PaymentProofImage/DlvryProofImage/DlvryPaymentStatus are NULL
-            await connection.query(
-                `INSERT INTO Delivery_Payments (OrderID, DlvryAmount, DlvryPaymentStatus, CreatedAt) 
-                VALUES (?, ?, 'Pending', NOW())`,
-                [newOrderID, finalDeliveryFee]
-            );
+        // 7. Insert Delivery Payment Record (Conditional)
+            // Logic: 
+            // Type 1 (Drop-off): NO Insert
+            // Type 3 (For Delivery): 'Pending Later'
+            // Type 2/4 (Pick-up / P&D): 'Pending'     
+        if (typeID !== null) { 
+            if (typeID !== 1) {
+                let dlvryPaymentStatus = 'Pending';
+                if (typeID === 3) {
+                    dlvryPaymentStatus = 'Pending Later';
+                }
+
+                await connection.query(
+                    `INSERT INTO Delivery_Payments (OrderID, DlvryAmount, DlvryPaymentStatus, CreatedAt) 
+                    VALUES (?, ?, ?, NOW())`,
+                    [newOrderID, finalDeliveryFee, dlvryPaymentStatus]
+                );
+            }
+        }
         
         await logUserActivity(CustID, 'Customer', 'Create Order', `New order created: ${newOrderID}`);
 
@@ -149,11 +164,20 @@ router.post("/", async (req, res) => {
 
 router.get("/customer/:customerId", async (req, res) => {
     const { customerId } = req.params;
+    console.log("[DEBUG] Fetching customer orders for ID:", customerId); // ⬅️ DEBUG START
     try {
         const query = `
             WITH LatestOrderStatus AS (
                 SELECT OrderID, OrderStatus, ROW_NUMBER() OVER (PARTITION BY OrderID ORDER BY OrderUpdatedAt DESC) as rn
                 FROM Order_Status
+            ),
+            LatestDeliveryStatus AS (
+                SELECT 
+                    OrderID, 
+                    DlvryStatus, 
+                    UpdatedAt, 
+                    ROW_NUMBER() OVER (PARTITION BY OrderID ORDER BY UpdatedAt DESC) as drn
+                FROM Delivery_Status
             )
             SELECT 
                 o.OrderID AS id,
@@ -161,21 +185,95 @@ router.get("/customer/:customerId", async (req, res) => {
                 ls.ShopName AS shopName,
                 s.SvcName AS serviceName,
                 los.OrderStatus AS status,
-                i.PayAmount AS totalAmount
+                i.PayAmount AS totalAmount,
+                i.PaymentStatus AS invoiceStatus,
+                dp.DlvryAmount AS deliveryAmount,
+                dp.DlvryPaymentStatus AS deliveryPaymentStatus,
+                lds.DlvryStatus AS deliveryStatus
             FROM Orders o
             JOIN LatestOrderStatus los ON o.OrderID = los.OrderID AND los.rn = 1
+            -- Join Latest Delivery Status using OrderID
+            LEFT JOIN LatestDeliveryStatus lds ON o.OrderID = lds.OrderID AND lds.drn = 1
             JOIN Laundry_Details ld ON o.OrderID = ld.OrderID 
             JOIN Services s ON ld.SvcID = s.SvcID 
             JOIN Laundry_Shops ls ON o.ShopID = ls.ShopID
             LEFT JOIN Invoices i ON o.OrderID = i.OrderID
+            LEFT JOIN Delivery_Payments dp ON o.OrderID = dp.OrderID
             WHERE o.CustID = ? 
             ORDER BY o.OrderCreatedAt DESC;
         `;
+        
+        console.log("[DEBUG] Executing query with customerId:", customerId); // ⬅️ DEBUG EXECUTION
         const [rows] = await db.query(query, [customerId]);
+        
+        console.log("[DEBUG] Query successful. Rows returned:", rows.length); // ⬅️ DEBUG RESULT
         res.json(rows);
     } catch (error) {
-        console.error("Error fetching customer orders:", error);
+        console.error("[ERROR] Error fetching customer orders:", error); // ⬅️ DEBUG ERROR
         res.status(500).json({ error: "Failed to fetch customer orders" });
+    }
+});
+
+
+// =================================================================
+// 🟢 NEW: API Routes for Raw Statuses (Timeline Tracking)
+// =================================================================
+
+/**
+ * GET /orders/:orderId/raw-statuses
+ * Fetches all timestamped status updates from Order_Status, Delivery_Status, and
+ * Order_Processing for a given OrderID.
+ * * Returns: {
+ * orderStatus: { [status: string]: { time: string } },
+ * deliveryStatus: { [status: string]: { time: string } },
+ * orderProcessing: { [status: string]: { time: string } }
+ * }
+ */
+router.get("/:orderId/raw-statuses", async (req, res) => {
+    const { orderId } = req.params;
+    const connection = await db.getConnection();
+    
+    try {
+        // --- 1. Order Status (High-level states) ---
+        const [orderStatuses] = await connection.query(
+            `SELECT OrderStatus as status, OrderUpdatedAt as time FROM Order_Status WHERE OrderID = ? ORDER BY OrderUpdatedAt ASC`,
+            [orderId]
+        );
+
+        // --- 2. Delivery Status (Logistics states) ---
+        const [deliveryStatuses] = await connection.query(
+            `SELECT DlvryStatus as status, UpdatedAt as time FROM Delivery_Status WHERE OrderID = ? ORDER BY UpdatedAt ASC`,
+            [orderId]
+        );
+
+        // --- 3. Order Processing Status (Washing, Drying, Folding steps) ---
+        const [processStatuses] = await connection.query(
+            `SELECT OrderProcStatus as status, OrderProcUpdatedAt as time FROM Order_Processing WHERE OrderID = ? ORDER BY OrderProcUpdatedAt ASC`,
+            [orderId]
+        );
+
+        // Helper to convert arrays of {status, time} into a map {status: {time}}
+        const mapStatuses = (rows) => {
+            const statusMap = {};
+            // The map structure automatically ensures the latest time is kept if duplicates exist,
+            // but since we query ASC, we'll only see the first time a status was hit.
+            rows.forEach(row => {
+                statusMap[row.status] = { time: row.time };
+            });
+            return statusMap;
+        };
+
+        res.json({
+            orderStatus: mapStatuses(orderStatuses),
+            deliveryStatus: mapStatuses(deliveryStatuses),
+            orderProcessing: mapStatuses(processStatuses)
+        });
+
+    } catch (error) {
+        console.error("Error fetching raw statuses:", error);
+        res.status(500).json({ error: "Failed to fetch raw tracking data" });
+    } finally {
+        connection.release();
     }
 });
 
@@ -300,14 +398,6 @@ router.get("/:orderId", async (req, res) => {
     const connection = await db.getConnection();
     try {
         const orderQuery = `
-            WITH LatestDeliveryStatus AS (
-                SELECT 
-                    OrderID, 
-                    DlvryStatus, 
-                    UpdatedAt, 
-                    ROW_NUMBER() OVER (PARTITION BY OrderID ORDER BY UpdatedAt DESC) as drn
-                FROM Delivery_Status
-            )
             SELECT 
                 o.OrderID AS orderId,
                 o.OrderCreatedAt AS createdAt,
@@ -324,13 +414,23 @@ router.get("/:orderId", async (req, res) => {
                 CAST(ss.SvcPrice AS DECIMAL(10, 2)) AS servicePrice, 
                 CAST(ld.Kilogram AS DECIMAL(5, 1)) AS weight, 
                 ld.SpecialInstr AS instructions,
+                
+                -- 🟢 NEW: Weight Proof Image (Customer CAN see this)
+                ld.WeightProofImage AS weightProofImage,
+
                 dt.DlvryTypeName AS deliveryType,
                 CAST(dp.DlvryAmount AS DECIMAL(10, 2)) AS deliveryFee, 
                 CAST(i.PayAmount AS DECIMAL(10, 2)) AS totalAmount,
                 PM.MethodName AS paymentMethodName, 
+                
                 (SELECT os.OrderStatus FROM Order_Status os WHERE os.OrderID = o.OrderID ORDER BY os.OrderUpdatedAt DESC LIMIT 1) AS orderStatus,
                 i.PaymentStatus as invoiceStatus,
-                lds.DlvryStatus AS deliveryStatus
+                
+                -- 🟢 NEW: Delivery Status
+                (SELECT DlvryStatus FROM Delivery_Status WHERE OrderID = o.OrderID ORDER BY UpdatedAt DESC LIMIT 1) AS deliveryStatus,
+                dp.DlvryPaymentStatus AS deliveryPaymentStatus
+
+                -- ❌ REMOVED: Rejected_Orders join and columns
             FROM Orders o
             JOIN Laundry_Details ld ON o.OrderID = ld.OrderID
             LEFT JOIN Customers c ON o.CustID = c.CustID
@@ -339,10 +439,10 @@ router.get("/:orderId", async (req, res) => {
             LEFT JOIN Shop_Services ss ON o.ShopID = ss.ShopID AND ld.SvcID = ss.SvcID
             LEFT JOIN Shop_Delivery_Options SDO ON ld.DlvryID = SDO.DlvryID 
             LEFT JOIN Delivery_Types dt ON SDO.DlvryTypeID = dt.DlvryTypeID
+            -- ❌ REMOVED: LEFT JOIN Rejected_Orders rej ON o.OrderID = rej.OrderID
             LEFT JOIN Invoices i ON o.OrderID = i.OrderID 
             LEFT JOIN Payment_Methods PM ON i.MethodID = PM.MethodID
             LEFT JOIN Delivery_Payments dp ON o.OrderID = dp.OrderID
-            LEFT JOIN LatestDeliveryStatus lds ON o.OrderID = lds.OrderID AND lds.drn = 1
             WHERE o.OrderID = ?;
         `;
         const [[orderDetails]] = await connection.query(orderQuery, [orderId]);
