@@ -1,4 +1,3 @@
-//updateDelivery.tsx
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, TouchableOpacity, Image, Alert, ActivityIndicator, SafeAreaView, ScrollView 
@@ -17,7 +16,11 @@ export default function UpdateDeliveryScreen() {
   
   const [loading, setLoading] = useState(true);
   const [deliveryType, setDeliveryType] = useState<'app' | 'own' | null>(null);
+  
+  // 🔑 NEW STATE: To hold the main order status (e.g., Ready for Delivery)
+  const [currentOrderStatus, setCurrentOrderStatus] = useState(''); 
   const [currentDlvryStatus, setCurrentDlvryStatus] = useState('');
+  
   const [bookingImage, setBookingImage] = useState<string | null>(null);
   
   const user = getCurrentUser();
@@ -28,9 +31,11 @@ export default function UpdateDeliveryScreen() {
       if (!orderId || !user?.ShopID) return;
       
       try {
-        // A. Fetch Order to get current status
+        // A. Fetch Order to get current statuses
         const orderData = await fetchOrderDetails(String(orderId));
         if (orderData) {
+            // 🔑 FETCH AND STORE ORDER STATUS
+            setCurrentOrderStatus(orderData.orderStatus || '');
             setCurrentDlvryStatus(orderData.deliveryStatus || '');
         }
 
@@ -57,7 +62,10 @@ export default function UpdateDeliveryScreen() {
     init();
   }, [orderId, user?.ShopID]);
 
-  // 2. Handle Image Picker (For App Booking)
+  // 2. Determine if this is an OUTGOING (Delivery to Customer) flow
+  const isOutgoingFlow = currentOrderStatus === 'Ready for Delivery' || currentDlvryStatus === 'Out for Delivery';
+  
+  // 3. Handle Image Picker (For App Booking)
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -69,7 +77,7 @@ export default function UpdateDeliveryScreen() {
     }
   };
 
-  // 3. Logic for "Book Pick-up" (INCOMING Step 1)
+  // 4. Logic for "Book Pick-up" (INCOMING Step 1)
   const handleBookPickup = async () => {
     if (!bookingImage) {
       Alert.alert("Required", "Please upload a screenshot of the booking.");
@@ -87,15 +95,16 @@ export default function UpdateDeliveryScreen() {
     }
   };
 
-  // 4. Logic for "Delivered In Shop" (INCOMING Step 2)
+  // 5. Logic for "Delivered In Shop" (INCOMING Step 2)
   const handleDeliveredInShop = () => {
     Alert.alert("Confirm Arrival", "Is the laundry currently at the shop?", [
       { text: "No", style: "cancel" },
+      // Update DlvryStatus to show completion of pickup, and OrderStatus back to 'To Weigh'
       { text: "Yes", onPress: () => executeUpdate('Delivered In Shop', 'To Weigh') } 
     ]);
   };
 
-  // 5. Logic for "Arrived at Customer" (INCOMING Own Service)
+  // 6. Logic for "Arrived at Customer" (INCOMING Own Service)
   const handleArrivedAtCustomer = () => {
     Alert.alert("Confirm Arrival", "Did you arrive at the customer's house?", [
       { text: "No", style: "cancel" },
@@ -103,29 +112,26 @@ export default function UpdateDeliveryScreen() {
     ]);
   };
 
-  // 🟢 6. NEW: Logic for "Book Delivery" (OUTGOING Step 1)
+  // 7. Logic for "Book Delivery" (OUTGOING Step 1)
   const handleBookDelivery = async () => {
     if (!bookingImage) {
       Alert.alert("Required", "Please upload a screenshot of the booking.");
       return;
     }
     setLoading(true);
-    // Reuse upload function but setting a different visual status logic if needed
-    // For simplicity, we assume uploadBookingProof just uploads the image. 
-    // You might want a specific API for "Outgoing" proof if you track them separately.
+    // Note: We reuse uploadBookingProof, which sets Rider Booked status
     const success = await uploadBookingProof(String(orderId), bookingImage, user?.UserID || 'Staff', 'Staff');
     setLoading(false);
 
     if (success) {
       Alert.alert("Success", "Booking proof uploaded.");
-      // Manually set local status to show the next button immediately
-      setCurrentDlvryStatus('Outgoing Rider Booked'); 
+      setCurrentDlvryStatus('Out for Delivery'); // Simulate next status jump for visibility
     } else {
       Alert.alert("Error", "Failed to upload proof.");
     }
   };
 
-  // 🟢 7. NEW: Logic for "Delivered To Customer" (OUTGOING Final Step)
+  // 8. Logic for "Delivered To Customer" (OUTGOING Final Step)
   const handleDeliveredToCustomer = () => {
     Alert.alert("Confirm Delivery", "Has the customer received the laundry?", [
       { text: "No", style: "cancel" },
@@ -133,7 +139,7 @@ export default function UpdateDeliveryScreen() {
     ]);
   };
 
-  // Shared Execution Function
+  // 9. Shared Execution Function
   const executeUpdate = async (dlvryStatus: string, orderStatus: string) => {
     setLoading(true);
     const success = await updateDeliveryWorkflow(
@@ -152,34 +158,35 @@ export default function UpdateDeliveryScreen() {
     return <View style={styles.center}><ActivityIndicator size="large" color="#007bff"/></View>;
   }
 
-  // 🟢 Determine if this is an OUTGOING (For Delivery) or INCOMING (To Pick-up) flow
-  const isOutgoing = currentDlvryStatus === 'For Delivery' || currentDlvryStatus === 'Outgoing Rider Booked';
+  // 🔑 Determine which display status to use
+  const displayStatus = isOutgoingFlow ? currentOrderStatus : currentDlvryStatus;
 
   return (
     <SafeAreaView style={styles.container}>
-      <Header title={isOutgoing ? "Outgoing Delivery" : "Incoming Pick-up"} showBack={true} />
+      <Header title={isOutgoingFlow ? "Outgoing Delivery" : "Incoming Pick-up"} showBack={true} />
       
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.infoCard}>
             <Text style={styles.label}>Order ID</Text>
             <Text style={styles.value}>#{orderId}</Text>
             <Text style={styles.label}>Current Status</Text>
-            <Text style={styles.valueHighlight}>{currentDlvryStatus || "To Pick-up"}</Text>
+            {/* 🔑 Display the Order Status for Outgoing flow, Delivery Status for Incoming flow */}
+            <Text style={styles.valueHighlight}>{displayStatus || "Awaiting Status"}</Text> 
             <Text style={styles.label}>Delivery Mode</Text>
             <Text style={styles.value}>{deliveryType === 'app' ? "3rd Party App" : "Shop's Own Fleet"}</Text>
         </View>
 
         {/* ============================================================ */}
-        {/* 🟢 OUTGOING FLOW (Returning to Customer)                     */}
+        {/* 🟢 OUTGOING FLOW (Ready for Delivery / Returning to Customer) */}
         {/* ============================================================ */}
-        {isOutgoing && (
+        {isOutgoingFlow && (
             <View style={styles.actionContainer}>
                 <Text style={styles.sectionHeader}>Deliver to Customer</Text>
                 
                 {/* 3rd Party App Flow */}
                 {deliveryType === 'app' && (
                     <>
-                        {currentDlvryStatus === 'For Delivery' && (
+                        {currentOrderStatus === 'Ready for Delivery' && (
                             <>
                                 <Text style={styles.instruction}>1. Book a rider to send laundry back to customer.</Text>
                                 <TouchableOpacity style={styles.uploadArea} onPress={pickImage}>
@@ -202,7 +209,7 @@ export default function UpdateDeliveryScreen() {
                             </>
                         )}
 
-                        {(currentDlvryStatus === 'For Delivery') && (
+                        {currentDlvryStatus === 'Out for Delivery' && (
                              <>
                                 <View style={styles.successBanner}>
                                     <Ionicons name="checkmark-circle" size={24} color="#2ecc71" />
@@ -229,16 +236,16 @@ export default function UpdateDeliveryScreen() {
         )}
 
         {/* ============================================================ */}
-        {/* 🟡 INCOMING FLOW (Pick-up from Customer)                     */}
+        {/* 🟡 INCOMING FLOW (To Pick-up / Pick-up from Customer)             */}
         {/* ============================================================ */}
-        {!isOutgoing && (
+        {!isOutgoingFlow && (
             <View style={styles.actionContainer}>
                 <Text style={styles.sectionHeader}>Pick-up from Customer</Text>
 
                 {/* 3rd Party App Flow */}
                 {deliveryType === 'app' && (
                     <>
-                        {(currentDlvryStatus === 'To Pick-up') && (
+                        {currentDlvryStatus === 'To Pick-up' && (
                             <>
                                 <Text style={styles.instruction}>1. Book the rider to collect laundry.</Text>
                                 <TouchableOpacity style={styles.uploadArea} onPress={pickImage}>
@@ -261,7 +268,7 @@ export default function UpdateDeliveryScreen() {
                             </>
                         )}
 
-                        {(currentDlvryStatus === 'Rider Booked') && (
+                        {currentDlvryStatus === 'Rider Booked' && (
                             <>
                                 <View style={styles.successBanner}>
                                     <Ionicons name="checkmark-circle" size={24} color="#2ecc71" />

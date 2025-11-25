@@ -72,7 +72,7 @@ export default function OrderDetailScreen() {
           <Text style={styles.sectionTitle}>Order & Service</Text>
           <Text style={styles.normalText}><Text style={{ fontWeight: "bold" }}>Service:</Text> {order.serviceName}</Text>
           <Text style={styles.normalText}><Text style={{ fontWeight: "bold" }}>Placed:</Text> {new Date(order.createdAt).toLocaleDateString()}</Text>
-          <Text style={styles.normalText}><Text style={{ fontWeight: "bold" }}>Current Status:</Text> <Text style={styles.statusText}>{order.laundryStatus}</Text></Text>
+          <Text style={styles.normalText}><Text style={{ fontWeight: "bold" }}>Current Status:</Text> <Text style={styles.statusText}>{order.orderStatus}</Text></Text>
         </View>
 
         {/* Weight Section (Read Only) */}

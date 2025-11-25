@@ -1,3 +1,4 @@
+//Staff/orders.ts
 import axios from "axios";
 import { API_URL } from "./api";
 import { Platform } from "react-native";
@@ -71,7 +72,7 @@ export interface OrderDetail {
     weight: number; 
     deliveryType: string;
     deliveryFee: string | number;
-    laundryStatus: string; 
+    orderStatus: string; 
     deliveryStatus?: string;
     instructions?: string | null;
     fabrics: string[]; 

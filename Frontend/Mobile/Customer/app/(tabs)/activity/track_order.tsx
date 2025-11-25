@@ -17,9 +17,7 @@ const ALL_PROCESS_STEPS = [
     // ----------------------------------------------------
     // INITIAL ORDER & WEIGHING - Group 2 (REQUIRED)
     // ----------------------------------------------------
-    { status: "Pending", title: "Order Placed", icon: "bag-check-outline", key: "ORDER_PLACED" },
     { status: "To Weigh", title: "Awaiting Weigh-in", icon: "scale-outline", key: "ORDER_WEIGH" },
-    // ❌ REMOVED: { status: "Payment Pending", title: "Payment Required", icon: "wallet-outline", key: "ORDER_PAYMENT" },
     
     // ----------------------------------------------------
     // LAUNDRY PROCESSING - Group 3
@@ -116,7 +114,6 @@ const buildTimeline = (details: CustomerOrderDetails, rawStatuses: RawStatuses):
 
     // Group 2: INITIAL ORDER & WEIGHING
     finalTimelineSteps.push("To Weigh");
-    // ❌ REMOVED: "Payment Pending"
     
     // Group 3: LAUNDRY PROCESSING
     finalTimelineSteps.push("Processing", "Washing", "Drying");

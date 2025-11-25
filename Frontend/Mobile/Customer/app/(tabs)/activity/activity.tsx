@@ -81,7 +81,7 @@ export default function Activity() {
                     const deliveryStatus = order.deliveryStatus;
 
                     // Requested Active Filter: OrderStatus = 'To Weigh' or 'Processing' OR DeliveryStatus = 'To Pick-up' or 'For Delivery'
-                    const isOrderActive = orderStatus === 'To Weigh' || orderStatus === 'Processing' || orderStatus === 'Payment Pending' || orderStatus === 'Pending';
+                    const isOrderActive = orderStatus === 'To Weigh' || orderStatus === 'Processing' || orderStatus === 'Pending';
                     const isDeliveryActive = deliveryStatus === 'To Pick-up' || deliveryStatus === 'For Delivery';
                     // We also need to keep the "Rider Booked" intermediate step visible if it was the last delivery status update
                     const isRiderBooked = deliveryStatus === 'Rider Booked'; 
