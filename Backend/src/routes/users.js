@@ -318,7 +318,6 @@ router.post("/staff", async (req, res) => {
         const newUserEmail = `${cleanName}${newEmailNumber}`; 
         const newUserPassword = newUserEmail; 
         const hashedPassword = await bcrypt.hash(newUserPassword, 10);
-        const newStaffInfoID = 'SI' + String(Date.now()).slice(-6);
 
         // --- 4. INSERTION (UPDATED) ---
 
@@ -336,7 +335,7 @@ router.post("/staff", async (req, res) => {
 
         await connection.query(
             `INSERT INTO Staff_Infos (StaffInfoID, StaffID, StaffAge, StaffAddress, StaffCellNo, StaffSalary) VALUES (?, ?, ?, ?, ?, ?)`,
-            [newStaffInfoID, newStaffID, StaffAge, StaffAddress, StaffCellNo, StaffSalary]
+            [newStaffID, StaffAge, StaffAddress, StaffCellNo, StaffSalary]
         );
 
         await connection.commit();

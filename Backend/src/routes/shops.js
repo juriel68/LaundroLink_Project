@@ -51,7 +51,7 @@ router.get("/nearby", async (req, res) => {
         
         const latitude = parseFloat(lat);
         const longitude = parseFloat(lon);
-        const maxDistanceKm = 100; // Testing radius
+        const maxDistanceKm = 300; // Testing radius
 
         const query = `
             SELECT 
@@ -121,7 +121,7 @@ router.get("/:shopId/full-details", async (req, res) => {
         const [
             [services],
             [addOns],
-            [deliveryOptions],
+            [deliveryOptions], // <--- FIXING THIS QUERY
             [fabricTypes],
             [paymentMethods],
             [ownDeliverySettings],
@@ -129,7 +129,10 @@ router.get("/:shopId/full-details", async (req, res) => {
         ] = await Promise.all([
             connection.query(`SELECT SS.SvcID as id, S.SvcName as name, SS.SvcPrice as price, SS.MinWeight as minWeight FROM Shop_Services SS JOIN Services S ON SS.SvcID = S.SvcID WHERE SS.ShopID = ?`, [shopId]),
             connection.query(`SELECT SAO.AddOnID as id, AO.AddOnName as name, SAO.AddOnPrice as price FROM Shop_Add_Ons SAO JOIN Add_Ons AO ON SAO.AddOnID = AO.AddOnID WHERE SAO.ShopID = ?`, [shopId]),
-            connection.query(`SELECT SDO.DlvryID as id, DT.DlvryTypeName as name FROM Shop_Delivery_Options SDO JOIN Delivery_Types DT ON SDO.DlvryTypeID = DT.DlvryTypeID WHERE SDO.ShopID = ?`, [shopId]),
+            
+            // 🟢 FIXED: Removed DlvryID, using DlvryTypeID as the ID
+            connection.query(`SELECT SDO.DlvryTypeID as id, DT.DlvryTypeName as name FROM Shop_Delivery_Options SDO JOIN Delivery_Types DT ON SDO.DlvryTypeID = DT.DlvryTypeID WHERE SDO.ShopID = ?`, [shopId]),
+            
             connection.query(`SELECT SF.FabID as id, F.FabName as name FROM Shop_Fabrics SF JOIN Fabrics F ON SF.FabID = F.FabID WHERE SF.ShopID = ?`, [shopId]),
             connection.query(`SELECT PM.MethodID as id, PM.MethodName as name FROM Payment_Methods PM`, []),
             connection.query(`SELECT ShopBaseFare, ShopBaseKm, ShopDistanceRate, ShopServiceStatus FROM Shop_Own_Service WHERE ShopID = ?`, [shopId]),
@@ -452,9 +455,9 @@ router.get("/global/delivery-types", async (req, res) => {
 // --- SHOP DELIVERY OPTIONS ---
 router.get("/:shopId/delivery", async (req, res) => {
     try {
-        // 🔑 UPDATED: Removed DlvryDescription from SELECT
+        // 🟢 FIXED: Removed DlvryID
         const [delivery] = await db.query(
-            `SELECT SDO.DlvryID, DT.DlvryTypeName, SDO.DlvryTypeID
+            `SELECT SDO.DlvryTypeID, DT.DlvryTypeName
              FROM Shop_Delivery_Options SDO 
              JOIN Delivery_Types DT ON SDO.DlvryTypeID = DT.DlvryTypeID 
              WHERE SDO.ShopID = ?`,
@@ -465,20 +468,15 @@ router.get("/:shopId/delivery", async (req, res) => {
 });
 
 router.post("/delivery", async (req, res) => {
-    // 🔑 UPDATED: Removed DlvryDescription from body
     const { ShopID, DlvryTypeID } = req.body; 
     try {
-        const [existing] = await db.query(`SELECT DlvryID FROM Shop_Delivery_Options WHERE ShopID = ? AND DlvryTypeID = ?`, [ShopID, DlvryTypeID]);
-        let dlvryIdToUse;
-        if (existing.length > 0) {
-            dlvryIdToUse = existing[0].DlvryID;
-            // No update needed if description is gone, just confirm existence
-        } else {
-            // 🔑 UPDATED: Insert only IDs
-            const [result] = await db.query(`INSERT INTO Shop_Delivery_Options (ShopID, DlvryTypeID) VALUES (?, ?)`, [ShopID, DlvryTypeID]);
-            dlvryIdToUse = result.insertId;
-        }
-        res.status(201).json({ success: true, DlvryID: dlvryIdToUse });
+        // 🟢 FIXED: Use INSERT IGNORE to handle duplicates safely (relies on Composite Key)
+        await db.query(
+            `INSERT IGNORE INTO Shop_Delivery_Options (ShopID, DlvryTypeID) VALUES (?, ?)`, 
+            [ShopID, DlvryTypeID]
+        );
+        // We don't need to return an ID anymore since the TypeID IS the ID
+        res.status(201).json({ success: true });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 

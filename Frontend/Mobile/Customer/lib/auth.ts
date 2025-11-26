@@ -7,20 +7,23 @@ import { API_URL } from "./api";
 
 /**
  * Interface for the detailed user object.
- * Matches the combined response structure from backend joins (Users, Customers, Cust_Credentials).
+ * Matches the combined response structure from backend joins.
  */
 export interface UserDetails {
     UserID: string;      // VARCHAR in DB
     UserEmail: string;
     UserRole: 'Customer' | 'Staff' | 'Shop Owner' | 'Admin';
     
-    // 🟢 CUSTOMER PROFILE FIELDS (Returned by auth routes)
+    // 🟢 CUSTOMER PROFILE FIELDS
     picture?: string;
     name?: string;
     phone?: string;
     address?: string;
 
-    // Optional Role-Specific Fields (Needed for Staff/Owner flows)
+    // 🟢 NEW: Used for Profile Setup Check (True if password exists in DB)
+    hasPassword?: boolean;
+
+    // Optional Role-Specific Fields
     ShopID?: number;     
     ShopName?: string;
     StaffName?: string;
@@ -55,8 +58,9 @@ let currentUser: UserDetails | null = null;
 
 /**
  * Internal helper to save user session to storage and memory.
+ * 🟢 EXPORTED so SetupProfile.tsx can update the session after saving details.
  */
-const saveSession = async (user: UserDetails): Promise<void> => {
+export const saveSession = async (user: UserDetails): Promise<void> => {
     currentUser = user;
     try {
         // 🔑 NOTE: Using 'user' key for simplicity across the app
@@ -97,7 +101,7 @@ export const getCurrentUser = (): UserDetails | null => {
 export const logout = async (): Promise<void> => {
     currentUser = null;
     try {
-        await AsyncStorage.removeItem('user'); // Use 'user' key
+        await AsyncStorage.removeItem('user'); 
     } catch (e) {
         console.error("Failed to remove customer session.", e);
     }
@@ -133,7 +137,7 @@ export async function checkMaintenanceStatus(): Promise<boolean> {
 // =================================================================
 
 /**
- * Standard Email/Password Login (Initiates OTP for Customers)
+ * Standard Email/Password Login (Initiates OTP for Customers if needed)
  */
 export async function handleUserLogin(
     email: string,
@@ -276,8 +280,7 @@ async function handleResponse(response: Response, actionName: string) {
 }
 
 /**
- * 🟢 CONSOLIDATED: Fetch full profile details (used by profile.tsx)
- * NOTE: This relies on the new /users/profile/:UserID endpoint in the backend.
+ * Fetch full profile details (used by profile.tsx)
  */
 export async function fetchFullCustomerProfile(userId: string): Promise<UserDetails | null> {
     try {
@@ -330,4 +333,27 @@ export async function uploadUserImage(formData: FormData): Promise<any> {
     return handleResponse(response, "Upload Image");
 }
 
-export { };
+// 🟢 NEW: PayPal Payment Integration
+export async function initiatePayPalPayment(
+    amount: number,
+    orderId: string,
+    isDelivery: boolean
+): Promise<{ success: boolean; approvalUrl?: string; message?: string }> {
+    try {
+        const response = await fetch(`${API_URL}/payments/paypal/create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                amount, 
+                orderId,
+                isDelivery
+            }),
+        });
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error("PayPal Init Error:", error);
+        return { success: false, message: "Network error initializing PayPal." };
+    }
+}

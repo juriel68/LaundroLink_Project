@@ -216,7 +216,7 @@ export default function DeliveryPayment() {
         addons: addons,
         instructions: instructions,
         
-        deliveryId: selectedDeliveryId.toString(), 
+        deliveryTypeId: selectedDeliveryId.toString(), 
         deliveryOptionName: selectedOption?.name,
         deliveryFee: deliveryFee.toString(),
         distance: distance.toString(),

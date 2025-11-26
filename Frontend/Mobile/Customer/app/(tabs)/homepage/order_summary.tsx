@@ -62,7 +62,7 @@ export default function OrderSummaryScreen() {
 
     // --- DATA PARSING ---
     const { 
-        shopId, shopName, deliveryId, deliveryOptionName, SvcID, deliveryFee,
+        shopId, shopName, deliveryTypeId, deliveryOptionName, SvcID, deliveryFee,
         isOwnService,
     } = params;
     
@@ -139,7 +139,7 @@ export default function OrderSummaryScreen() {
                 CustID: customerId as string,
                 ShopID: shopIDNum,
                 SvcID: selectedServiceIdNum,
-                deliveryId: parseInt(deliveryId as string, 10),
+                deliveryTypeId: parseInt(deliveryTypeId as string, 10),
                 weight: initialWeight, 
                 instructions: instructions,
                 fabrics: fabrics.map(id => parseInt(id, 10)),

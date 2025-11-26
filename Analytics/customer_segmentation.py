@@ -1,13 +1,12 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-import mysql.connector
+# customer_segmentation.py
 import pandas as pd
+import numpy as np
+import mysql.connector
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
 from datetime import datetime
 
-# ========================
-# 1️⃣ Database Connection
-# ========================
+# --- Database connection setup ---
 db_config = {
     "host": "localhost",
     "user": "root",
@@ -18,202 +17,98 @@ db_config = {
 try:
     conn = mysql.connector.connect(**db_config)
     cursor = conn.cursor(dictionary=True)
-    print("✅ Connected to MySQL database.")
+    print("✅ Connected to Database")
 except mysql.connector.Error as err:
-    print(f"❌ Database connection failed: {err}")
+    print(f"❌ Error connecting to DB: {err}")
     exit()
 
-# ===================================================================
-# 2️⃣ Helper: Create Analytics Tables
-# ===================================================================
-def create_analytics_tables(cursor):
-    """
-    Checks for and creates the necessary analytics tables if they are missing.
-    """
-    print("🔍 Checking and creating analytics tables if needed...")
-    
-    # 🔑 FIX: ShopID must be INT to match Laundry_Shops schema
-    
-    # 1. Customer Segments
-    create_segments_table = """
-    CREATE TABLE IF NOT EXISTS Customer_Segments (
-        ShopID INT NOT NULL,  -- Changed from VARCHAR(10) to INT
-        SegmentName VARCHAR(50) NOT NULL,
-        customerCount INT,
-        averageSpend DECIMAL(10, 2),
-        averageFrequency DECIMAL(10, 2),
-        averageRecency DECIMAL(10, 2),
-        SegmentedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (ShopID, SegmentName),
-        FOREIGN KEY (ShopID) REFERENCES Laundry_Shops(ShopID) ON DELETE CASCADE
-    );
-    """
-    
-    # 2. Popular Services
-    create_popular_services_table = """
-    CREATE TABLE IF NOT EXISTS Shop_Popular_Services (
-        ShopID INT NOT NULL, -- Changed from VARCHAR(10) to INT
-        SvcName VARCHAR(50) NOT NULL,
-        orderCount INT,
-        AnalyzedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (ShopID, SvcName),
-        FOREIGN KEY (ShopID) REFERENCES Laundry_Shops(ShopID) ON DELETE CASCADE
-    );
-    """
-    
-    # 3. Busiest Times
-    create_busiest_times_table = """
-    CREATE TABLE IF NOT EXISTS Shop_Busiest_Times (
-        ShopID INT NOT NULL, -- Changed from VARCHAR(10) to INT
-        timeSlot VARCHAR(50) NOT NULL,
-        orderCount INT,
-        AnalyzedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (ShopID, timeSlot),
-        FOREIGN KEY (ShopID) REFERENCES Laundry_Shops(ShopID) ON DELETE CASCADE
-    );
-    """
-    
-    try:
-        cursor.execute(create_segments_table)
-        cursor.execute(create_popular_services_table)
-        cursor.execute(create_busiest_times_table)
-        print("✅ Analytics tables are ready.")
-    except mysql.connector.Error as err:
-        print(f"❌ Error creating analytics tables: {err}")
-        exit()
-
-# Call the function to ensure tables exist
-create_analytics_tables(cursor)
-
-
-# ========================
-# 3️⃣ Load Order Data
-# ========================
-# 🔑 FIX: Removed dependency on Invoice_Status table. Using Invoices.PaymentStatus directly.
-# Also, fetching 'Completed' status from Order_Status is correct.
+# --- Fetch customer transaction data (Fixed for New Schema) ---
+# We join Invoices to get the PayAmount. 
+# We group by ShopID AND CustID to segment customers relative to specific shops.
 query = """
 SELECT 
-    o.OrderID, o.ShopID, o.CustID, 
-    i.PayAmount, o.OrderCreatedAt, s.SvcName
+    o.ShopID,
+    o.CustID,
+    COUNT(o.OrderID) AS frequency,
+    COALESCE(SUM(i.PayAmount), 0) AS total_spent,
+    MAX(o.OrderCreatedAt) AS last_order_date
 FROM Orders o
-JOIN Services s ON o.SvcID = s.SvcID
 JOIN Invoices i ON o.OrderID = i.OrderID
-JOIN (
-    SELECT OrderID, MAX(OrderUpdatedAt) AS LatestUpdate
-    FROM Order_Status
-    GROUP BY OrderID
-) latest ON o.OrderID = latest.OrderID
-JOIN Order_Status os ON os.OrderID = latest.OrderID AND os.OrderUpdatedAt = latest.LatestUpdate
-WHERE os.OrderStatus = 'Completed' 
-  AND i.PaymentStatus = 'Paid'; -- Ensure we only analyze paid/completed transactions
+WHERE i.PaymentStatus = 'Paid'
+GROUP BY o.ShopID, o.CustID;
 """
-df = pd.read_sql(query, conn)
+
+cursor.execute(query)
+data = cursor.fetchall()
+
+df = pd.DataFrame(data)
 
 if df.empty:
-    print("⚠️ No completed orders found.")
-    cursor.close()
-    conn.close()
+    print("⚠️ No transaction data found. Ensure you have Orders with PAID Invoices.")
+    # If empty, we still want to clear the table to avoid showing old/wrong data
+    cursor.execute("TRUNCATE TABLE Customer_Segments")
+    conn.commit()
     exit()
 
-# ========================
-# 4️⃣ CUSTOMER SEGMENTATION
-# ========================
-print("📊 Generating customer segmentation...")
+# --- Calculate Recency (days since last order) ---
+df['last_order_date'] = pd.to_datetime(df['last_order_date'])
+df['recency'] = (datetime.now() - df['last_order_date']).dt.days
 
-# Calculate Recency, Frequency, and Monetary (RFM)
-df['OrderCreatedAt'] = pd.to_datetime(df['OrderCreatedAt'])
-now = datetime.now()
-rfm = df.groupby(['ShopID', 'CustID']).agg({
-    'OrderCreatedAt': lambda x: (now - x.max()).days,   # Recency
-    'OrderID': 'count',                                 # Frequency
-    'PayAmount': 'mean'                                 # Monetary
-}).reset_index()
+# --- Rename columns for ML readability ---
+df.rename(columns={
+    'frequency': 'Frequency',
+    'total_spent': 'Monetary',
+    'recency': 'Recency'
+}, inplace=True)
 
-rfm.columns = ['ShopID', 'CustID', 'Recency', 'Frequency', 'Monetary']
+# --- Standardize numeric values ---
+scaler = StandardScaler()
+scaled_features = scaler.fit_transform(df[['Frequency', 'Monetary', 'Recency']])
 
-# Simple segmentation logic
-def label_segment(row):
-    if row['Frequency'] >= 5 and row['Monetary'] >= 500:
-        return 'Loyal High-Spender'
-    elif row['Frequency'] >= 3:
-        return 'Frequent Customer'
-    elif row['Recency'] <= 14:
-        return 'Recent Customer'
-    else:
-        return 'Occasional'
+# --- Perform KMeans clustering (4 segments) ---
+# Note: If data points < 4, KMeans will fail. We add a check.
+n_clusters = 4
+if len(df) < n_clusters:
+    n_clusters = len(df) # Reduce clusters if not enough data
 
-rfm['SegmentName'] = rfm.apply(label_segment, axis=1)
+kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+df['Segment'] = kmeans.fit_predict(scaled_features)
 
-# Aggregate by shop and segment
-segment_summary = rfm.groupby(['ShopID', 'SegmentName']).agg({
-    'CustID': 'count',
-    'Monetary': 'mean',
-    'Frequency': 'mean',
-    'Recency': 'mean'
-}).reset_index()
+# --- Map cluster numbers to readable names ---
+# In a production app, you assign names dynamically based on cluster centroids.
+# Here we use a static map for simplicity, assuming standard distribution.
+segment_map = {
+    0: "Loyal Regulars",
+    1: "High-Value Spenders",
+    2: "New or Occasional",
+    3: "At-Risk Customers"
+}
+# Handle cases where n_clusters < 4
+df['SegmentName'] = df['Segment'].map(segment_map).fillna("General Customer")
 
-segment_summary.columns = ['ShopID', 'SegmentName', 'customerCount', 'averageSpend', 'averageFrequency', 'averageRecency']
+# --- Save segmentation results to DB ---
+print("💾 Saving analysis to database...")
 
-# Store in MySQL
-cursor.execute("TRUNCATE TABLE Customer_Segments;")
-for _, row in segment_summary.iterrows():
-    cursor.execute("""
-        INSERT INTO Customer_Segments (ShopID, SegmentName, customerCount, averageSpend, averageFrequency, averageRecency)
-        VALUES (%s, %s, %s, %s, %s, %s)
-    """, tuple(row))
+cursor.execute("TRUNCATE TABLE Customer_Segments")
+conn.commit()
+
+insert_query = """
+    INSERT INTO Customer_Segments (ShopID, CustID, SegmentName, TotalSpend, Frequency, Recency)
+    VALUES (%s, %s, %s, %s, %s, %s)
+"""
+
+for _, row in df.iterrows():
+    cursor.execute(insert_query, (
+        int(row['ShopID']), 
+        str(row['CustID']), # ✅ Key Fix: CustID is passed as String
+        row['SegmentName'], 
+        float(row['Monetary']), 
+        int(row['Frequency']), 
+        int(row['Recency'])
+    ))
 
 conn.commit()
-print("✅ Customer Segments updated successfully.")
-
-# ========================
-# 5️⃣ POPULAR SERVICES
-# ========================
-print("📈 Calculating popular services...")
-
-popular_services = df.groupby(['ShopID', 'SvcName']).agg({
-    'OrderID': 'count'
-}).reset_index().sort_values(['ShopID', 'OrderID'], ascending=[True, False])
-
-cursor.execute("TRUNCATE TABLE Shop_Popular_Services;")
-for _, row in popular_services.iterrows():
-    cursor.execute("""
-        INSERT INTO Shop_Popular_Services (ShopID, SvcName, orderCount)
-        VALUES (%s, %s, %s)
-    """, (row['ShopID'], row['SvcName'], int(row['OrderID'])))
-
-conn.commit()
-print("✅ Popular Services updated successfully.")
-
-# ========================
-# 6️⃣ BUSIEST TIMES
-# ========================
-print("⏰ Calculating busiest times...")
-
-def categorize_time(order_time):
-    hour = order_time.hour
-    if 7 <= hour < 12:
-        return "Morning (7am-12pm)"
-    elif 12 <= hour < 17:
-        return "Afternoon (12pm-5pm)"
-    else:
-        return "Evening (5pm onwards)"
-
-df['timeSlot'] = df['OrderCreatedAt'].apply(categorize_time)
-busiest_times = df.groupby(['ShopID', 'timeSlot']).size().reset_index(name='orderCount')
-
-cursor.execute("TRUNCATE TABLE Shop_Busiest_Times;")
-for _, row in busiest_times.iterrows():
-    cursor.execute("""
-        INSERT INTO Shop_Busiest_Times (ShopID, timeSlot, orderCount)
-        VALUES (%s, %s, %s)
-    """, (row['ShopID'], row['timeSlot'], int(row['orderCount'])))
-
-conn.commit()
-print("✅ Busiest Times updated successfully.")
-
-# ========================
-# ✅ FINISH
-# ========================
 cursor.close()
 conn.close()
-print("\n🎯 Data analytics processing complete! All metrics are live in MySQL.")
+
+print(f"✅ Customer segmentation updated. Processed {len(df)} records.")

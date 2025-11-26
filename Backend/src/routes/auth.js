@@ -14,7 +14,6 @@ function generateOTP() {
     return Math.floor(100000 + Math.random() * 900000).toString(); 
 }
 
-// 💡 Original Sequential ID Generation for Customers (C1, C2, etc.)
 async function generateNewCustID(connection) {
     const [rows] = await connection.query(
         `SELECT MAX(CAST(SUBSTRING(CustID, 2) AS UNSIGNED)) AS last_id_number
@@ -28,7 +27,7 @@ async function generateNewCustID(connection) {
 async function sendEmail(to, subject, html) {
     const msg = {
         to: to,
-        from: 'dimpasmj@gmail.com', // Ensure this is verified in SendGrid
+        from: 'dimpasmj@gmail.com', 
         subject: subject,
         html: html,
     };
@@ -40,13 +39,13 @@ async function sendEmail(to, subject, html) {
     }
 }
 
-// 🟢 NEW: Helper to fetch and consolidate the complete customer profile
 async function fetchCustomerDetails(userId, connection) {
     const [rows] = await connection.query(`
         SELECT 
             u.UserID, 
             u.UserEmail, 
             u.UserRole, 
+            u.UserPassword, 
             c.CustName AS name, 
             c.CustPhone AS phone, 
             c.CustAddress AS address, 
@@ -57,7 +56,14 @@ async function fetchCustomerDetails(userId, connection) {
         WHERE u.UserID = ? AND u.UserRole = 'Customer'`, 
         [userId]
     );
-    return rows.length > 0 ? rows[0] : null;
+
+    if (rows.length > 0) {
+        const user = rows[0];
+        const hasPassword = !!user.UserPassword; 
+        delete user.UserPassword; 
+        return { ...user, hasPassword };
+    }
+    return null;
 }
 
 // =================================================================
@@ -67,15 +73,11 @@ async function fetchCustomerDetails(userId, connection) {
 router.post("/login", async (req, res) => {
     const { email, password } = req.body;
 
-    console.log("\n--- Backend Login Attempt Start ---");
-    console.log(`[Input] Attempting login for email: ${email}`);
-
     if (!email || !password) {
         return res.status(400).json({ message: "Email and password are required" });
     }
 
     try {
-        // 1. Fetch User data
         const [users] = await db.query(
             `SELECT UserID, UserEmail, UserPassword, UserRole, IsActive FROM Users WHERE UserEmail = ?`,
             [email]
@@ -88,9 +90,12 @@ router.post("/login", async (req, res) => {
 
         const user = users[0];
 
-        // 2. Password Validation (Hybrid: Hashed OR Plain Text for Seed Data)
+        if (user.IsActive === 0) {
+            await logUserActivity(user.UserID, user.UserRole, 'Login Denied', `Account deactivated`);
+            return res.status(403).json({ message: "Account is deactivated. Contact support." });
+        }
+
         let passwordMatch = false;
-        
         const isHash = user.UserPassword && (user.UserPassword.startsWith('$2a$') || user.UserPassword.startsWith('$2b$'));
         
         if (isHash) {
@@ -103,14 +108,6 @@ router.post("/login", async (req, res) => {
             await logUserActivity(user.UserID, user.UserRole, 'Login Failed', `Invalid password`);
             return res.status(401).json({ message: "Invalid credentials" });
         }
-        
-        // 3. Check Active Status
-        if (user.IsActive === 0) {
-            await logUserActivity(user.UserID, user.UserRole, 'Login Denied', `Account deactivated`);
-            return res.status(403).json({ message: "Account is deactivated. Contact support." });
-        }
-
-        console.log(`[User Found] ID: ${user.UserID}, Role: ${user.UserRole}`);
 
         // --- CUSTOMER FLOW (OTP) ---
         if (user.UserRole === 'Customer') {
@@ -131,15 +128,15 @@ router.post("/login", async (req, res) => {
         // --- STAFF/ADMIN/OWNER FLOW (Direct Login) ---
         await logUserActivity(user.UserID, user.UserRole, 'Login', `Direct login success`);
 
-        delete user.UserPassword; // Hide hash
-        
+        delete user.UserPassword; 
+
         let userDetails = {
             UserID: user.UserID,
             UserEmail: user.UserEmail,
-            UserRole: user.UserRole
+            UserRole: user.UserRole,
+            hasPassword: true 
         };
-        
-        // Fetch Role-Specific Details (Staff/Owner - kept original logic)
+
         if (user.UserRole === 'Shop Owner') {
             const [ownerDetails] = await db.query(
                 `SELECT o.OwnerID, o.OwnerName, s.ShopID, s.ShopName
@@ -182,31 +179,43 @@ router.post("/google-login", async (req, res) => {
         connection = await db.getConnection();
         await connection.beginTransaction();
 
-        // Check for existing user
         const [existingUser] = await connection.query(
-            "SELECT T1.UserID FROM Users T1 WHERE T1.UserEmail = ?", 
+            "SELECT UserID, IsActive FROM Users WHERE UserEmail = ?", 
             [email]
         );
         
         let userId = existingUser.length > 0 ? existingUser[0].UserID : null;
 
-        if (!userId) {
-            // --- NEW USER ---
-            const newCustID = await generateNewCustID(connection);
-        
-            // 1. Users Table
+        if (userId) {
+            if (existingUser[0].IsActive === 0) {
+                await connection.rollback();
+                await logUserActivity(userId, 'Customer', 'Login Denied', 'Google Login Attempt on Deactivated Account');
+                return res.status(403).json({ success: false, message: "Account is deactivated. Contact support." });
+            }
+
             await connection.query(
-                "INSERT INTO Users (UserID, UserEmail, UserPassword, UserRole) VALUES (?, ?, ?, ?)",
-                [newCustID, email, null, 'Customer']
+                `INSERT INTO Cust_Credentials (CustID, google_id, is_verified, picture) VALUES (?, ?, 1, ?)
+                 ON DUPLICATE KEY UPDATE google_id = VALUES(google_id), picture = VALUES(picture), is_verified = 1`,
+                [userId, google_id, picture]
             );
             
-            // 2. Customers Table
+            // Note: We commit here because we want the user update to stick even if OTP fails
+            await connection.commit(); 
+            await logUserActivity(userId, 'Customer', 'Login', 'Google Login Success');
+
+        } else {
+            const newCustID = await generateNewCustID(connection);
+        
+            await connection.query(
+                "INSERT INTO Users (UserID, UserEmail, UserPassword, UserRole) VALUES (?, ?, ?, ?)",
+                [newCustID, email, null, 'Customer'] 
+            );
+            
             await connection.query(
                 "INSERT INTO Customers (CustID, CustName) VALUES (?, ?)",
                 [newCustID, name]
             );
 
-            // 3. Cust_Credentials Table
             await connection.query(
                 `INSERT INTO Cust_Credentials (CustID, google_id, is_verified, picture) VALUES (?, ?, 1, ?)`,
                 [newCustID, google_id, picture] 
@@ -215,34 +224,24 @@ router.post("/google-login", async (req, res) => {
             await connection.commit();
             userId = newCustID;
             await logUserActivity(userId, 'Customer', 'Sign-up', 'User created via Google');
-            
-        } else {
-            // --- EXISTING USER ---
-            const [userRow] = await connection.query("SELECT IsActive FROM Users WHERE UserID = ?", [userId]);
-            if (userRow[0].IsActive === 0) {
-                await connection.rollback();
-                return res.status(403).json({ success: false, message: "Account is deactivated." });
-            }
-            
-            // Update Cust_Credentials table
-            await connection.query(
-                `INSERT INTO Cust_Credentials (CustID, google_id, is_verified, picture) VALUES (?, ?, 1, ?)
-                 ON DUPLICATE KEY UPDATE google_id = VALUES(google_id), picture = VALUES(picture), is_verified = 1`,
-                [userId, google_id, picture]
-            );
-            
-            await connection.commit();
-            await logUserActivity(userId, 'Customer', 'Login', 'Google Login Success');
-        }
-        
-        // 🟢 FINAL STEP: Fetch all customer details for session object
-        const fullUserDetails = await fetchCustomerDetails(userId, db); 
-        
-        if (!fullUserDetails) {
-             return res.status(500).json({ success: false, message: "Error retrieving full profile data." });
         }
 
-        return res.json({ success: true, message: "Google login successful", user: fullUserDetails });
+        // 🟢 ENFORCE OTP FOR GOOGLE LOGIN
+        const otp = generateOTP();
+        await db.query("DELETE FROM otps WHERE user_id = ?", [userId]);
+        await db.query("INSERT INTO otps (user_id, otp_code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))", [userId, otp]);
+            
+        sendEmail(email, 'LaundroLink Login Code', `<strong>Your login code is: ${otp}</strong>`);
+        
+        console.log(`--- Google Login OTP Sent to: ${email} ---`);
+
+        // Return 'requiresOTP' so frontend knows to redirect to Verify screen
+        return res.json({ 
+            success: true, 
+            message: "Google login valid, sending OTP.",
+            userId: userId,
+            requiresOTP: true
+        });
 
     } catch (error) {
         if (connection) await connection.rollback();
@@ -270,7 +269,6 @@ router.post("/verify-otp", async (req, res) => {
             return res.status(400).json({ success: false, message: "Invalid or expired OTP." }); 
         }
 
-        // Clear OTP
         await connection.query("DELETE FROM otps WHERE user_id = ?", [userId]);
 
         const [users] = await connection.query("SELECT IsActive, UserRole FROM Users WHERE UserID = ?", [userId]);
@@ -284,7 +282,6 @@ router.post("/verify-otp", async (req, res) => {
             return res.status(403).json({ success: false, message: "Account is deactivated." });
         }
         
-        // 🟢 FINAL STEP: Fetch all customer details for session object
         const fullUserDetails = await fetchCustomerDetails(userId, connection);
 
         if (!fullUserDetails) {
@@ -306,6 +303,7 @@ router.post("/verify-otp", async (req, res) => {
     }
 });
 
+// ... (forgot/reset password routes remain unchanged) ...
 router.post("/forgot-password", async (req, res) => {
     try {
         const { identifier } = req.body;
@@ -314,7 +312,6 @@ router.post("/forgot-password", async (req, res) => {
         const [users] = await db.query("SELECT UserID, UserEmail, UserRole, IsActive FROM Users WHERE UserEmail = ?", [identifier]);
         
         if (users.length === 0) {
-            // Security: Don't reveal user doesn't exist, but log it
             await logUserActivity('N/A', 'N/A', 'Password Reset Failed', `Unknown email: ${identifier}`);
             return res.json({ success: true, message: "If this email exists, an OTP will be sent." });
         }

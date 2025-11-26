@@ -1,5 +1,3 @@
-// index.tsx (Customer) - FULL CODE WITH PAGE LOAD MAINTENANCE CHECK
-
 import { AntDesign } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as AuthSession from "expo-auth-session";
@@ -14,54 +12,31 @@ import {
     TextInput,
     TouchableOpacity,
     View,
+    ActivityIndicator
 } from "react-native";
 
-// 🔑 Import authentication functions AND the checkMaintenanceStatus function
-import { handleUserLogin, googleLogin, checkMaintenanceStatus } from "@/lib/auth"; 
+import { handleUserLogin, googleLogin, checkMaintenanceStatus, UserDetails } from "@/lib/auth"; 
 
 WebBrowser.maybeCompleteAuthSession();
 
-// --- Utility function to handle error alerting and maintenance redirection ---
-/**
- * Handles errors, checks for the MAINTENANCE_ACTIVE prefix, and redirects if necessary.
- * Note: This function primarily handles errors caught during the login attempt.
- * The page load check (useEffect) handles the initial redirect.
- */
+// --- Utility function to handle error alerting ---
 const alertError = (error: any, defaultMessage: string, router: Router) => {
-    // Safely access error message
     let message = error?.message || defaultMessage;
-    
-    // Check for the error thrown by auth.ts if maintenance is active
     if (message.startsWith('MAINTENANCE_ACTIVE:')) {
-        // strip the prefix
         message = message.replace(/^MAINTENANCE_ACTIVE:\s*/, '');
-        
         Alert.alert("Maintenance Mode", message, [
-            {
-                text: "View Status",
-                onPress: () => {
-                    // Navigate to maintenance screen
-                    router.replace("/maintenance"); 
-                }
-            },
-            {
-                text: "Close App",
-                onPress: () => { /* Add logic to close the app if necessary */ },
-                style: 'cancel',
-            }
+            { text: "View Status", onPress: () => router.replace("/maintenance") },
+            { text: "Close", style: 'cancel' }
         ]);
     } else {
-        // Handle normal errors (e.g., invalid password)
         Alert.alert("Login Failed", message);
     }
 };
-// --- End Utility Function ---
-
 
 export default function Index() {
     const [identifier, setIdentifier] = useState(""); 
     const [password, setPassword] = useState("");
-    const [isLoading, setIsLoading] = useState(true); // State to gate render during status check
+    const [isLoading, setIsLoading] = useState(true); 
     const router = useRouter(); 
 
     const redirectUri = AuthSession.makeRedirectUri({});
@@ -71,35 +46,50 @@ export default function Index() {
         redirectUri,
     });
 
-    // 🚀 CRITICAL FIX: Page Load Maintenance Gating Check
+    // 1. Page Load: Check Maintenance & Existing Session
     useEffect(() => {
-        const checkStatusAndRedirect = async () => {
-            // checkMaintenanceStatus returns true if maintenance is ON or unconfirmable
+        const initializeApp = async () => {
             const isMaintenanceActive = await checkMaintenanceStatus();
-            
             if (isMaintenanceActive) {
-                // If maintenance is active, immediately redirect to the maintenance page
                 router.replace("/maintenance");
+                return;
+            }
+
+            // Check for existing, valid session
+            const userJson = await AsyncStorage.getItem('user');
+            if (userJson) {
+                try {
+                    const user = JSON.parse(userJson);
+                    // If session exists and profile is complete, go home.
+                    if (user.phone && user.address && user.hasPassword !== false) {
+                        router.replace("/homepage/homepage");
+                    } else {
+                        // If incomplete, clear session and show login (so they can go through verification again)
+                        await AsyncStorage.removeItem('user');
+                        setIsLoading(false);
+                    }
+                } catch (e) {
+                    await AsyncStorage.removeItem('user');
+                    setIsLoading(false);
+                }
             } else {
-                // System is operational, allow form rendering
                 setIsLoading(false);
             }
         };
 
-        checkStatusAndRedirect();
+        initializeApp();
     }, []); 
-    // --- End Page Load Gating Check ---
 
-
+    // 2. Google Login Handler
     const getUserInfo = async (token: string) => {
+        setIsLoading(true);
         try {
-            // 1. Get user info from Google
             const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const user = await res.json();
             
-            // 2. Use googleLogin utility function
+            // Call Backend
             const data = await googleLogin(
                 user.sub,
                 user.email,
@@ -107,7 +97,16 @@ export default function Index() {
                 user.picture
             );
 
-            if (data.success && data.user) {
+            // 🟢 GOOGLE FLOW -> VERIFY
+            if (data.success && data.requiresOTP && data.userId) {
+                console.log(`Google Login Valid. Redirecting to Verify for UserID: ${data.userId}`);
+                router.push({ 
+                    pathname: "/Verify", 
+                    params: { userId: String(data.userId) } 
+                });
+            } 
+            // Fallback for existing users if backend decides no OTP needed (optional safety)
+            else if (data.success && data.user) {
                 await AsyncStorage.setItem('user', JSON.stringify(data.user));
                 router.replace("/homepage/homepage");
             } else {
@@ -115,7 +114,9 @@ export default function Index() {
             }
         } catch (error: any) {
             console.error("Google login error:", error.message);
-            alertError(error, "Failed to sign in with Google. Please try again.", router);
+            alertError(error, "Failed to sign in with Google.", router);
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -128,50 +129,57 @@ export default function Index() {
         }
     }, [response]);
 
+    // 3. Manual Login Handler
     const handleLogin = async () => {
-        if (!identifier || !password) {
-            Alert.alert("Missing Fields", "Please enter your phone/email and password.");
+        if (!identifier) {
+            Alert.alert("Missing Field", "Please enter your phone or email.");
             return;
         }
         
-        console.log("-----------------------------------------");
-        console.log("Attempting Login...");
-        console.log("-----------------------------------------");
+        // Allow empty password if it's a Google Account logging in manually
+        
+        setIsLoading(true);
 
         try {
-            // Call the centralized handleUserLogin function 
             const data = await handleUserLogin(identifier, password); 
             
-            console.log("Response Body (data):", data);
-
+            // 🟢 MANUAL FLOW -> VERIFY
             if (data.success && data.requiresOTP && data.userId) {
-                // Customer login flow: Redirect to OTP verification
-                console.log(`Login Success! Redirecting to Verify for UserID: ${data.userId}`);
-                router.push({ pathname: "/Verify", params: { userId: String(data.userId) } });
-            } else if (data.success && data.user) {
-                // Direct login flow: Save user and redirect to homepage
+                console.log(`Manual Login Valid. Redirecting to Verify for UserID: ${data.userId}`);
+                router.push({ 
+                    pathname: "/Verify", 
+                    params: { userId: String(data.userId) } 
+                });
+            } 
+            // Standard Password Login (Direct)
+            else if (data.success && data.user) {
                 await AsyncStorage.setItem('user', JSON.stringify(data.user));
-                router.replace("/homepage/homepage");
+                
+                // Check profile completeness for standard users
+                if (!data.user.phone || !data.user.address) {
+                    router.replace({ pathname: "/SetupProfile", params: { userId: data.user.UserID } });
+                } else {
+                    router.replace("/homepage/homepage");
+                }
             } else {
-                Alert.alert("Error", data.message || "Could not complete login flow. Please try again.");
+                Alert.alert("Error", data.message || "Could not complete login flow.");
             }
         } catch (error: any) {
-            console.log("-----------------------------------------");
             console.error("❌ Login error:", error.message);
-            console.log("-----------------------------------------");
-            alertError(error, "Something went wrong during login. Please check your credentials.", router);
+            alertError(error, "Something went wrong during login.", router);
+        } finally {
+            setIsLoading(false);
         }
     };
     
-    // Show loading spinner or blank screen while checking maintenance status
     if (isLoading) {
         return (
-            <View style={[styles.container, {backgroundColor: '#fff'}]}>
-                <Text style={{color: '#003366', fontSize: 20}}>Checking App Status...</Text>
+            <View style={[styles.container, {backgroundColor: '#89CFF0'}]}>
+                <ActivityIndicator size="large" color="#003366" />
+                <Text style={{color: '#003366', marginTop: 10}}>Loading...</Text>
             </View>
         );
     }
-
 
     return (
         <View style={styles.container}>
@@ -202,7 +210,7 @@ export default function Index() {
             >
                 <Text style={styles.forgotText}>Forgot Password?</Text>
             </TouchableOpacity>
-            <Text style={styles.orText}>────────  or  ────────</Text>
+            <Text style={styles.orText}>────────  or  ────────</Text>
             <TouchableOpacity
                 style={styles.socialButton}
                 disabled={!request}

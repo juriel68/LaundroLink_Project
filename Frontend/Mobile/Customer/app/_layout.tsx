@@ -7,12 +7,12 @@ export default function RootLayout() {
   return (
     <Stack>
       <Stack.Screen name="index" options={{ title: "Login" }} />
-      <Stack.Screen name="signup" options={{ title: "Sign-Up" }} />
-      <Stack.Screen name="verify" options={{ title: "Verify" }} />
-      <Stack.Screen name="profile" options={{ title: "Profile" }} />
+      <Stack.Screen name="SignUp" options={{ title: "Sign-Up" }} />
+      <Stack.Screen name="Verify" options={{ title: "Verify" }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="+not-found" options={{}} />
       <Stack.Screen name="maintenance" options={{ headerShown: false }} />
+      <Stack.Screen name="SetupProfile" options={{ title: "Setup Profile" }} />
     </Stack>
   );
 }

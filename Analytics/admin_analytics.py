@@ -33,12 +33,12 @@ def create_admin_analytics_tables(cursor):
     """
     print("🔍 Checking and creating Admin analytics tables if needed...")
     
-    # 1. Platform_Growth_Metrics: Tracks monthly shop and revenue growth/churn
+    # 1. Platform_Growth_Metrics: Tracks monthly shop and revenue growth
     create_growth_table = """
     CREATE TABLE IF NOT EXISTS Platform_Growth_Metrics (
         MonthYear CHAR(7) PRIMARY KEY, -- YYYY-MM
         NewShops INT DEFAULT 0,
-        ChurnedShops INT DEFAULT 0, -- Shops marked inactive/deleted
+        ChurnedShops INT DEFAULT 0, 
         TotalActiveShops INT,
         MonthlyRevenue DECIMAL(12, 2),
         AnalyzedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -49,9 +49,9 @@ def create_admin_analytics_tables(cursor):
     create_gap_table = """
     CREATE TABLE IF NOT EXISTS Service_Gap_Analysis (
         SvcName VARCHAR(50) PRIMARY KEY,
-        PlatformOrderCount INT NOT NULL, -- Total demand for the service
-        OfferingShopCount INT NOT NULL, -- Total number of shops offering the service
-        GapScore DECIMAL(10, 2), -- Demand/Supply ratio
+        PlatformOrderCount INT NOT NULL, 
+        OfferingShopCount INT NOT NULL, 
+        GapScore DECIMAL(10, 2), 
         AnalyzedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     );
     """
@@ -59,6 +59,7 @@ def create_admin_analytics_tables(cursor):
     try:
         cursor.execute(create_growth_table)
         cursor.execute(create_gap_table)
+        conn.commit()
         print("✅ Admin Analytics tables are ready.")
     except mysql.connector.Error as err:
         print(f"❌ Error creating Admin analytics tables: {err}")
@@ -71,11 +72,12 @@ def analyze_service_gaps(conn, cursor):
     print("📊 Running Service Gap Analysis...")
 
     # Step 1: Get total orders per service (Demand)
+    # 🟢 FIXED: Join Laundry_Details because Orders table does NOT have SvcID
     demand_query = """
     SELECT 
-        s.SvcName, COUNT(o.OrderID) AS PlatformOrderCount
-    FROM Orders o
-    JOIN Services s ON o.SvcID = s.SvcID
+        s.SvcName, COUNT(ld.LndryDtlID) AS PlatformOrderCount
+    FROM Laundry_Details ld
+    JOIN Services s ON ld.SvcID = s.SvcID
     GROUP BY s.SvcName;
     """
     demand_df = pd.read_sql(demand_query, conn)
@@ -94,7 +96,7 @@ def analyze_service_gaps(conn, cursor):
     gap_df = pd.merge(demand_df, supply_df, on='SvcName', how='outer').fillna(0)
     
     # Calculate Gap Score: Normalize by demand. Prevent division by zero.
-    gap_df['OfferingShopCount'] = gap_df['OfferingShopCount'].replace(0, 1) # Treat 0 as 1 to calculate score
+    gap_df['OfferingShopCount'] = gap_df['OfferingShopCount'].replace(0, 1) 
     gap_df['GapScore'] = (gap_df['PlatformOrderCount'] / gap_df['OfferingShopCount'])
     
     gap_df = gap_df.sort_values(by='GapScore', ascending=False)
@@ -116,24 +118,34 @@ def analyze_service_gaps(conn, cursor):
 def analyze_platform_growth(conn, cursor):
     print("📈 Analyzing Platform Growth and Churn...")
     
-    # --- 1. Monthly Revenue ---
-    # 🔑 FIXED: Removed Invoice_Status subquery, used I.PaymentStatus directly
+    # --- 1. Monthly Revenue (Service + Delivery) ---
+    # 🟢 FIXED: Summing Invoices AND Delivery_Payments
     revenue_query = """
-    SELECT
-        DATE_FORMAT(o.OrderCreatedAt, '%Y-%m') AS MonthYear,
-        SUM(i.PayAmount) AS MonthlyRevenue
-    FROM Orders o
-    JOIN Invoices i ON o.OrderID = i.OrderID
-    WHERE i.PaymentStatus = 'Paid'
+    SELECT MonthYear, SUM(Amount) as MonthlyRevenue FROM (
+        -- Service Revenue
+        SELECT 
+            DATE_FORMAT(StatusUpdatedAt, '%Y-%m') AS MonthYear, 
+            PayAmount AS Amount
+        FROM Invoices 
+        WHERE PaymentStatus = 'Paid'
+        
+        UNION ALL
+        
+        -- Delivery Revenue
+        SELECT 
+            DATE_FORMAT(StatusUpdatedAt, '%Y-%m') AS MonthYear, 
+            DlvryAmount AS Amount
+        FROM Delivery_Payments
+        WHERE DlvryPaymentStatus = 'Paid'
+    ) as CombinedRevenue
     GROUP BY MonthYear
     ORDER BY MonthYear;
     """
     revenue_df = pd.read_sql(revenue_query, conn)
     
-    # --- 2. Monthly New Shops (Using Laundry_Shops.DateCreated) ---
+    # --- 2. Monthly New Shops ---
     shop_data_query = """
     SELECT 
-        ShopID, 
         DATE_FORMAT(DateCreated, '%Y-%m') AS MonthYear
     FROM Laundry_Shops
     ORDER BY MonthYear;
@@ -148,7 +160,7 @@ def analyze_platform_growth(conn, cursor):
     
     # --- 3. Calculate Cumulative Active Shops ---
     growth_df['TotalActiveShops'] = growth_df['NewShops'].cumsum()
-    growth_df['ChurnedShops'] = 0 
+    growth_df['ChurnedShops'] = 0 # Placeholder for churn logic if needed later
 
     # Store in MySQL
     cursor.execute("TRUNCATE TABLE Platform_Growth_Metrics;")
@@ -156,7 +168,7 @@ def analyze_platform_growth(conn, cursor):
         cursor.execute("""
             INSERT INTO Platform_Growth_Metrics (MonthYear, NewShops, ChurnedShops, TotalActiveShops, MonthlyRevenue)
             VALUES (%s, %s, %s, %s, %s)
-        """, (row['MonthYear'], int(row['NewShops']), int(row['ChurnedShops']), int(row['TotalActiveShops']), row['MonthlyRevenue']))
+        """, (row['MonthYear'], int(row['NewShops']), int(row['ChurnedShops']), int(row['TotalActiveShops']), float(row['MonthlyRevenue'])))
         
     conn.commit()
     print("✅ Platform Growth Metrics updated successfully.")

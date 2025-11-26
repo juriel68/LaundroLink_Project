@@ -7,85 +7,83 @@ const router = express.Router();
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-const getPartnerIdSql = `IF(c.Participant1_ID = ?, c.Participant2_ID, c.Participant1_ID)`;
+// 🟢 OPTIMIZED: Use CASE WHEN for better SQL compatibility
+const getPartnerIdSql = `CASE WHEN c.Participant1_ID = ? THEN c.Participant2_ID ELSE c.Participant1_ID END`;
 
 router.get("/conversations/:userId", async (req, res) => {
     const { userId } = req.params;
     
     console.log(`[DEBUG] Received request for conversations. UserID: ${userId}`); 
-    console.log(`[BACKEND] Attempting to fetch conversations for UserID: ${userId}`);
     
     try {
         const query = `
-WITH Partner AS (
-    SELECT
-        ${getPartnerIdSql} AS partnerId,
-        c.ConversationID,
-        c.UpdatedAt
-    FROM Conversations c
-    WHERE c.Participant1_ID = ? OR c.Participant2_ID = ?
-)
-SELECT
-    p.ConversationID AS conversationId,
-    p.UpdatedAt AS time,
-    p.partnerId,
-    
-    -- 2. COALESCE Name: Check Customer, Staff, Owner, then default to partnerId
-    COALESCE(
-        cu.CustName, 
-        st.StaffName,
-        so.OwnerName,
-        p.partnerId 
-    ) AS name,
+            WITH Partner AS (
+                SELECT
+                    ${getPartnerIdSql} AS partnerId,
+                    c.ConversationID,
+                    c.UpdatedAt
+                FROM Conversations c
+                WHERE c.Participant1_ID = ? OR c.Participant2_ID = ?
+            )
+            SELECT
+                p.ConversationID AS conversationId,
+                p.UpdatedAt AS time,
+                p.partnerId,
+                
+                -- 2. COALESCE Name
+                COALESCE(
+                    cu.CustName, 
+                    st.StaffName,
+                    so.OwnerName,
+                    p.partnerId 
+                ) AS name,
 
-    -- 3. COALESCE Picture: Check Shop Image, Profile Picture, then Placeholder
-    COALESCE(
-        ls.ShopImage_url, 
-        cc.picture,
-        'https://placehold.co/40x40/d9edf7/004aad'
-    ) AS partnerPicture,
+                -- 3. COALESCE Picture
+                COALESCE(
+                    ls.ShopImage_url, -- Shops/Owners usually want their shop logo
+                    cc.picture,       -- Customers have Google profile pics
+                    'https://placehold.co/40x40/d9edf7/004aad'
+                ) AS partnerPicture,
 
-    -- 4. Get the last message text or image
-    (
-        SELECT 
-            CASE 
-                WHEN m.MessageText IS NOT NULL AND m.MessageText != '' THEN m.MessageText
-                WHEN m.MessageImage IS NOT NULL AND m.MessageImage != '' THEN '📷 Photo'
-                ELSE ''
-            END
-        FROM Messages m
-        WHERE m.ConversationID = p.ConversationID 
-        ORDER BY m.CreatedAt DESC 
-        LIMIT 1
-    ) AS lastMessage,
+                -- 4. Get the last message text or image
+                (
+                    SELECT 
+                        CASE 
+                            WHEN m.MessageText IS NOT NULL AND m.MessageText != '' THEN m.MessageText
+                            WHEN m.MessageImage IS NOT NULL AND m.MessageImage != '' THEN '📷 Photo'
+                            ELSE ''
+                        END
+                    FROM Messages m
+                    WHERE m.ConversationID = p.ConversationID 
+                    ORDER BY m.CreatedAt DESC 
+                    LIMIT 1
+                ) AS lastMessage,
 
-    -- 5. Count unread messages
-    (
-        SELECT COUNT(*) 
-        FROM Messages m 
-        WHERE m.ConversationID = p.ConversationID 
-            AND m.ReceiverID = ? AND m.MessageStatus = 'Delivered'
-    ) AS unreadCount
+                -- 5. Count unread messages
+                (
+                    SELECT COUNT(*) 
+                    FROM Messages m 
+                    WHERE m.ConversationID = p.ConversationID 
+                        AND m.ReceiverID = ? AND m.MessageStatus = 'Delivered' -- 'Delivered' means not yet 'Read'
+                ) AS unreadCount
 
-FROM Partner p
+            FROM Partner p
 
-LEFT JOIN Customers cu ON cu.CustID = p.partnerId
-LEFT JOIN Cust_Credentials cc ON cc.CustID = p.partnerId
+            LEFT JOIN Customers cu ON cu.CustID = p.partnerId
+            LEFT JOIN Cust_Credentials cc ON cc.CustID = p.partnerId
 
-LEFT JOIN Staffs st ON st.StaffID = p.partnerId
-LEFT JOIN Shop_Owners so ON so.OwnerID = p.partnerId
+            LEFT JOIN Staffs st ON st.StaffID = p.partnerId
+            LEFT JOIN Shop_Owners so ON so.OwnerID = p.partnerId
 
--- 🟢 FIX: Link to Laundry_Shops using the correct keys for each role:
---   Staffs link via ShopID (st.ShopID = ls.ShopID)
---   Owners link via OwnerID (p.partnerId = ls.OwnerID)
-LEFT JOIN Laundry_Shops ls ON 
-    ls.ShopID = st.ShopID 
-    OR ls.OwnerID = p.partnerId
-    
-ORDER BY p.UpdatedAt DESC;
+            -- 🟢 FIX: Link to Laundry_Shops using the correct keys
+            LEFT JOIN Laundry_Shops ls ON 
+                ls.ShopID = st.ShopID 
+                OR ls.OwnerID = p.partnerId
+                
+            ORDER BY p.UpdatedAt DESC;
         `;
         
-        // Bindings: [userId (IF), userId (WHERE P1), userId (WHERE P2), userId (Unread Count)]
+        // Bindings: [userId (CASE), userId (WHERE P1), userId (WHERE P2), userId (Unread Count)]
         const cleanBindings = [
             userId, 
             userId, 
@@ -99,9 +97,8 @@ ORDER BY p.UpdatedAt DESC;
 
         res.json(conversations);
     } catch (error) {
-        // Log the severe SQL error for full inspection
         console.error("❌ FATAL SQL ERROR fetching conversations:", error);
-        res.status(500).json({ error: "Failed to fetch conversations due to a server error." });
+        res.status(500).json({ error: "Failed to fetch conversations." });
     }
 });
 
@@ -235,8 +232,9 @@ router.patch("/read", async (req, res) => {
     return res.status(400).json({ error: "Conversation ID and User ID are required" });
   }
   try {
+    // If I am reading, update messages where ReceiverID = ME and Status = 'Sent'/'Delivered'
     await db.query(
-      "UPDATE Messages SET MessageStatus = 'Read' WHERE ConversationID = ? AND ReceiverID = ? AND MessageStatus = 'Delivered'",
+      "UPDATE Messages SET MessageStatus = 'Read' WHERE ConversationID = ? AND ReceiverID = ? AND MessageStatus != 'Read'",
       [conversationId, userId]
     );
     res.status(200).json({ success: true, message: "Messages marked as read" });

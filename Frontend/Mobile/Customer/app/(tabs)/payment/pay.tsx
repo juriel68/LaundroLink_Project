@@ -1,5 +1,3 @@
-// app/(tabs)/payment/pay.tsx
-
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRouter, useLocalSearchParams } from "expo-router";
 import React, { useLayoutEffect, useState, useEffect } from "react";
@@ -14,56 +12,49 @@ import {
     Alert,
     FlatList
 } from "react-native";
+// 🟢 IMPORT WebBrowser
+import * as WebBrowser from "expo-web-browser";
+
+// Imports
 import { submitPayment, submitDeliveryPayment, fetchOrderDetails } from "@/lib/orders"; 
 import { fetchShopDetails, PaymentMethod } from "@/lib/shops"; 
+import { initiatePayPalPayment } from "@/lib/auth"; // 🟢 Imported new helper
 
-// 🔑 UPDATED PARAMETERS
 export default function Payment() {
     const router = useRouter();
     const navigation = useNavigation();
     
-    // 🔑 UPDATED: Expecting 'amount' (the focused amount) and 'isDelivery' (the new flag)
     const { orderId, amount, shopName, isDelivery } = useLocalSearchParams<{ 
         orderId: string, 
-        amount: string, // This is the calculated amount due (service OR delivery)
+        amount: string, 
         shopName: string,
-        isDelivery: string // 'true' or 'false'
+        isDelivery: string 
     }>();
     
     const [loading, setLoading] = useState(false);
     const [initializing, setInitializing] = useState(true);
     const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
 
-    // 🔑 NEW LOGIC: isDeliveryPay uses the new 'isDelivery' flag
     const isDeliveryPay = isDelivery === 'true';
-    const amountValue = parseFloat(amount || "0"); // Use the passed 'amount' directly
+    const amountValue = parseFloat(amount || "0"); 
 
     useLayoutEffect(() => {
         navigation.setOptions({
             headerShown: true,
             headerStyle: { backgroundColor: "#87CEFA" },
             headerTintColor: "#000",
-            // 🔑 UPDATED Title
             headerTitle: isDeliveryPay ? "Pay Delivery Fee" : "Select Payment",
         });
     }, [navigation, isDeliveryPay]);
 
-    // Fetch Shop Payment Methods on Load
     useEffect(() => {
         const loadPaymentMethods = async () => {
-             // 🔑 FIX: We need to load order details to get the ShopID, as it's not passed via params in the new flow
             try {
                 const orderData = await fetchOrderDetails(orderId);
-                
-                if (orderData) {
-                    // Use the shopId from the fetched order details
-                    const shopId = orderData.shopId; 
-
-                    if (shopId) {
-                        const shopData = await fetchShopDetails(shopId);
-                        if (shopData && shopData.paymentMethods) {
-                            setPaymentMethods(shopData.paymentMethods);
-                        }
+                if (orderData && orderData.shopId) {
+                    const shopData = await fetchShopDetails(orderData.shopId);
+                    if (shopData && shopData.paymentMethods) {
+                        setPaymentMethods(shopData.paymentMethods);
                     }
                 }
             } catch (error) {
@@ -73,42 +64,80 @@ export default function Payment() {
                 setInitializing(false);
             }
         };
-        if (orderId) {
-            loadPaymentMethods();
-        } else {
-            setInitializing(false);
-        }
+        if (orderId) loadPaymentMethods();
+        else setInitializing(false);
     }, [orderId]);
 
     const handlePaymentSelection = async (methodName: string, methodId: string) => {
         setLoading(true);
         try {
-            let success = false;
             const methodIdNum = parseInt(methodId, 10);
+            const isPayPal = methodName.toLowerCase().includes('paypal');
 
-            if (isDeliveryPay) {
-                // Call the function for Delivery Fee
-                success = await submitDeliveryPayment(String(orderId), methodIdNum, amountValue);
-            } else {
-                // Call original function for Service Payment
-                success = await submitPayment(String(orderId), methodIdNum, amountValue);
-            }
-
-            if (success) {
-                // If payment is confirmed, navigate to receipt
-                router.push({
-                    pathname: "/payment/receipt",
-                    params: { 
-                        orderId: orderId, 
-                        amount: amountValue.toFixed(2), 
-                        method: methodName,
-                        // 🔑 Passing the flag used to determine which receipt to show
-                        isDelivery: isDeliveryPay ? 'true' : 'false', 
+            // ===========================================================
+            // 🟢 OPTION A: PAYPAL FLOW
+            // ===========================================================
+            if (isPayPal) {
+                // 1. Get Approval Link
+                const result = await initiatePayPalPayment(amountValue, orderId, isDeliveryPay);
+                
+                if (result.success && result.approvalUrl) {
+                    // 2. Open Browser
+                    await WebBrowser.openBrowserAsync(result.approvalUrl);
+                    
+                    // 3. Assume Success upon Return (Sandbox Logic)
+                    // In Prod, you'd verify via API here.
+                    
+                    // Submit backend record that "Paypal" was used
+                    // We call the same submission function to record the MethodID in database
+                    let confirmSuccess = false;
+                    if (isDeliveryPay) {
+                        confirmSuccess = await submitDeliveryPayment(String(orderId), methodIdNum, amountValue);
+                    } else {
+                        confirmSuccess = await submitPayment(String(orderId), methodIdNum, amountValue);
                     }
-                });
-            } else {
-                Alert.alert("Error", "Payment submission failed. Please try again.");
+
+                    if (confirmSuccess) {
+                        router.push({
+                            pathname: "/payment/receipt",
+                            params: { 
+                                orderId: orderId, 
+                                amount: amountValue.toFixed(2), 
+                                method: methodName,
+                                isDelivery: isDeliveryPay ? 'true' : 'false', 
+                            }
+                        });
+                    }
+                } else {
+                    Alert.alert("Error", "Could not initiate PayPal payment.");
+                }
+            } 
+            // ===========================================================
+            // 🟢 OPTION B: CASH / OTHER FLOW
+            // ===========================================================
+            else {
+                let success = false;
+                if (isDeliveryPay) {
+                    success = await submitDeliveryPayment(String(orderId), methodIdNum, amountValue);
+                } else {
+                    success = await submitPayment(String(orderId), methodIdNum, amountValue);
+                }
+
+                if (success) {
+                    router.push({
+                        pathname: "/payment/receipt",
+                        params: { 
+                            orderId: orderId, 
+                            amount: amountValue.toFixed(2), 
+                            method: methodName,
+                            isDelivery: isDeliveryPay ? 'true' : 'false', 
+                        }
+                    });
+                } else {
+                    Alert.alert("Error", "Payment submission failed.");
+                }
             }
+
         } catch (error) {
             console.error(error);
             Alert.alert("Error", "Network error occurred.");
@@ -121,7 +150,6 @@ export default function Payment() {
         const lowerName = name.toLowerCase();
         if (lowerName.includes('cash')) return <Ionicons name="cash-outline" size={28} color="#2ecc71" style={styles.icon} />;
         if (lowerName.includes('paypal')) return <Image source={{ uri: "https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_37x23.jpg" }} style={styles.logo} />;
-        if (lowerName.includes('gcash')) return <Image source={{ uri: "https://seeklogo.com/images/G/gcash-logo-E9313395F1-seeklogo.com.png" }} style={styles.logo} />; 
         return <Ionicons name="card-outline" size={28} color="#004aad" style={styles.icon} />;
     };
 

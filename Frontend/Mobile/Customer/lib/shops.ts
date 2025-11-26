@@ -59,6 +59,9 @@ export interface OwnDeliverySettings {
 // Interface for Linked 3rd Party Apps
 export interface LinkedApp {
     DlvryAppName: string;
+    AppBaseFare: number;
+    AppBaseKm: number;
+    AppDistanceRate: number;
 }
 
 export interface FullShopDetails {

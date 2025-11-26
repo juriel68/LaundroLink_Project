@@ -1,5 +1,4 @@
 // Backend/src/routes/analytics.js
-
 import express from "express";
 import db from "../db.js";
 
@@ -7,12 +6,12 @@ const router = express.Router();
 
 /**
  * ======================================================
- * SHOP OWNER ANALYTICS ROUTES (Existing)
+ * SHOP OWNER ANALYTICS ROUTES
  * ======================================================
  */
 
 /**
- * 1️⃣ DETAILED CUSTOMER SEGMENTS
+ * 1️⃣ DETAILED CUSTOMER SEGMENTS (From Python ML Table)
  * Endpoint: GET /api/analytics/segment-details/:shopId
  */
 router.get("/segment-details/:shopId", async (req, res) => {
@@ -20,15 +19,17 @@ router.get("/segment-details/:shopId", async (req, res) => {
     if (!shopId) return res.status(400).json({ error: "Shop ID is required." });
 
     try {
+        // Aggregates the individual rows created by the Python script
         const query = `
             SELECT 
                 SegmentName,
-                customerCount,
-                averageSpend,
-                averageFrequency,
-                averageRecency
+                COUNT(CustID) as customerCount,
+                ROUND(AVG(TotalSpend), 2) as averageSpend,
+                ROUND(AVG(Frequency), 1) as averageFrequency,
+                ROUND(AVG(Recency), 0) as averageRecency
             FROM Customer_Segments
             WHERE ShopID = ?
+            GROUP BY SegmentName
             ORDER BY customerCount DESC;
         `;
         const [segments] = await db.query(query, [shopId]);
@@ -40,7 +41,7 @@ router.get("/segment-details/:shopId", async (req, res) => {
 });
 
 /**
- * 2️⃣ POPULAR SERVICES
+ * 2️⃣ POPULAR SERVICES (Live Calculation)
  * Endpoint: GET /api/analytics/popular-services/:shopId
  */
 router.get("/popular-services/:shopId", async (req, res) => {
@@ -50,10 +51,13 @@ router.get("/popular-services/:shopId", async (req, res) => {
     try {
         const query = `
             SELECT 
-                SvcName,
-                orderCount
-            FROM Shop_Popular_Services
-            WHERE ShopID = ?
+                s.SvcName,
+                COUNT(ld.LndryDtlID) as orderCount
+            FROM Laundry_Details ld
+            JOIN Orders o ON ld.OrderID = o.OrderID
+            JOIN Services s ON ld.SvcID = s.SvcID
+            WHERE o.ShopID = ?
+            GROUP BY s.SvcName
             ORDER BY orderCount DESC
             LIMIT 5;
         `;
@@ -67,7 +71,7 @@ router.get("/popular-services/:shopId", async (req, res) => {
 
 
 /**
- * 3️⃣ BUSIEST TIMES
+ * 3️⃣ BUSIEST TIMES (Live Calculation)
  * Endpoint: GET /api/analytics/busiest-times/:shopId
  */
 router.get("/busiest-times/:shopId", async (req, res) => {
@@ -77,10 +81,15 @@ router.get("/busiest-times/:shopId", async (req, res) => {
     try {
         const query = `
             SELECT 
-                timeSlot, 
-                orderCount
-            FROM Shop_Busiest_Times
+                CASE 
+                    WHEN HOUR(OrderCreatedAt) BETWEEN 7 AND 11 THEN 'Morning (7am-12pm)'
+                    WHEN HOUR(OrderCreatedAt) BETWEEN 12 AND 16 THEN 'Afternoon (12pm-5pm)'
+                    ELSE 'Evening (5pm onwards)'
+                END AS timeSlot,
+                COUNT(*) as orderCount
+            FROM Orders
             WHERE ShopID = ?
+            GROUP BY timeSlot
             ORDER BY FIELD(timeSlot, 'Morning (7am-12pm)', 'Afternoon (12pm-5pm)', 'Evening (5pm onwards)');
         `;
         const [results] = await db.query(query, [shopId]);
@@ -93,40 +102,47 @@ router.get("/busiest-times/:shopId", async (req, res) => {
 
 /**
  * ======================================================
- * 4️⃣ ADMIN DASHBOARD - SYSTEM-WIDE KPIs
+ * 4️⃣ ADMIN DASHBOARD - SYSTEM-WIDE KPIs (Live Calculation)
  * Endpoint: GET /api/analytics/admin-dashboard-stats
- * Fetches pre-calculated data from the Python script.
  * ======================================================
  */
 router.get("/admin-dashboard-stats", async (req, res) => {
     try {
-        // 1. Fetch Key Performance Indicators (KPIs)
-        const kpiQuery = `
-            -- Fetch the single row of KPI data (MetricID=1)
-            SELECT totalOwners, activeShops, totalPaymentsProcessed, totalSystemUsers
-            FROM Admin_Growth_Metrics
-            WHERE MetricID = 1; 
-        `;
-        const [kpiResults] = await db.query(kpiQuery); 
-        const kpiData = kpiResults[0] || {}; 
-
-        // 2. Fetch Monthly Growth Data for the Chart (System Growth)
-        const growthQuery = `
+        // 1. Shop & User Stats
+        const [shopStats] = await db.query(`
             SELECT 
-                MonthYear as label, 
-                (NewUsers + NewOwners) as value 
-            FROM Admin_Monthly_Growth
-            ORDER BY MonthYear;
-        `;
-        const [chartData] = await db.query(growthQuery);
+                COUNT(DISTINCT OwnerID) as totalOwners,
+                COUNT(CASE WHEN ShopStatus = 'Open' THEN 1 END) as activeShops
+            FROM Laundry_Shops
+        `);
+
+        const [userStats] = await db.query(`SELECT COUNT(*) as totalUsers FROM Users`);
+
+        // 2. Revenue Stats (Service + Delivery)
+        const [revenueStats] = await db.query(`
+            SELECT 
+                (SELECT COALESCE(SUM(PayAmount), 0) FROM Invoices WHERE PaymentStatus = 'Paid') +
+                (SELECT COALESCE(SUM(DlvryAmount), 0) FROM Delivery_Payments WHERE DlvryPaymentStatus = 'Paid') 
+            AS totalPayments
+        `);
+
+        // 3. Monthly Growth Chart (Users Joined)
+        const [chartData] = await db.query(`
+            SELECT 
+                DATE_FORMAT(DateCreated, '%Y-%m') as label, 
+                COUNT(*) as value 
+            FROM Users
+            WHERE DateCreated >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+            GROUP BY label
+            ORDER BY label ASC
+        `);
         
-        // Combine and Send Response
         res.json({
-            totalOwners: kpiData.totalOwners || 0,
-            totalUsers: kpiData.totalSystemUsers || 0, 
-            activeShops: kpiData.activeShops || 0,
-            totalPayments: kpiData.totalPaymentsProcessed || 0, 
-            chartData: chartData || [] // Ensure it's an array
+            totalOwners: shopStats[0].totalOwners || 0,
+            activeShops: shopStats[0].activeShops || 0,
+            totalUsers: userStats[0].totalUsers || 0, 
+            totalPayments: parseFloat(revenueStats[0].totalPayments || 0), 
+            chartData: chartData || [] 
         });
 
     } catch (error) {
@@ -134,6 +150,5 @@ router.get("/admin-dashboard-stats", async (req, res) => {
         res.status(500).json({ error: "Failed to fetch admin stats" });
     }
 });
-
 
 export default router;

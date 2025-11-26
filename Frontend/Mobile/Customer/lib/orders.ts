@@ -13,7 +13,7 @@ export interface CreateOrderPayload {
     CustID: string;   // VARCHAR
     ShopID: number;   // INT
     SvcID: number;    // INT
-    deliveryId: number; // INT
+    deliveryTypeId: number; // INT
     weight: number; 
     instructions: string;
     fabrics: number[]; 
