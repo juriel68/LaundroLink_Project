@@ -13,6 +13,7 @@ export default function RootLayout() {
       <Stack.Screen name="+not-found" options={{}} />
       <Stack.Screen name="maintenance" options={{ headerShown: false }} />
       <Stack.Screen name="SetupProfile" options={{ title: "Setup Profile" }} />
+      <Stack.Screen name="ResetPassword" options={{ title: "Setup Profile" }} />
     </Stack>
   );
 }
