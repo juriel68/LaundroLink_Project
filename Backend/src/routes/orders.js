@@ -278,6 +278,7 @@ router.get("/shop/:shopId", async (req, res) => {
                 lds.DlvryStatus AS deliveryStatus,            
                 dp.DlvryPaymentStatus AS deliveryPaymentStatus,
                 dp.DlvryAmount AS deliveryAmount,
+                dp.PaymentProofImage AS deliveryProofImage,
                 pm.MethodName AS deliveryPaymentMethod,
                 dp.StatusUpdatedAt AS deliveryPaymentDate,
                 (SELECT ImageUrl FROM Delivery_Booking_Proofs WHERE OrderID = o.OrderID ORDER BY UploadedAt DESC LIMIT 1) AS deliveryProofImage
@@ -914,6 +915,7 @@ router.get("/overview/:shopId", async (req, res) => {
     }
 });
 
+
 router.post("/dashboard-summary", async (req, res) => {
     const { shopId, period = 'Weekly' } = req.body;
     if (!shopId) return res.status(400).json({ error: "Shop ID required" });
@@ -924,26 +926,80 @@ router.post("/dashboard-summary", async (req, res) => {
 
     try {
         await db.query("SET SESSION group_concat_max_len = 1000000;");
+        
         const query = `
             SELECT
+                -- 1. Counts
                 (SELECT COUNT(*) FROM Orders o WHERE o.ShopID = ? AND ${orderDateCondition}) AS totalOrders,
-                (SELECT SUM(i.PayAmount) FROM Orders o JOIN Invoices i ON o.OrderID = i.OrderID WHERE o.ShopID = ? AND ${orderDateCondition} AND i.PaymentStatus = 'Paid') AS totalRevenue,
-                (SELECT CONCAT('[', GROUP_CONCAT(JSON_OBJECT('label', label, 'value', revenue) ORDER BY sortKey), ']') FROM (
+                
+                (SELECT COUNT(*) FROM Orders o 
+                 JOIN Order_Status os ON o.OrderID = os.OrderID 
+                 WHERE o.ShopID = ? AND ${orderDateCondition} 
+                 AND os.OrderStatus = 'Completed'
+                 AND os.OrderUpdatedAt = (SELECT MAX(OrderUpdatedAt) FROM Order_Status WHERE OrderID = o.OrderID)
+                ) AS completedOrders,
+
+                (SELECT COUNT(*) FROM Orders o 
+                 JOIN Order_Status os ON o.OrderID = os.OrderID 
+                 WHERE o.ShopID = ? AND ${orderDateCondition} 
+                 AND os.OrderStatus IN ('Pending', 'Processing', 'For Delivery', 'Ready for Pickup', 'To Weigh')
+                 AND os.OrderUpdatedAt = (SELECT MAX(OrderUpdatedAt) FROM Order_Status WHERE OrderID = o.OrderID)
+                ) AS pendingOrders,
+
+                -- 2. Revenue
+                (SELECT COALESCE(SUM(i.PayAmount), 0) 
+                 FROM Orders o 
+                 JOIN Invoices i ON o.OrderID = i.OrderID 
+                 WHERE o.ShopID = ? AND ${orderDateCondition} AND i.PaymentStatus = 'Paid'
+                ) AS totalRevenue,
+
+                -- 3. Chart Data
+                (SELECT CONCAT('[', GROUP_CONCAT(JSON_OBJECT('label', label, 'value', revenue) ORDER BY sortKey), ']') 
+                 FROM (
                     SELECT ${chartGroupBy} AS sortKey, DATE_FORMAT(o.OrderCreatedAt, ${chartDateFormat}) AS label, SUM(i.PayAmount) AS revenue
                     FROM Orders o JOIN Invoices i ON o.OrderID = i.OrderID
                     WHERE o.ShopID = ? AND ${orderDateCondition} AND i.PaymentStatus = 'Paid'
                     GROUP BY sortKey, label
-                ) AS ChartData) AS chartData
+                 ) AS ChartData
+                ) AS chartData,
+
+                -- 4. Recent Orders (JSON Array)
+                (SELECT CONCAT('[', GROUP_CONCAT(
+                    JSON_OBJECT(
+                        'id', o.OrderID, 
+                        'customer', c.CustName, 
+                        'status', (SELECT os.OrderStatus FROM Order_Status os WHERE os.OrderID = o.OrderID ORDER BY os.OrderUpdatedAt DESC LIMIT 1), 
+                        'amount', i.PayAmount,
+                        'invoiceStatus', i.PaymentStatus
+                    ) ORDER BY o.OrderCreatedAt DESC
+                 ), ']')
+                 FROM (
+                    SELECT o.OrderID, o.OrderCreatedAt, o.CustID 
+                    FROM Orders o 
+                    WHERE o.ShopID = ? 
+                    ORDER BY o.OrderCreatedAt DESC LIMIT 5
+                 ) o
+                 JOIN Customers c ON o.CustID = c.CustID
+                 LEFT JOIN Invoices i ON o.OrderID = i.OrderID
+                ) AS recentOrders
         `;
-        const [[results]] = await db.query(query, [shopId, shopId, shopId]);
+
+        // We pass ShopID multiple times for each subquery
+        const params = [shopId, shopId, shopId, shopId, shopId, shopId];
+        const [[results]] = await db.query(query, params);
+
         res.json({
             totalOrders: results.totalOrders || 0,
+            completedOrders: results.completedOrders || 0,
+            pendingOrders: results.pendingOrders || 0,
             totalRevenue: results.totalRevenue || 0,
-            chartData: results.chartData ? JSON.parse(results.chartData) : []
+            chartData: results.chartData ? JSON.parse(results.chartData) : [],
+            recentOrders: results.recentOrders ? JSON.parse(results.recentOrders) : []
         });
+
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: "Failed" });
+        console.error("Dashboard Summary Error:", error);
+        res.status(500).json({ error: "Failed to fetch summary" });
     }
 });
 

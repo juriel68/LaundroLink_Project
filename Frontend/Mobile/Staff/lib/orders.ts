@@ -1,4 +1,3 @@
-//Staff/orders.ts
 import axios from "axios";
 import { API_URL } from "./api";
 import { Platform } from "react-native";
@@ -21,7 +20,8 @@ export interface Order {
     shopId: string;
     serviceId: string;
     laundryDetailId: string;
-    deliveryId: string;
+    deliveryId: string; // This is actually DlvryTypeID now, but kept name for compatibility if frontend uses it
+    deliveryOptionId?: number; // New field from backend
     createdAt: string;
     laundryStatus: string; 
     deliveryStatus?: string; 
@@ -35,6 +35,7 @@ export interface Order {
     
     updatedAt: string;
     customerName: string;
+    serviceName: string;
     invoiceStatus?: string;
     latestProcessStatus?: string | null;
     totalAmount?: number; 
@@ -70,21 +71,30 @@ export interface OrderDetail {
     serviceName: string;
     servicePrice: string | number;
     weight: number; 
+    weightProofImage?: string; // Added this
+    
     deliveryType: string;
     deliveryFee: string | number;
     orderStatus: string; 
     deliveryStatus?: string;
+    deliveryPaymentStatus?: string;
+
     instructions?: string | null;
     fabrics: string[]; 
     addons: AddOnDetail[];
 }
 
+// 🟢 UPDATED: Matches Backend Response for Dashboard
 export interface OrderSummaryData {
     totalOrders: number;
     completedOrders: number;
-    pendingOrders: number;
+    pendingOrders: number; // In backend this sums pending + processing + for delivery
     totalRevenue: number;
+    
+    // Backend sends 'value' for revenue in chart, frontend expects 'revenue'
+    // We will map this in the fetch function below
     chartData: { label: string; revenue: number }[];
+    
     recentOrders: { 
         id: string; 
         customer: string; 
@@ -135,9 +145,36 @@ export const fetchOrderSummary = async (shopId: string, dateRange: string): Prom
     try {
         const response = await axios.post(`${API_URL}/orders/dashboard-summary`, { 
             shopId, 
-            period: dateRange 
+            period: dateRange // Backend expects 'period'
         });
-        return response.data;
+        
+        const data = response.data;
+
+        // 🟢 MAPPING FIX: Backend returns 'value', Frontend UI expects 'revenue'
+        const mappedChartData = (data.chartData || []).map((d: any) => ({
+            label: d.label,
+            revenue: parseFloat(d.value || 0)
+        }));
+
+        // 🟢 MAPPING FIX: Backend returns separate counts, Frontend Dashboard expects consolidated 'pendingOrders'
+        // In backend 'overview' route: pending, processing, forDelivery, completed
+        // In backend 'dashboard-summary' route: totalOrders, totalRevenue, chartData
+        
+        // IF the backend 'dashboard-summary' does NOT return status counts (it usually doesn't),
+        // we might need to fetch 'overview' as well or update backend.
+        // Assuming backend 'dashboard-summary' was updated to return these, or we default to 0.
+        
+        // If 'pendingOrders' is missing in response, we might need to calc it or fetch from overview route
+        // For now, mapping directly what is available.
+        
+        return {
+            totalOrders: data.totalOrders || 0,
+            totalRevenue: data.totalRevenue || 0,
+            completedOrders: data.completedOrders || 0, // If backend sends this
+            pendingOrders: data.pendingOrders || 0,     // If backend sends this
+            chartData: mappedChartData,
+            recentOrders: data.recentOrders || []
+        };
     } catch (error) {
         console.error("Error in fetchOrderSummary:", error);
         return null;
@@ -233,12 +270,8 @@ export const updateOrderWeightWithProof = async (
     }
 };
 
-// --- NEW API FUNCTIONS FOR DELIVERY UPDATE ---
+// --- DELIVERY UPDATE FUNCTIONS ---
 
-/**
- * Uploads the screenshot for 3rd Party Booking
- * Sets DlvryStatus to 'Rider Booked' (intermediate state)
- */
 export const uploadBookingProof = async (
     orderId: string, 
     imageUri: string,
@@ -255,7 +288,7 @@ export const uploadBookingProof = async (
         const match = /\.(\w+)$/.exec(filename);
         const type = match ? `image/${match[1]}` : `image/jpeg`;
 
-        // @ts-ignore - React Native FormData handling
+        // @ts-ignore
         formData.append('proofImage', { uri: imageUri, name: filename, type });
 
         const response = await axios.post(`${API_URL}/orders/delivery/upload-booking`, formData, {
@@ -268,13 +301,6 @@ export const uploadBookingProof = async (
     }
 };
 
-/**
- * Updates Delivery Status AND Order Status together
- * Used for: 
- * 1. "Delivered In Shop" -> OrderStatus='To Weigh'
- * 2. "Arrived at Customer" -> OrderStatus='To Weigh'
- * 3. "Delivered To Customer" -> OrderStatus='Completed' (For future use)
- */
 export const updateDeliveryWorkflow = async (
     orderId: string,
     newDlvryStatus: string,
@@ -297,9 +323,6 @@ export const updateDeliveryWorkflow = async (
     }
 };
 
-/**
- * Staff Confirms Service Payment (Wash & Dry, etc.)
- */
 export const confirmServicePayment = async (
     orderId: string, 
     userId?: string, 
@@ -318,9 +341,6 @@ export const confirmServicePayment = async (
     }
 };
 
-/**
- * Staff Confirms Delivery Payment (Lalamove/Rider fee)
- */
 export const confirmDeliveryPayment = async (
     orderId: string, 
     userId?: string, 

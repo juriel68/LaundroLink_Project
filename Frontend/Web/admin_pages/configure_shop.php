@@ -227,11 +227,19 @@
     <script type="module">
         import { API_BASE_URL } from '../api.js'; 
 
+        // 🟢 CRITICAL UPDATE: READ URL PARAMS FIRST (ADMIN SUPPORT)
+        const urlParams = new URLSearchParams(window.location.search);
+        const adminShopId = urlParams.get('shop_id');
+
+        // Fallback to localStorage if no URL param (Normal Owner Flow)
         const loggedInUser = window.parent.localStorage.getItem('laundroUser') 
             ? JSON.parse(window.parent.localStorage.getItem('laundroUser'))
             : JSON.parse(localStorage.getItem('laundroUser'));
             
-        const SHOP_ID = loggedInUser?.ShopID;
+        // If adminShopId exists, use it. Otherwise use loggedInUser.ShopID
+        const SHOP_ID = adminShopId || loggedInUser?.ShopID;
+
+        console.log("Configuring Shop ID:", SHOP_ID); // Debugging
 
         // Global Data
         let globalServices = [], globalFabrics = [], globalAddOns = [], globalDeliveryTypes = [], globalDeliveryApps = [];
@@ -286,7 +294,6 @@
             btnPartner.className = "mode-btn";
 
             if (isPartnerActive) {
-                // Partner Active -> Lock In-House
                 btnPartner.classList.add('active');
                 btnInHouse.classList.add('locked');
                 panelPartner.style.display = 'block';
@@ -294,7 +301,6 @@
                 warningEl.textContent = "ℹ️ You are using 3rd Party Apps. To switch to In-House, you must UNLINK all apps first.";
             } 
             else if (isInHouseActive) {
-                // In-House Active -> Lock Partner
                 btnInHouse.classList.add('active');
                 btnPartner.classList.add('locked');
                 panelInHouse.style.display = 'block';
@@ -302,7 +308,6 @@
                 warningEl.textContent = "ℹ️ You are using In-House Delivery. To switch to 3rd Party Apps, click 'Disable / Unuse' first.";
             } 
             else {
-                // Neutral State
                 btnInHouse.classList.add('active');
                 panelInHouse.style.display = 'block';
                 panelPartner.style.display = 'none';
@@ -334,14 +339,10 @@
         };
 
         // --- LOGISTICS FETCH/SAVE LOGIC ---
-        
-        // A. In-House (Shop_Own_Service)
         async function fetchOwnDeliverySettings() {
             const data = await fetchData(':shopId/own-delivery');
             if (data && data.settings) {
-                // Check ShopServiceStatus
                 isInHouseActive = (data.settings.ShopServiceStatus === 'Active');
-                
                 document.getElementById('ownBaseFare').value = data.settings.ShopBaseFare;
                 document.getElementById('ownBaseKm').value = data.settings.ShopBaseKm;
                 document.getElementById('ownDistanceRate').value = data.settings.ShopDistanceRate;
@@ -373,7 +374,6 @@
 
         window.disableInHouse = async () => {
             if(!confirm("Disable In-House delivery? Your settings will be saved but the service will be inactive.")) return;
-            
             const payload = {
                 ShopID: SHOP_ID,
                 ShopBaseFare: document.getElementById('ownBaseFare').value,
@@ -381,7 +381,6 @@
                 ShopDistanceRate: document.getElementById('ownDistanceRate').value,
                 ShopServiceStatus: 'Inactive' 
             };
-            
             if(await fetchData('own-delivery', 'POST', payload)) {
                 displayMessage("In-house delivery disabled.");
                 fetchOwnDeliverySettings(); 
@@ -393,7 +392,6 @@
             const data = await fetchData(':shopId/delivery-apps');
             const tbody = document.querySelector('#linked-apps-table tbody');
             tbody.innerHTML = '';
-            
             if (!data?.apps?.length) { 
                 isPartnerActive = false;
                 tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No apps linked.</td></tr>'; 
@@ -539,7 +537,7 @@
             if(await fetchData('fabrics', 'POST', payload)) { displayMessage("Fabric added."); fetchShopFabrics(); }
         };
 
-        // --- 5. DELIVERY MODES (No Description) ---
+        // --- 5. DELIVERY MODES ---
         async function fetchDeliveryOptions() {
             const data = await fetchData(':shopId/delivery');
             const tbody = document.querySelector('#delivery-table tbody');
@@ -556,11 +554,9 @@
             if(await fetchData('delivery', 'POST', payload)) { displayMessage("Mode saved."); fetchDeliveryOptions(); }
         };
 
-        // NOTE: Added this because the button calls it
         window.deleteDeliveryOption = async (dlvryId) => {
-             // Since backend for DELETE /delivery/:id is not explicitly in shops.js above,
-             // this is a placeholder. You would need to add `router.delete("/delivery/:id" ...)` in shops.js
-             alert("To remove a mode, please update shops.js backend to include a DELETE route.");
+             // backend support for DELETE required
+             alert("To remove a mode, backend DELETE route required.");
         };
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -574,6 +570,9 @@
                         updateLogisticsUI();
                     });
                 });
+            } else {
+                console.error("No Shop ID found (Admin or Owner context missing).");
+                document.querySelector('.main-config-wrapper').innerHTML = '<h2 style="text-align:center;color:red;">Error: No Shop Selected</h2>';
             }
         });
     </script>

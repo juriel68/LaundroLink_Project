@@ -146,6 +146,7 @@
             <nav class="sidebar-nav">
                 <a data-page="dashboard" class="active"><i class="fas fa-home"></i> Dashboard</a> 
                 <a data-page="manage_users"><i class="fas fa-users"></i> Manage Users</a>
+                <a data-page="admin_shop"><i class="fas fa-users"></i> Shops</a>
                 <a data-page="monitor_activity"><i class="fas fa-desktop"></i> Monitor System Activity</a>
                 <a data-page="payment_processing"><i class="fas fa-dollar-sign"></i> Payment Processing</a>
                 <a data-page="system_settings"><i class="fas fa-cog"></i> System Settings</a>
@@ -253,7 +254,7 @@
             return;
         }
 
-        const iframePages = ['manage_users', 'monitor_activity', 'payment_processing', 'system_settings', 'data_security', 'reports', 'analytics'];
+        const iframePages = ['manage_users', 'admin_shop', 'monitor_activity', 'payment_processing', 'system_settings', 'data_security', 'reports', 'analytics'];
         if (iframePages.includes(page)) {
             const iframe = document.createElement('iframe');
             iframe.src = `admin_pages/${page}.php`;

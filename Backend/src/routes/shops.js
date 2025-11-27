@@ -21,7 +21,7 @@ router.get("/", async (req, res) => {
     try {
         const [shops] = await connection.query(`
             SELECT
-                LS.ShopID as id, LS.ShopName as name, LS.ShopAddress as address, 
+                LS.ShopID as id, LS.OwnerID, LS.ShopName as name, LS.ShopAddress as address, 
                 LS.ShopDescrp as description, LS.ShopImage_url as image_url, 
                 LS.ShopPhone as contact, LS.ShopOpeningHours as hours, 
                 LS.ShopStatus as availability,

@@ -334,7 +334,7 @@ router.post("/staff", async (req, res) => {
         );
 
         await connection.query(
-            `INSERT INTO Staff_Infos (StaffInfoID, StaffID, StaffAge, StaffAddress, StaffCellNo, StaffSalary) VALUES (?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO Staff_Infos (StaffID, StaffAge, StaffAddress, StaffCellNo, StaffSalary) VALUES (?, ?, ?, ?, ?)`,
             [newStaffID, StaffAge, StaffAddress, StaffCellNo, StaffSalary]
         );
 
