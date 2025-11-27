@@ -62,7 +62,7 @@ export default function Receipt() {
   const handleButtonPress = () => {
     if (status === 'Processing' || status === 'For Delivery') {
       // If active, go to the tracking screen
-      router.push({ pathname: "/(tabs)/activity/track_order", params: { orderId } });
+      router.push({ pathname: "/activity/track_order", params: { orderId } });
     } else {
       // If completed, cancelled, or rejected, go back
       navigation.goBack();

@@ -62,7 +62,7 @@ export default function Index() {
                     const user = JSON.parse(userJson);
                     // If session exists and profile is complete, go home.
                     if (user.phone && user.address && user.hasPassword !== false) {
-                        router.replace("/homepage/homepage");
+                        router.replace("/homepage");
                     } else {
                         // If incomplete, clear session and show login (so they can go through verification again)
                         await AsyncStorage.removeItem('user');
@@ -108,7 +108,7 @@ export default function Index() {
             // Fallback for existing users if backend decides no OTP needed (optional safety)
             else if (data.success && data.user) {
                 await AsyncStorage.setItem('user', JSON.stringify(data.user));
-                router.replace("/homepage/homepage");
+                router.replace("/homepage");
             } else {
                 Alert.alert("Error", data.message || "Failed to verify your Google account.");
             }
@@ -150,18 +150,7 @@ export default function Index() {
                     pathname: "/Verify", 
                     params: { userId: String(data.userId) } 
                 });
-            } 
-            // Standard Password Login (Direct)
-            else if (data.success && data.user) {
-                await AsyncStorage.setItem('user', JSON.stringify(data.user));
-                
-                // Check profile completeness for standard users
-                if (!data.user.phone || !data.user.address) {
-                    router.replace({ pathname: "/SetupProfile", params: { userId: data.user.UserID } });
-                } else {
-                    router.replace("/homepage/homepage");
-                }
-            } else {
+            }else {
                 Alert.alert("Error", data.message || "Could not complete login flow.");
             }
         } catch (error: any) {

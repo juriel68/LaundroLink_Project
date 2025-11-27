@@ -215,27 +215,54 @@ export async function fetchRawStatuses(
     }
 }
 
+
 /**
- * Confirms payment (e.g., Cash or GCash)
+ * Confirms payment (Service/Laundry)
+ * 🟢 UPDATED: Now accepts optional proofUri
  */
 export const submitPayment = async (
     orderId: string, 
     methodId: number, 
-    amount: number
+    amount: number,
+    proofUri?: string | null 
 ): Promise<boolean> => {
     try {
-        const response = await fetch(`${API_URL}/orders/customer/payment-submission`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderId, methodId, amount }),
-        });
+        // If proof exists, use FormData (Multipart). If not, use JSON.
+        if (proofUri) {
+            const formData = new FormData();
+            formData.append('orderId', orderId);
+            formData.append('methodId', methodId.toString());
+            formData.append('amount', amount.toString());
 
-        if (!response.ok) {
-            throw new Error('Failed to confirm payment');
+            // Append image
+            const filename = proofUri.split('/').pop() || 'proof.jpg';
+            const match = /\.(\w+)$/.exec(filename);
+            const type = match ? `image/${match[1]}` : `image/jpeg`;
+
+            formData.append('proofImage', { uri: proofUri, name: filename, type } as any);
+
+            const response = await fetch(`${API_URL}/orders/customer/payment-submission`, {
+                method: 'POST',
+                // Note: Content-Type header is NOT set manually for FormData; fetch does it automatically
+                body: formData,
+            });
+
+            if (!response.ok) throw new Error('Failed to upload payment proof');
+            const data = await response.json();
+            return data.success;
+
+        } else {
+            // Standard JSON (Cash)
+            const response = await fetch(`${API_URL}/orders/customer/payment-submission`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orderId, methodId, amount }),
+            });
+
+            if (!response.ok) throw new Error('Failed to confirm payment');
+            const data = await response.json();
+            return data.success;
         }
-        
-        const data = await response.json();
-        return data.success;
     } catch (error) {
         console.error("Error in submitPayment:", error);
         return false;
@@ -243,32 +270,56 @@ export const submitPayment = async (
 };
 
 /**
- * 🔑 NEW: Confirms delivery fee payment (Updates Delivery_Payments to 'Paid')
+ * Confirms payment (Delivery)
+ * 🟢 UPDATED: Now accepts optional proofUri
  */
 export const submitDeliveryPayment = async (
     orderId: string, 
     methodId: number, 
-    amount: number
+    amount: number,
+    proofUri?: string | null
 ): Promise<boolean> => {
     try {
-        const response = await fetch(`${API_URL}/orders/customer/delivery-payment-submission`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderId, methodId, amount }),
-        });
+        if (proofUri) {
+            const formData = new FormData();
+            formData.append('orderId', orderId);
+            formData.append('methodId', methodId.toString());
+            formData.append('amount', amount.toString());
 
-        if (!response.ok) {
-            throw new Error('Failed to confirm delivery payment');
+            const filename = proofUri.split('/').pop() || 'delivery_proof.jpg';
+            const match = /\.(\w+)$/.exec(filename);
+            const type = match ? `image/${match[1]}` : `image/jpeg`;
+
+            formData.append('proofImage', { uri: proofUri, name: filename, type } as any);
+
+            const response = await fetch(`${API_URL}/orders/customer/delivery-payment-submission`, {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!response.ok) throw new Error('Failed to upload delivery proof');
+            const data = await response.json();
+            return data.success;
+
+        } else {
+            // Standard JSON (Cash)
+            const response = await fetch(`${API_URL}/orders/customer/delivery-payment-submission`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orderId, methodId, amount }),
+            });
+
+            if (!response.ok) throw new Error('Failed to confirm delivery payment');
+            const data = await response.json();
+            return data.success;
         }
-        
-        const data = await response.json();
-        return data.success;
     } catch (error) {
         console.error("Error in submitDeliveryPayment:", error);
         return false;
     }
 };
 
+// ... (Rest of the file: cancelCustomerOrder, etc. remain unchanged) ...
 /**
  * Marks an existing order as 'Cancelled' via the status update route.
  */

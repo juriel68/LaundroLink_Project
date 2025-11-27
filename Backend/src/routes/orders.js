@@ -582,33 +582,109 @@ router.post("/weight/update-proof", upload.single("weightProof"), async (req, re
     }
 });
 
-// ... Payment Submissions (Customer) ...
-router.post("/customer/payment-submission", async (req, res) => {
+// 1. SERVICE PAYMENT SUBMISSION (Invoices Table)
+router.post("/customer/payment-submission", upload.single("proofImage"), async (req, res) => {
     const { orderId, methodId, amount } = req.body;
+    let proofUrl = null;
+
+    const connection = await db.getConnection();
     try {
-        await db.query(
-            "UPDATE Invoices SET MethodID = ?, PayAmount = ?, PaymentStatus = 'To Confirm', StatusUpdatedAt = NOW() WHERE OrderID = ?",
-            [methodId, amount, orderId]
+        await connection.beginTransaction();
+
+        // 🟢 CONSTRAINT: Check if already submitted or paid
+        const [existing] = await connection.query(
+            "SELECT PaymentStatus FROM Invoices WHERE OrderID = ?", 
+            [orderId]
         );
+
+        if (existing.length > 0) {
+            const status = existing[0].PaymentStatus;
+            if (status === 'To Confirm' || status === 'Paid') {
+                console.log(`Payment for ${orderId} already submitted/paid. Skipping update.`);
+                await connection.rollback();
+                return res.json({ success: true, message: "Payment already submitted." });
+            }
+        }
+
+        // Handle Image Upload (Only if status check passes)
+        if (req.file) {
+            const b64 = Buffer.from(req.file.buffer).toString("base64");
+            const dataURI = "data:" + req.file.mimetype + ";base64," + b64;
+            const uploadResult = await cloudinary.uploader.upload(dataURI, { folder: "laundrolink_payment_proofs" });
+            proofUrl = uploadResult.secure_url;
+        }
+
+        // Update Invoices Table
+        await connection.query(
+            `UPDATE Invoices 
+             SET MethodID = ?, PayAmount = ?, PaymentStatus = 'To Confirm', StatusUpdatedAt = NOW(), ProofImage = ? 
+             WHERE OrderID = ?`,
+            [methodId, amount, proofUrl, orderId]
+        );
+
+        await connection.commit();
         res.json({ success: true, message: "Payment submitted." });
+
     } catch (error) {
+        await connection.rollback();
+        console.error("Payment Submission Error:", error);
         res.status(500).json({ error: "Failed to submit payment." });
+    } finally {
+        connection.release();
     }
 });
 
-router.post("/customer/delivery-payment-submission", async (req, res) => {
-    const { orderId, methodId } = req.body;
+// 2. DELIVERY PAYMENT SUBMISSION (Delivery_Payments Table)
+router.post("/customer/delivery-payment-submission", upload.single("proofImage"), async (req, res) => {
+    const { orderId, methodId, amount } = req.body;
+    let proofUrl = null;
+
+    const connection = await db.getConnection();
     try {
-        await db.query(
-            "UPDATE Delivery_Payments SET MethodID = ?, DlvryPaymentStatus = 'To Confirm', StatusUpdatedAt = NOW() WHERE OrderID = ?",
-            [methodId, orderId]
+        await connection.beginTransaction();
+
+        // 🟢 CONSTRAINT: Check if already submitted or paid
+        const [existing] = await connection.query(
+            "SELECT DlvryPaymentStatus FROM Delivery_Payments WHERE OrderID = ?", 
+            [orderId]
         );
+
+        if (existing.length > 0) {
+            const status = existing[0].DlvryPaymentStatus;
+            if (status === 'To Confirm' || status === 'Paid') {
+                console.log(`Delivery Payment for ${orderId} already submitted/paid. Skipping update.`);
+                await connection.rollback();
+                return res.json({ success: true, message: "Delivery payment already submitted." });
+            }
+        }
+
+        // Handle Image Upload (Only if status check passes)
+        if (req.file) {
+            const b64 = Buffer.from(req.file.buffer).toString("base64");
+            const dataURI = "data:" + req.file.mimetype + ";base64," + b64;
+            const uploadResult = await cloudinary.uploader.upload(dataURI, { folder: "laundrolink_payment_proofs" });
+            proofUrl = uploadResult.secure_url;
+        }
+
+        // Update Delivery_Payments Table
+        await connection.query(
+            `UPDATE Delivery_Payments 
+             SET MethodID = ?, DlvryPaymentStatus = 'To Confirm', StatusUpdatedAt = NOW(), PaymentProofImage = ? 
+             WHERE OrderID = ?`,
+            [methodId, proofUrl, orderId]
+        );
+
+        await connection.commit();
         res.json({ success: true, message: "Delivery payment submitted." });
+
     } catch (error) {
+        await connection.rollback();
+        console.error("Delivery Payment Error:", error);
         res.status(500).json({ error: "Failed." });
+    } finally {
+        connection.release();
     }
 });
-
 
 // Staff Confirmations (Race Condition Handled)
 router.post("/staff/confirm-service-payment", async (req, res) => {

@@ -3,7 +3,7 @@ import { Stack } from "expo-router";
 export default function HomeStackLayout() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="homepage" />
+      <Stack.Screen name="index" />
       <Stack.Screen name="search_laundry" />
       <Stack.Screen name="about_laundry" />
       <Stack.Screen name="avail_services" />

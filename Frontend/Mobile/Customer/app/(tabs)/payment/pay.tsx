@@ -10,20 +10,22 @@ import {
     TouchableOpacity,
     View,
     Alert,
-    FlatList
+    FlatList,
+    Modal
 } from "react-native";
-// 🟢 IMPORT WebBrowser
 import * as WebBrowser from "expo-web-browser";
+import * as ImagePicker from 'expo-image-picker'; 
 
-// Imports
+// Custom Library Imports
 import { submitPayment, submitDeliveryPayment, fetchOrderDetails } from "@/lib/orders"; 
 import { fetchShopDetails, PaymentMethod } from "@/lib/shops"; 
-import { initiatePayPalPayment } from "@/lib/auth"; // 🟢 Imported new helper
+import { initiatePayPalPayment } from "@/lib/auth"; 
 
 export default function Payment() {
     const router = useRouter();
     const navigation = useNavigation();
     
+    // 1. Get Params
     const { orderId, amount, shopName, isDelivery } = useLocalSearchParams<{ 
         orderId: string, 
         amount: string, 
@@ -31,13 +33,21 @@ export default function Payment() {
         isDelivery: string 
     }>();
     
+    // 2. State Management
     const [loading, setLoading] = useState(false);
     const [initializing, setInitializing] = useState(true);
     const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+    
+    // Modal & Proof State
+    const [showProofModal, setShowProofModal] = useState(false);
+    const [proofImage, setProofImage] = useState<string | null>(null);
+    const [pendingMethodId, setPendingMethodId] = useState<number | null>(null);
+    const [pendingMethodName, setPendingMethodName] = useState<string>("");
 
     const isDeliveryPay = isDelivery === 'true';
     const amountValue = parseFloat(amount || "0"); 
 
+    // 3. Header Setup
     useLayoutEffect(() => {
         navigation.setOptions({
             headerShown: true,
@@ -47,6 +57,7 @@ export default function Payment() {
         });
     }, [navigation, isDeliveryPay]);
 
+    // 4. Load Shop Payment Methods
     useEffect(() => {
         const loadPaymentMethods = async () => {
             try {
@@ -68,81 +79,99 @@ export default function Payment() {
         else setInitializing(false);
     }, [orderId]);
 
-    const handlePaymentSelection = async (methodName: string, methodId: string) => {
+    // 5. Helper: Pick Image from Gallery
+    const pickImage = async () => {
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            quality: 0.8,
+        });
+
+        if (!result.canceled) {
+            setProofImage(result.assets[0].uri);
+        }
+    };
+
+    // 6. Helper: Finalize Payment to Backend (With or Without Image)
+    const finalizePayment = async (methodName: string, methodIdNum: number) => {
         setLoading(true);
         try {
-            const methodIdNum = parseInt(methodId, 10);
-            const isPayPal = methodName.toLowerCase().includes('paypal');
+            let confirmSuccess = false;
+            
+            // Pass the proofImage URI (or null) to the backend functions
+            if (isDeliveryPay) {
+                confirmSuccess = await submitDeliveryPayment(
+                    String(orderId), 
+                    methodIdNum, 
+                    amountValue, 
+                    proofImage // Pass image here
+                );
+            } else {
+                confirmSuccess = await submitPayment(
+                    String(orderId), 
+                    methodIdNum, 
+                    amountValue, 
+                    proofImage // Pass image here
+                );
+            }
 
-            // ===========================================================
-            // 🟢 OPTION A: PAYPAL FLOW
-            // ===========================================================
-            if (isPayPal) {
-                // 1. Get Approval Link
+            if (confirmSuccess) {
+                setShowProofModal(false); 
+                router.push({
+                    pathname: "/payment/receipt",
+                    params: { 
+                        orderId: orderId, 
+                        amount: amountValue.toFixed(2), 
+                        method: methodName,
+                        isDelivery: isDeliveryPay ? 'true' : 'false', 
+                    }
+                });
+            } else {
+                Alert.alert("Error", "Payment submission failed. Please try again.");
+            }
+        } catch (e) {
+            console.error(e);
+            Alert.alert("Error", "Network error during confirmation.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // 7. Handle Payment Method Click
+    const handlePaymentSelection = async (methodName: string, methodId: string) => {
+        const methodIdNum = parseInt(methodId, 10);
+        const isPayPal = methodName.toLowerCase().includes('paypal');
+
+        if (isPayPal) {
+            // --- PAYPAL FLOW ---
+            setLoading(true);
+            try {
+                // A. Request Link
                 const result = await initiatePayPalPayment(amountValue, orderId, isDeliveryPay);
                 
                 if (result.success && result.approvalUrl) {
-                    // 2. Open Browser
+                    // B. Open Browser
                     await WebBrowser.openBrowserAsync(result.approvalUrl);
                     
-                    // 3. Assume Success upon Return (Sandbox Logic)
-                    // In Prod, you'd verify via API here.
-                    
-                    // Submit backend record that "Paypal" was used
-                    // We call the same submission function to record the MethodID in database
-                    let confirmSuccess = false;
-                    if (isDeliveryPay) {
-                        confirmSuccess = await submitDeliveryPayment(String(orderId), methodIdNum, amountValue);
-                    } else {
-                        confirmSuccess = await submitPayment(String(orderId), methodIdNum, amountValue);
-                    }
-
-                    if (confirmSuccess) {
-                        router.push({
-                            pathname: "/payment/receipt",
-                            params: { 
-                                orderId: orderId, 
-                                amount: amountValue.toFixed(2), 
-                                method: methodName,
-                                isDelivery: isDeliveryPay ? 'true' : 'false', 
-                            }
-                        });
-                    }
+                    // C. On Return: Open Proof Modal
+                    // We assume user completed it if they closed the browser.
+                    setPendingMethodId(methodIdNum);
+                    setPendingMethodName(methodName);
+                    setProofImage(null); // Reset previous image
+                    setShowProofModal(true); 
                 } else {
                     Alert.alert("Error", "Could not initiate PayPal payment.");
                 }
-            } 
-            // ===========================================================
-            // 🟢 OPTION B: CASH / OTHER FLOW
-            // ===========================================================
-            else {
-                let success = false;
-                if (isDeliveryPay) {
-                    success = await submitDeliveryPayment(String(orderId), methodIdNum, amountValue);
-                } else {
-                    success = await submitPayment(String(orderId), methodIdNum, amountValue);
-                }
-
-                if (success) {
-                    router.push({
-                        pathname: "/payment/receipt",
-                        params: { 
-                            orderId: orderId, 
-                            amount: amountValue.toFixed(2), 
-                            method: methodName,
-                            isDelivery: isDeliveryPay ? 'true' : 'false', 
-                        }
-                    });
-                } else {
-                    Alert.alert("Error", "Payment submission failed.");
-                }
+            } catch (error) {
+                console.error(error);
+                Alert.alert("Error", "Network error occurred.");
+            } finally {
+                setLoading(false);
             }
-
-        } catch (error) {
-            console.error(error);
-            Alert.alert("Error", "Network error occurred.");
-        } finally {
-            setLoading(false);
+        } else {
+            // --- CASH / DIRECT FLOW ---
+            // Submit immediately without proof
+            finalizePayment(methodName, methodIdNum);
         }
     };
 
@@ -188,8 +217,57 @@ export default function Payment() {
                 ) : (
                     <Text style={styles.emptyText}>No payment methods available for this shop.</Text>
                 )}
-            
             </View>
+
+            {/* 🟢 PROOF UPLOAD MODAL */}
+            <Modal
+                visible={showProofModal}
+                animationType="slide"
+                transparent={true}
+                onRequestClose={() => setShowProofModal(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Payment Proof Required</Text>
+                        <Text style={styles.modalDesc}>
+                            Please attach a screenshot of your PayPal transaction to verify your payment.
+                        </Text>
+
+                        <TouchableOpacity style={styles.uploadBox} onPress={pickImage}>
+                            {proofImage ? (
+                                <Image source={{ uri: proofImage }} style={styles.previewImage} />
+                            ) : (
+                                <View style={styles.uploadPlaceholder}>
+                                    <Ionicons name="cloud-upload-outline" size={40} color="#aaa" />
+                                    <Text style={styles.uploadText}>Tap to Upload Image</Text>
+                                </View>
+                            )}
+                        </TouchableOpacity>
+
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity 
+                                style={styles.cancelBtn} 
+                                onPress={() => setShowProofModal(false)}
+                            >
+                                <Text style={styles.cancelText}>Cancel</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity 
+                                style={[styles.confirmBtn, !proofImage && { backgroundColor: '#ccc' }]} 
+                                disabled={!proofImage || loading}
+                                onPress={() => {
+                                    if (pendingMethodName && pendingMethodId) {
+                                        finalizePayment(pendingMethodName, pendingMethodId);
+                                    }
+                                }}
+                            >
+                                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmText}>Submit Proof</Text>}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
         </SafeAreaView>
     );
 }
@@ -199,31 +277,26 @@ const styles = StyleSheet.create({
     center: { justifyContent: 'center', alignItems: 'center' },
     content: { padding: 20, flex: 1 },
     amountTitle: { fontSize: 16, color: "#555", marginBottom: 5, textAlign: 'center' },
-    amount: {
-        fontSize: 36,
-        fontWeight: "bold",
-        color: "#004aad",
-        marginBottom: 30,
-        textAlign: 'center',
-    },
+    amount: { fontSize: 36, fontWeight: "bold", color: "#004aad", marginBottom: 30, textAlign: 'center' },
     subtitle: { fontSize: 16, fontWeight: "600", marginBottom: 15, color: '#333' },
-    optionCard: {
-        flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: "#fff",
-        padding: 20,
-        borderRadius: 16,
-        marginBottom: 15,
-        shadowColor: "#000",
-        shadowOpacity: 0.05,
-        shadowOffset: { width: 0, height: 2 },
-        shadowRadius: 4,
-        elevation: 2,
-        borderWidth: 1,
-        borderColor: '#eee'
-    },
+    optionCard: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", padding: 20, borderRadius: 16, marginBottom: 15, shadowColor: "#000", shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }, shadowRadius: 4, elevation: 2, borderWidth: 1, borderColor: '#eee' },
     optionText: { fontSize: 18, fontWeight: "600", marginLeft: 15, color: "#333" },
     logo: { width: 40, height: 40, resizeMode: "contain" },
     icon: { marginRight: 5 },
-    emptyText: { textAlign: 'center', color: '#888', marginTop: 20 }
+    emptyText: { textAlign: 'center', color: '#888', marginTop: 20 },
+    
+    // Modal Styles
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+    modalContent: { width: '85%', backgroundColor: '#fff', borderRadius: 20, padding: 25, alignItems: 'center', elevation: 5 },
+    modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#003366', marginBottom: 10 },
+    modalDesc: { fontSize: 14, color: '#666', textAlign: 'center', marginBottom: 20 },
+    uploadBox: { width: '100%', height: 200, backgroundColor: '#f0f0f0', borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 20, overflow: 'hidden', borderStyle: 'dashed', borderWidth: 1, borderColor: '#ccc' },
+    uploadPlaceholder: { alignItems: 'center' },
+    uploadText: { marginTop: 10, color: '#888' },
+    previewImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+    modalButtons: { flexDirection: 'row', gap: 15, width: '100%' },
+    cancelBtn: { flex: 1, padding: 15, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: '#ccc' },
+    confirmBtn: { flex: 1, padding: 15, borderRadius: 10, alignItems: 'center', backgroundColor: '#004aad' },
+    cancelText: { fontWeight: '600', color: '#555' },
+    confirmText: { fontWeight: '600', color: '#fff' }
 });

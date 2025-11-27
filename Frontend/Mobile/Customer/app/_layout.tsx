@@ -5,15 +5,15 @@ LogBox.ignoreAllLogs(true); // Ignore all log notifications
 
 export default function RootLayout() {
   return (
-    <Stack>
-      <Stack.Screen name="index" options={{ title: "Login" }} />
-      <Stack.Screen name="SignUp" options={{ title: "Sign-Up" }} />
-      <Stack.Screen name="Verify" options={{ title: "Verify" }} />
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="index"/>
+      <Stack.Screen name="SignUp" />
+      <Stack.Screen name="Verify" />
+      <Stack.Screen name="(tabs)" />
       <Stack.Screen name="+not-found" options={{}} />
-      <Stack.Screen name="maintenance" options={{ headerShown: false }} />
-      <Stack.Screen name="SetupProfile" options={{ title: "Setup Profile" }} />
-      <Stack.Screen name="ResetPassword" options={{ title: "Setup Profile" }} />
+      <Stack.Screen name="maintenance" />
+      <Stack.Screen name="SetupProfile" />
+      <Stack.Screen name="ResetPassword" />
     </Stack>
   );
 }

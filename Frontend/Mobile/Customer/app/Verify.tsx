@@ -52,7 +52,7 @@ export default function Verify() {
              });
         } else {
              console.log("Profile complete. Redirecting to Homepage...");
-             router.replace("/homepage/homepage");
+             router.replace("/homepage");
         }
 
       } else {

@@ -33,6 +33,7 @@ export default function ReceiptScreen() {
     isDelivery: string // 'true' or 'false'
   }>();
 
+
   const [order, setOrder] = useState<CustomerOrderDetails | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -50,6 +51,16 @@ export default function ReceiptScreen() {
     };
     loadData();
   }, [orderId]);
+
+  const handleOrderPress = (order: CustomerOrderDetails) => {
+          router.push({ 
+              pathname: "/activity/track_order", 
+              params: { 
+                  orderId: order.orderId, 
+                  status: order.orderStatus,
+              } 
+          });
+    };
 
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#2ecc71" /></View>;
   if (!order) return <View style={styles.center}><Text>Order not found</Text></View>;
@@ -202,10 +213,7 @@ export default function ReceiptScreen() {
             {/* Track Order Button */}
             <TouchableOpacity 
                 style={styles.trackButton} 
-                onPress={() => router.push({
-                    pathname: "/activity/track_order",
-                    params: { orderId: order.orderId }
-                })}
+                onPress={() => handleOrderPress(order)} 
             >
                 <Text style={styles.trackButtonText}>Track my Order</Text>
                 <Ionicons name="arrow-forward" size={20} color="#004aad" style={{marginLeft: 8}} />

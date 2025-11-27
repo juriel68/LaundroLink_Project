@@ -87,7 +87,7 @@ export default function SetupProfile() {
                 };
                 await saveSession(updatedUser);
 
-               router.replace("/homepage/homepage") 
+               router.replace("/homepage") 
              
             } else {
                 throw new Error("Update failed. Please try again.");

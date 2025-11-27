@@ -158,7 +158,7 @@ export default function OrderSummaryScreen() {
                 if (isDeliveryFeeUpfrontFlow) {
                     // 🔑 UPDATED PARAMS: Use the 'amount' and 'isDelivery' flag
                     router.replace({
-                        pathname: '/(tabs)/payment/pay', 
+                        pathname: '/payment/pay', 
                         params: { 
                             orderId: response.orderId, 
                             amount: finalDeliveryFee.toFixed(2), // Delivery Fee is the amount due NOW
@@ -179,7 +179,7 @@ export default function OrderSummaryScreen() {
                             { 
                                 text: "Track Your Order", 
                                 onPress: () => router.replace({
-                                    pathname: '/(tabs)/activity/track_order',
+                                    pathname: '/activity/track_order',
                                     params: { orderId: response.orderId }
                                 })
                             },

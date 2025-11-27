@@ -233,7 +233,7 @@ export default function ProfileScreen() {
                     headerStyle: { backgroundColor: "#6EC1E4" },
                     headerShadowVisible: false,
                     headerTintColor: "#fff",
-                    headerLeft: () => ( <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.push('/homepage/homepage')}><Ionicons name="arrow-back" size={24} color="#fff" style={{ marginLeft: 10 }} /></TouchableOpacity> ),
+                    headerLeft: () => ( <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.push('/homepage/index')}><Ionicons name="arrow-back" size={24} color="#fff" style={{ marginLeft: 10 }} /></TouchableOpacity> ),
                     headerTitle: () => ( <Text style={{ color: "#fff", fontSize: 20, fontWeight: "700", marginLeft: 20 }}>Profile</Text> ),
                     headerRight: () => ( <TouchableOpacity onPress={handleLogout} style={{ marginRight: 15 }}><Ionicons name="log-out-outline" size={28} color="red" /></TouchableOpacity> ),
                 }}

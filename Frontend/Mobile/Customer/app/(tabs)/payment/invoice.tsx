@@ -191,7 +191,7 @@ export default function InvoiceScreen() {
                 onPress={() => {
                     // Navigate to the specific payment processing screen
                     router.push({
-                        pathname: "/(tabs)/payment/pay",
+                        pathname: "/payment/pay",
                         params: { 
                             orderId: order.orderId,
                             shopName: order.shopName,
