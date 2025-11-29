@@ -180,18 +180,20 @@ export default function AboutLaundry() {
       <View style={styles.wrapper}>
         <ScrollView contentContainerStyle={styles.container}>
           
-          {imageUrl ? (
-              <Image 
-                source={{ uri: imageUrl.replace('http://', 'https://') }} 
-                style={styles.image} 
-                onError={(e) => console.error("Image load error:", e.nativeEvent.error)}
-              />
-            ) : (
-              <View style={[styles.image, styles.noImage]}>
-                <Ionicons name="image-outline" size={50} color="#ccc" />
-                <Text style={{ color: '#ccc', marginTop: 5 }}>No Image</Text>
-              </View>
-            )}
+          {/* 🟢 UPDATED: Centered Logo Container */}
+          <View style={styles.logoContainer}>
+            {imageUrl ? (
+                <Image 
+                  source={{ uri: imageUrl.replace('http://', 'https://') }} 
+                  style={styles.logoImage} // 🟢 New Style Class
+                  onError={(e) => console.error("Image load error:", e.nativeEvent.error)}
+                />
+              ) : (
+                <View style={[styles.logoImage, styles.noImage]}>
+                  <Ionicons name="image-outline" size={40} color="#ccc" />
+                </View>
+              )}
+          </View>
 
           <Text style={styles.title}>{currentShop.name}</Text>
           <Text style={styles.info}>
@@ -272,8 +274,28 @@ const styles = StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: "#f6f6f6" },
   centered: { justifyContent: "center", alignItems: "center", flex: 1, padding: 20 },
   container: { alignItems: "center", padding: 20, paddingBottom: 100 },
-  image: { width: '100%', height: 200, borderRadius: 12, marginBottom: 15, resizeMode: 'cover' },
-  noImage: { width: '100%', height: 200, borderRadius: 12, marginBottom: 15, backgroundColor: '#e0e0e0', justifyContent: 'center', alignItems: 'center' },
+  // 🟢 UPDATED IMAGE STYLES
+  logoContainer: {
+      marginBottom: 15,
+      shadowColor: "#000",
+      shadowOpacity: 0.1,
+      shadowOffset: { width: 0, height: 4 },
+      shadowRadius: 6,
+      elevation: 5,
+  },
+  logoImage: { 
+      width: 200, 
+      height: 200, 
+      borderRadius: 30, // Makes it a circle
+      resizeMode: 'cover',
+      borderWidth: 3,
+      borderColor: '#fff',
+  },
+  noImage: { 
+      backgroundColor: '#e0e0e0', 
+      justifyContent: 'center', 
+      alignItems: 'center' 
+  },
   title: { fontSize: 24, fontWeight: "bold", textAlign: "center", color: '#1c3d63' },
   info: { fontSize: 16, color: "#555", marginTop: 5 },
   availability: { fontSize: 16, marginTop: 8, fontWeight: "700", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, overflow: 'hidden' },

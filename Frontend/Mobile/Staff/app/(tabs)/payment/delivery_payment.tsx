@@ -59,7 +59,7 @@ export default function DeliveryPaymentScreen() {
         deliveryAmount: order.deliveryAmount,
         deliveryPaymentMethod: order.deliveryPaymentMethod || "",
         deliveryPaymentDate: order.deliveryPaymentDate || "",
-        deliveryProofImage: order.deliveryProofImage || ""
+        deliveryPaymentProofImage: order.deliveryPaymentProofImage || ""
       }
     });
   };

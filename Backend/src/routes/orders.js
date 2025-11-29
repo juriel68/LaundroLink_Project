@@ -161,13 +161,15 @@ router.get("/customer/:customerId", async (req, res) => {
                 o.OrderID AS id,
                 o.OrderCreatedAt AS createdAt,
                 ls.ShopName AS shopName,
+                ls.ShopImage_url AS shopImage,
                 s.SvcName AS serviceName,
                 los.OrderStatus AS status,
                 i.PayAmount AS totalAmount,
                 i.PaymentStatus AS invoiceStatus,
                 dp.DlvryAmount AS deliveryAmount,
                 dp.DlvryPaymentStatus AS deliveryPaymentStatus,
-                lds.DlvryStatus AS deliveryStatus
+                lds.DlvryStatus AS deliveryStatus,
+                 CASE WHEN cr.CustRateID IS NOT NULL THEN 1 ELSE 0 END AS isRated
             FROM Orders o
             JOIN LatestOrderStatus los ON o.OrderID = los.OrderID AND los.rn = 1
             LEFT JOIN LatestDeliveryStatus lds ON o.OrderID = lds.OrderID AND lds.drn = 1
@@ -176,14 +178,101 @@ router.get("/customer/:customerId", async (req, res) => {
             JOIN Laundry_Shops ls ON o.ShopID = ls.ShopID
             LEFT JOIN Invoices i ON o.OrderID = i.OrderID
             LEFT JOIN Delivery_Payments dp ON o.OrderID = dp.OrderID
+            LEFT JOIN Customer_Ratings cr ON o.OrderID = cr.OrderID
             WHERE o.CustID = ? 
             ORDER BY o.OrderCreatedAt DESC;
         `;
         const [rows] = await db.query(query, [customerId]);
-        res.json(rows);
+
+        const formattedRows = rows.map(row => ({
+            ...row,
+            isRated: row.isRated === 1
+        }));
+
+        res.json(formattedRows)
     } catch (error) {
         console.error("[ERROR] Error fetching customer orders:", error);
         res.status(500).json({ error: "Failed to fetch customer orders" });
+    }
+});
+
+router.post("/rate", async (req, res) => {
+    const { orderId, rating, comment } = req.body;
+
+    if (!orderId || !rating) {
+        return res.status(400).json({ message: "Order ID and Rating are required." });
+    }
+
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // 1. Check if already rated
+        const [existing] = await connection.query("SELECT CustRateID FROM Customer_Ratings WHERE OrderID = ?", [orderId]);
+        if (existing.length > 0) {
+            await connection.rollback();
+            return res.status(409).json({ message: "Order already rated." });
+        }
+
+        // 2. Insert Customer Rating
+        await connection.query(
+            "INSERT INTO Customer_Ratings (OrderID, CustRating, CustComment) VALUES (?, ?, ?)",
+            [orderId, rating, comment || null]
+        );
+
+        // 3. Get ShopID associated with this Order
+        const [orderInfo] = await connection.query("SELECT ShopID FROM Orders WHERE OrderID = ?", [orderId]);
+        
+        if (orderInfo.length > 0) {
+            const shopId = orderInfo[0].ShopID;
+
+            // 4. Calculate New Average Rating for the Shop
+            const [avgResult] = await connection.query(`
+                SELECT AVG(cr.CustRating) as newAverage
+                FROM Customer_Ratings cr
+                JOIN Orders o ON cr.OrderID = o.OrderID
+                WHERE o.ShopID = ?
+            `, [shopId]);
+
+            const newAverage = parseFloat(avgResult[0].newAverage || rating).toFixed(1);
+
+            // 5. Update or Insert into Shop_Rates (Current Display Rating)
+            const [rateRow] = await connection.query("SELECT ShopRevID FROM Shop_Rates WHERE ShopID = ?", [shopId]);
+            
+            let shopRevId;
+
+            if (rateRow.length > 0) {
+                // Update existing entry
+                shopRevId = rateRow[0].ShopRevID;
+                await connection.query(
+                    "UPDATE Shop_Rates SET ShopRating = ? WHERE ShopRevID = ?", 
+                    [newAverage, shopRevId]
+                );
+            } else {
+                // Create new entry if first rating
+                const [insertRes] = await connection.query(
+                    "INSERT INTO Shop_Rates (ShopID, ShopRating) VALUES (?, ?)", 
+                    [shopId, newAverage]
+                );
+                shopRevId = insertRes.insertId;
+            }
+
+            // 6. Insert into Shop_Rate_Stats (Historical Log)
+            await connection.query(
+                "INSERT INTO Shop_Rate_Stats (ShopRevID, InitialRating, UpdatedAt) VALUES (?, ?, NOW())",
+                [shopRevId, newAverage]
+            );
+        }
+
+        await connection.commit();
+        res.json({ success: true, message: "Rating submitted and shop updated." });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("Rating Error:", error);
+        res.status(500).json({ message: "Failed to submit rating." });
+    } finally {
+        connection.release();
     }
 });
 
@@ -266,7 +355,7 @@ router.get("/shop/:shopId", async (req, res) => {
                 o.ShopID AS shopId,
                 ld.SvcID AS serviceId,
                 ld.LndryDtlID AS laundryDetailId,
-                ld.DlvryTypeID AS deliveryOptionId, -- 🟢 UPDATED
+                ld.DlvryTypeID AS deliveryOptionId,
                 o.OrderCreatedAt AS createdAt,
                 los.OrderStatus AS laundryStatus,
                 los.OrderUpdatedAt AS updatedAt,
@@ -274,11 +363,13 @@ router.get("/shop/:shopId", async (req, res) => {
                 s.SvcName AS serviceName,
                 i.PaymentStatus as invoiceStatus,
                 i.PayAmount as totalAmount, 
+                i.ProofImage AS invoiceProofImage,
+                pm_inv.MethodName AS invoicePaymentMethod,
                 (SELECT op.OrderProcStatus FROM Order_Processing op WHERE op.OrderID = o.OrderID ORDER BY op.OrderProcUpdatedAt DESC LIMIT 1) AS latestProcessStatus,
                 lds.DlvryStatus AS deliveryStatus,            
                 dp.DlvryPaymentStatus AS deliveryPaymentStatus,
                 dp.DlvryAmount AS deliveryAmount,
-                dp.PaymentProofImage AS deliveryProofImage,
+                dp.PaymentProofImage AS deliveryPaymentProofImage,
                 pm.MethodName AS deliveryPaymentMethod,
                 dp.StatusUpdatedAt AS deliveryPaymentDate,
                 (SELECT ImageUrl FROM Delivery_Booking_Proofs WHERE OrderID = o.OrderID ORDER BY UploadedAt DESC LIMIT 1) AS deliveryProofImage
@@ -291,6 +382,7 @@ router.get("/shop/:shopId", async (req, res) => {
             LEFT JOIN Delivery_Payments dp ON o.OrderID = dp.OrderID
             LEFT JOIN Payment_Methods pm ON dp.MethodID = pm.MethodID
             LEFT JOIN Invoices i ON o.OrderID = i.OrderID
+            LEFT JOIN Payment_Methods pm_inv ON i.MethodID = pm_inv.MethodID
             WHERE o.ShopID = ? 
             ORDER BY o.OrderCreatedAt DESC;
             `,
@@ -308,7 +400,6 @@ router.get("/:orderId", async (req, res) => {
     const { orderId } = req.params;
     const connection = await db.getConnection();
     try {
-        // 🟢 UPDATED QUERY: Removed Shop_Delivery_Options join, joined Delivery_Types directly
         const orderQuery = `
             SELECT 
                 o.OrderID AS orderId,
@@ -321,31 +412,46 @@ router.get("/:orderId", async (req, res) => {
                 ls.ShopAddress AS shopAddress,
                 ls.ShopPhone AS shopPhone,
                 i.InvoiceID AS invoiceId,
+                i.ProofImage AS invoiceProofImage,
                 ld.SvcID AS serviceId,
                 s.SvcName AS serviceName,
                 CAST(ss.SvcPrice AS DECIMAL(10, 2)) AS servicePrice, 
                 CAST(ld.Kilogram AS DECIMAL(5, 1)) AS weight, 
                 ld.SpecialInstr AS instructions,
                 ld.WeightProofImage AS weightProofImage,
-                dt.DlvryTypeName AS deliveryType, -- 🟢 Fetched from Delivery_Types directly
+                dt.DlvryTypeName AS deliveryType, 
                 CAST(dp.DlvryAmount AS DECIMAL(10, 2)) AS deliveryFee, 
                 CAST(i.PayAmount AS DECIMAL(10, 2)) AS totalAmount,
                 PM.MethodName AS paymentMethodName, 
                 (SELECT os.OrderStatus FROM Order_Status os WHERE os.OrderID = o.OrderID ORDER BY os.OrderUpdatedAt DESC LIMIT 1) AS orderStatus,
                 i.PaymentStatus as invoiceStatus,
                 (SELECT DlvryStatus FROM Delivery_Status WHERE OrderID = o.OrderID ORDER BY UpdatedAt DESC LIMIT 1) AS deliveryStatus,
-                dp.DlvryPaymentStatus AS deliveryPaymentStatus
+                dp.DlvryPaymentStatus AS deliveryPaymentStatus,
+
+                -- 🟢 NEW: Check if Shop has Active In-House Service
+                CASE WHEN sos.ShopServiceStatus = 'Active' THEN 1 ELSE 0 END AS isShopOwnService,
+
+                -- 🟢 NEW: Fetch Linked Partner App Name (if any)
+                (SELECT GROUP_CONCAT(da.DlvryAppName SEPARATOR ' / ') 
+                 FROM Shop_Delivery_App sda 
+                 JOIN Delivery_App da ON sda.DlvryAppID = da.DlvryAppID 
+                 WHERE sda.ShopID = o.ShopID
+                ) AS partnerAppName
+
             FROM Orders o
             JOIN Laundry_Details ld ON o.OrderID = ld.OrderID
             LEFT JOIN Customers c ON o.CustID = c.CustID
             LEFT JOIN Laundry_Shops ls ON o.ShopID = ls.ShopID
             LEFT JOIN Services s ON ld.SvcID = s.SvcID
             LEFT JOIN Shop_Services ss ON o.ShopID = ss.ShopID AND ld.SvcID = ss.SvcID
-            -- 🟢 JOIN DIRECTLY TO DELIVERY TYPES VIA LAUNDRY DETAILS
             LEFT JOIN Delivery_Types dt ON ld.DlvryTypeID = dt.DlvryTypeID 
             LEFT JOIN Invoices i ON o.OrderID = i.OrderID 
             LEFT JOIN Payment_Methods PM ON i.MethodID = PM.MethodID
             LEFT JOIN Delivery_Payments dp ON o.OrderID = dp.OrderID
+            
+            -- 🟢 NEW JOIN to check logistics settings
+            LEFT JOIN Shop_Own_Service sos ON o.ShopID = sos.ShopID
+
             WHERE o.OrderID = ?;
         `;
         const [[orderDetails]] = await connection.query(orderQuery, [orderId]);
@@ -375,6 +481,8 @@ router.get("/:orderId", async (req, res) => {
 
         res.json({
             ...orderDetails,
+            deliveryProvider: orderDetails.isShopOwnService === 1 ? "In-House Delivery" : (orderDetails.partnerAppName || "Partner Courier"),
+            isOwnService: orderDetails.isShopOwnService === 1, 
             fabrics: fabrics.map(f => f.FabricType),
             addons: addons.map(a => ({ name: a.AddOnName, price: a.AddOnPrice }))
         });
@@ -385,6 +493,7 @@ router.get("/:orderId", async (req, res) => {
         connection.release();
     }
 });
+
 
 // =================================================================
 // API Routes: Actions (Status, Weight, Payment)
@@ -773,13 +882,35 @@ router.post("/delivery/upload-booking", upload.single("proofImage"), async (req,
     try {
         await connection.beginTransaction();
 
+        // Image Upload
         const b64 = Buffer.from(req.file.buffer).toString("base64");
         const dataURI = "data:" + req.file.mimetype + ";base64," + b64;
         const uploadResult = await cloudinary.uploader.upload(dataURI, { folder: "laundrolink_delivery_proofs" });
 
-        await connection.query(
-            "INSERT INTO Delivery_Status (OrderID, DlvryStatus, UpdatedAt) VALUES (?, 'Rider Booked', NOW())",
+        // Default to Pick-up status
+        let newStatus = 'Rider Booked To Pick-up';
+
+        // Check current status in DB
+        const [rows] = await connection.query(
+            "SELECT DlvryStatus FROM Delivery_Status WHERE OrderID = ? ORDER BY UpdatedAt DESC LIMIT 1", 
             [orderId]
+        );
+
+        if (rows.length > 0) {
+            const currentStatus = rows[0].DlvryStatus;
+            
+            // If the laundry is already processed and marked 'For Delivery', this booking must be for the return trip
+            if (currentStatus === 'For Delivery') {
+                newStatus = 'Rider Booked For Delivery';
+            }
+        }
+
+        console.log(`Setting Delivery Status to: ${newStatus}`);
+
+        // Insert new specific status
+        await connection.query(
+            "INSERT INTO Delivery_Status (OrderID, DlvryStatus, UpdatedAt) VALUES (?, ?, NOW())",
+            [orderId, newStatus]
         );
         
         await connection.query(
@@ -787,10 +918,11 @@ router.post("/delivery/upload-booking", upload.single("proofImage"), async (req,
             [orderId, uploadResult.secure_url]
         );
 
-        await logUserActivity(userId, userRole, 'Delivery Booking', `Proof uploaded for Order ${orderId}`);
+        await logUserActivity(userId, userRole, 'Delivery Booking', `Proof uploaded for Order ${orderId}. Status: ${newStatus}`);
 
         await connection.commit();
-        res.json({ success: true });
+        res.json({ success: true, status: newStatus });
+
     } catch (error) {
         await connection.rollback();
         console.error("Error uploading booking proof:", error);

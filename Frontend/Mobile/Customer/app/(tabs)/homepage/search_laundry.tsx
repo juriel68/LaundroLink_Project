@@ -8,7 +8,7 @@ import * as Location from 'expo-location';
 import { useFocusEffect } from 'expo-router';
 
 const PLACEHOLDER_IMAGE = "https://via.placeholder.com/150?text=Shop+Image";
-const suggestions = ["Wash & Dry", "Sparklean", "Full Service"];
+const suggestions = ["Wash & Dry", "Sparklean"];
 
 export default function SearchLaundryScreen() {
     const navigation = useNavigation();

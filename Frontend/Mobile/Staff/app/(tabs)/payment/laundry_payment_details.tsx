@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -13,39 +13,46 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from "@expo/vector-icons";
 import Header from "@/components/Header";
-import { confirmDeliveryPayment } from "@/lib/orders";
+import { confirmServicePayment, fetchOrderDetails, OrderDetail } from "@/lib/orders";
 import { getCurrentUser } from "@/lib/auth";
 
-// Helper to safely parse amounts
 const parseAmount = (value: string | number | undefined | string[]): number => {
   const numericValue = parseFloat(String(value));
   return !isNaN(numericValue) ? numericValue : 0;
 };
 
-export default function DeliveryPaymentDetailsScreen() {
+export default function LaundryPaymentDetailsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const [loading, setLoading] = useState(false);
+  const { orderId, proofImage } = params; // Get image passed from previous screen if available
 
-  // Destructure params passed from the list
-  const { 
-    orderId, 
-    customerName, 
-    deliveryAmount, 
-    deliveryPaymentMethod, 
-    deliveryPaymentDate, 
-    deliveryPaymentProofImage 
-  } = params;
+  const [loading, setLoading] = useState(false);
+  const [fetchedDetails, setFetchedDetails] = useState<OrderDetail | null>(null);
+  const [imageLoading, setImageLoading] = useState(true); // For smoother image loading
 
   const user = getCurrentUser();
   const userId = user?.UserID || "Staff";
 
+  // Optional: Fetch fresh details if needed, otherwise rely on params
+  useEffect(() => {
+      const loadFreshDetails = async () => {
+          // If proofImage wasn't passed correctly, try fetching full details
+          if (!proofImage || proofImage === 'undefined') {
+             try {
+                 const data = await fetchOrderDetails(String(orderId));
+                 setFetchedDetails(data);
+             } catch(e) { console.error(e); }
+          }
+      };
+      if(orderId) loadFreshDetails();
+  }, [orderId, proofImage]);
+
   const handleConfirm = async () => {
     setLoading(true);
     try {
-      const success = await confirmDeliveryPayment(String(orderId), userId, "Cashier");
+      const success = await confirmServicePayment(String(orderId), userId, "Cashier");
       if (success) {
-        Alert.alert("Success", "Delivery payment confirmed!", [
+        Alert.alert("Success", "Laundry service payment confirmed!", [
           { text: "OK", onPress: () => router.back() }
         ]);
       } else {
@@ -59,19 +66,37 @@ export default function DeliveryPaymentDetailsScreen() {
     }
   };
 
+  // Determine values to display (Prioritize fetched data -> Params)
+  const displayAmount = fetchedDetails?.totalAmount || params.totalAmount;
+  const displayCustomer = fetchedDetails?.customerName || params.customerName;
+  const displayMethod = fetchedDetails?.paymentMethodName || params.paymentMethodName;
+  const displayStatus = fetchedDetails?.invoiceStatus || params.paymentStatus;
+  
+  // Handle Proof Image Logic
+  // 1. Use param if valid
+  // 2. Use fetched detail if valid
+  // 3. Fallback to null
+  let finalProofImage = null;
+  if (proofImage && proofImage !== 'null' && proofImage !== 'undefined') {
+      finalProofImage = String(proofImage);
+  } else if (fetchedDetails?.invoiceProofImage) {
+      finalProofImage = fetchedDetails.invoiceProofImage;
+  }
+
   return (
     <SafeAreaView style={styles.container}>
-      <Header title="Review Payment" showBack={true} />
+      <Header title="Review Service Payment" showBack={true} />
       
       <ScrollView contentContainerStyle={styles.content}>
         {/* Proof Image Section */}
         <Text style={styles.sectionLabel}>Payment Proof</Text>
         <View style={styles.imageContainer}>
-          {deliveryPaymentProofImage ? (
+          {finalProofImage ? (
             <Image 
-              source={{ uri: String(deliveryPaymentProofImage) }} 
+              source={{ uri: finalProofImage }} 
               style={styles.proofImage} 
               resizeMode="contain"
+              onLoadEnd={() => setImageLoading(false)}
             />
           ) : (
             <View style={styles.noImagePlaceholder}>
@@ -79,23 +104,26 @@ export default function DeliveryPaymentDetailsScreen() {
               <Text style={styles.noImageText}>No Proof Image Uploaded</Text>
             </View>
           )}
+          {/* Activity Indicator for Image */}
+          {finalProofImage && imageLoading && (
+             <View style={styles.loadingOverlay}>
+                 <ActivityIndicator color="#004aad" />
+             </View>
+          )}
         </View>
 
         {/* Details Section */}
         <View style={styles.card}>
           <DetailRow label="Order ID" value={`#${orderId}`} />
-          <DetailRow label="Customer" value={String(customerName)} />
-          <DetailRow label="Payment Method" value={deliveryPaymentMethod ? String(deliveryPaymentMethod) : "N/A"} />
-          <DetailRow 
-            label="Submitted At" 
-            value={deliveryPaymentDate ? new Date(String(deliveryPaymentDate)).toLocaleString() : "N/A"} 
-          />
+          <DetailRow label="Customer" value={String(displayCustomer)} />
+          <DetailRow label="Payment Method" value={displayMethod ? String(displayMethod) : "N/A"} />
+          <DetailRow label="Status" value={String(displayStatus)} />
           
           <View style={styles.divider} />
           
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Amount Received</Text>
-            <Text style={styles.totalValue}>₱{parseAmount(deliveryAmount).toFixed(2)}</Text>
+            <Text style={styles.totalValue}>₱{parseAmount(displayAmount).toFixed(2)}</Text>
           </View>
         </View>
       </ScrollView>
@@ -147,15 +175,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 5,
     elevation: 3,
-    height: 300, 
+    height: 400, // Made simpler/taller for better view
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#eee',
+    position: 'relative'
   },
   proofImage: { width: '100%', height: '100%' },
   noImagePlaceholder: { alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%', backgroundColor: '#f0f0f0' },
   noImageText: { color: '#999', marginTop: 8, fontSize: 14 },
+  loadingOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.5)' },
 
   card: {
     backgroundColor: '#fff',
@@ -176,7 +206,7 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: '#eee', marginVertical: 12 },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   totalLabel: { fontSize: 16, fontWeight: 'bold', color: '#333' },
-  totalValue: { fontSize: 24, fontWeight: 'bold', color: '#9b59b6' },
+  totalValue: { fontSize: 24, fontWeight: 'bold', color: '#004aad' },
 
   footer: {
     position: 'absolute',
@@ -200,7 +230,7 @@ const styles = StyleSheet.create({
   cancelButtonText: { color: '#495057', fontWeight: 'bold', fontSize: 16 },
   confirmButton: {
     flex: 2,
-    backgroundColor: '#9b59b6',
+    backgroundColor: '#004aad',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',

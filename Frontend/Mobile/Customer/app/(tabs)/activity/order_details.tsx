@@ -213,13 +213,6 @@ export default function OrderDetails() {
                         <PriceDisplayRow label="Calculated Service Fee" amount={calculatedServiceFee} />
                         <PriceDisplayRow label="Add-Ons Fee" amount={totalAddons} />
                         <PriceDisplayRow label="Delivery Fee" amount={deliveryFee} />
-
-                        <View style={[styles.rowBetween, { marginTop: 15, borderTopWidth: 1, borderTopColor: '#e0e0e0', paddingTop: 10 }]}>
-                            <Text style={styles.totalLabel}>FINAL TOTAL:</Text>
-                            <Text style={[styles.totalValue, { color: "#004aad" }]}>
-                                {safeParseAndFormat(order.totalAmount)}
-                            </Text>
-                        </View>
                         
                         <View style={styles.paymentStatusRow}>
                             <Text style={[styles.detailText, { fontWeight: '600' }]}>Payment Status:</Text>

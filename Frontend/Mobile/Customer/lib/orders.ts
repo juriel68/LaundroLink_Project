@@ -51,6 +51,8 @@ export interface CustomerOrderPreview {
     deliveryAmount?: number; // Added
     deliveryPaymentStatus?: string; // Added
     deliveryStatus?: string; // Added for Activity screen filtering
+    isRated?: boolean;
+    shopImage?: string;
 }
 
 /**
@@ -70,7 +72,7 @@ export interface CustomerOrderDetails {
     customerName: string;
     customerPhone: string;
     customerAddress: string;
-    shopId: number; // INT
+    shopId: number;
     shopName: string;
     shopAddress: string;
     shopPhone: string;
@@ -78,20 +80,16 @@ export interface CustomerOrderDetails {
     serviceName: string;
     servicePrice: number;
     weight: number;
-    
-    // Weight Proof
+    isOwnService: boolean;
+    deliveryProvider?: string;
     weightProofImage?: string;
-
     instructions: string;
     deliveryType: string;
     deliveryFee: number;
     orderStatus: string; 
-    invoiceStatus: string; // Maps to Invoices.PaymentStatus
-    
-    // Delivery Status
+    invoiceStatus: string;
     deliveryStatus?: string;
     deliveryPaymentStatus?: string;
-    
     fabrics: string[];
     addons: AddOnDetail[];
     totalAmount: number;
@@ -319,7 +317,6 @@ export const submitDeliveryPayment = async (
     }
 };
 
-// ... (Rest of the file: cancelCustomerOrder, etc. remain unchanged) ...
 /**
  * Marks an existing order as 'Cancelled' via the status update route.
  */
@@ -373,3 +370,24 @@ export async function fetchProcessHistory(
         return [];
     }
 }
+
+export const submitOrderRating = async (
+    orderId: string,
+    rating: number,
+    comment: string
+): Promise<boolean> => {
+    try {
+        const response = await fetch(`${API_URL}/orders/rate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId, rating, comment }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || "Failed to rate.");
+        return data.success;
+    } catch (error) {
+        console.error("Error submitting rating:", error);
+        return false;
+    }
+};

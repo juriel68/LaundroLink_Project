@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { fetchOrderDetails, CustomerOrderDetails, submitPayment, submitDeliveryPayment } from "@/lib/orders"; 
+import { fetchOrderDetails, CustomerOrderDetails } from "@/lib/orders"; 
 
 // Helper to safely parse amounts
 const parseAmount = (value: string | number | undefined): number => {

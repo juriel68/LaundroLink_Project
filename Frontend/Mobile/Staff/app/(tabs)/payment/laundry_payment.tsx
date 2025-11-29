@@ -5,16 +5,18 @@ import {
   StyleSheet, 
   FlatList, 
   TouchableOpacity, 
-  Alert,
+  Alert, 
   ActivityIndicator,
   SafeAreaView
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router'; // 🔑 Import useRouter
+import { useFocusEffect, useRouter } from 'expo-router'; 
 import Header from "@/components/Header";
-import { fetchOrders, confirmServicePayment, Order } from "@/lib/orders";
 import { getCurrentUser } from "@/lib/auth"; 
 
-// Helper to safely parse amounts from string/number/null
+// 🟢 Import from Staff's orders library
+import { fetchOrders, Order } from "@/lib/orders"; 
+
+// Helper to safely parse amounts
 const parseAmount = (value: string | number | undefined): number => {
   const numericValue = parseFloat(String(value));
   return !isNaN(numericValue) ? numericValue : 0;
@@ -23,20 +25,22 @@ const parseAmount = (value: string | number | undefined): number => {
 export default function LaundryPaymentScreen() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const router = useRouter(); // 🔑 Initialize router
+  const router = useRouter(); 
 
-  // 🔑 Get User Info
   const user = getCurrentUser();
   const shopId = user?.ShopID;
-  const userId = user?.UserID || "Staff"; // Use actual ID for logs
 
   const loadData = useCallback(async () => {
     if (!shopId) return;
 
     setLoading(true);
     try {
-      const allOrders = await fetchOrders(shopId); // 🔑 Use dynamic ID
+      const allOrders = await fetchOrders(String(shopId)); 
+      
+      // Filter only orders where the SERVICE payment is 'To Confirm'
+      // (This excludes orders that are just unpaid or already paid)
       const pending = allOrders.filter(o => o.invoiceStatus === 'To Confirm');
+      
       setOrders(pending);
     } catch (error) {
       console.error(error);
@@ -52,38 +56,20 @@ export default function LaundryPaymentScreen() {
     }, [loadData])
   );
 
-  const handleConfirm = async (orderId: string, amount: number) => {
-    Alert.alert(
-      "Confirm Payment",
-      `Received ₱${amount.toFixed(2)} for Order #${orderId}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Confirm", 
-          onPress: async () => {
-            setLoading(true);
-            const success = await confirmServicePayment(orderId, userId, "Cashier");
-            if (success) {
-              Alert.alert("Success", "Payment confirmed!");
-              loadData(); 
-            } else {
-              Alert.alert("Error", "Failed to update payment status.");
-              setLoading(false);
-            }
-          } 
-        }
-      ]
-    );
-  };
-  
-  // 🔑 New handler to navigate to details screen
-  const handleViewDetails = (orderId: string) => {
+  // 🟢 Navigate to Details and pass the Proof Image
+  const handleViewDetails = (item: Order) => {
     router.push({
-        pathname: "/home/orderDetail",
-        params: { orderId: orderId }
+        pathname: "/payment/laundry_payment_details",
+        params: { 
+            orderId: item.orderId,
+            customerName: item.customerName,
+            totalAmount: item.totalAmount?.toString(),
+            paymentStatus: item.invoiceStatus,
+            proofImage: item.invoiceProofImage, 
+            paymentMethodName: item.invoicePaymentMethod
+        }
     });
   };
-
 
   const renderItem = ({ item }: { item: Order }) => {
     const displayAmount = parseAmount(item.totalAmount);
@@ -103,16 +89,9 @@ export default function LaundryPaymentScreen() {
         <View style={styles.buttonContainer}>
             <TouchableOpacity 
                 style={[styles.actionButton, styles.viewDetailsButton]}
-                onPress={() => handleViewDetails(item.orderId)}
+                onPress={() => handleViewDetails(item)} 
             >
-                <Text style={[styles.buttonText, { color: '#004aad' }]}>View Details</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-                style={styles.actionButton}
-                onPress={() => handleConfirm(item.orderId, displayAmount)}
-            >
-                <Text style={styles.buttonText}>Confirm Receipt</Text>
+                <Text style={[styles.buttonText, { color: '#004aad' }]}>Review & Confirm</Text>
             </TouchableOpacity>
         </View>
       </View>
@@ -163,10 +142,9 @@ const styles = StyleSheet.create({
   customer: { fontSize: 15, color: '#555' },
   amount: { fontSize: 18, fontWeight: 'bold', color: '#2ecc71' },
   
-  // 🔑 NEW Button Styles
   buttonContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center', 
     marginTop: 10,
   },
   actionButton: {

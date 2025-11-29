@@ -112,7 +112,7 @@ export default function OrderDetailScreen() {
              <Text style={styles.summaryValue}>₱{calculatedSummary?.deliveryFee}</Text>
           </View>
           <View style={[styles.summaryRow, { marginTop: 10, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 8 }]}>
-             <Text style={styles.totalText}>FINAL ORDER TOTAL</Text>
+             <Text style={styles.totalText}>ORDER TOTAL</Text>
              <Text style={[styles.totalText, { color: '#c82333' }]}>₱{calculatedSummary?.total}</Text>
           </View>
         </View>

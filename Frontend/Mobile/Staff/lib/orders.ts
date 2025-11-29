@@ -20,8 +20,8 @@ export interface Order {
     shopId: string;
     serviceId: string;
     laundryDetailId: string;
-    deliveryId: string; // This is actually DlvryTypeID now, but kept name for compatibility if frontend uses it
-    deliveryOptionId?: number; // New field from backend
+    deliveryId: string; 
+    deliveryOptionId?: number; 
     createdAt: string;
     laundryStatus: string; 
     deliveryStatus?: string; 
@@ -31,12 +31,14 @@ export interface Order {
     // Fields for Delivery Payment Modal
     deliveryPaymentMethod?: string;
     deliveryPaymentDate?: string;
-    deliveryProofImage?: string;
+    deliveryPaymentProofImage?: string;
     
     updatedAt: string;
     customerName: string;
     serviceName: string;
     invoiceStatus?: string;
+    invoiceProofImage?: string;
+    invoicePaymentMethod?: string;
     latestProcessStatus?: string | null;
     totalAmount?: number; 
 }
@@ -63,7 +65,7 @@ export interface OrderDetail {
     invoiceId?: string;
     invoiceStatus?: string;
     totalAmount?: string | number;
-    proofImage?: string | null;
+    invoiceProofImage?: string | null;
     paymentMethodName?: string;
 
     // Order Details

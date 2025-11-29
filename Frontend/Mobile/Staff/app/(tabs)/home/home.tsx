@@ -1,5 +1,3 @@
-// Staff/app/(tabs)/home.tsx
-
 import React, { useState, useCallback } from "react";
 import {
   View,
@@ -60,13 +58,30 @@ export default function HomeScreen() {
   };
 
   /**
-   * 🔑 UPDATED: Helper to count based on Type
-   * type 'delivery' checks deliveryStatus
-   * type 'order' checks laundryStatus
+   * 🔑 FIXED: Non-destructive Counting Logic
+   * We check the status against a list of valid aliases instead of modifying the object.
    */
   const getCount = (statusToCheck: string, type: 'delivery' | 'order') => {
     return orders.filter((o) => {
-        if (type === 'delivery') return o.deliveryStatus === statusToCheck;
+        if (type === 'delivery') {
+            const dStatus = o.deliveryStatus || '';
+
+            // Grouping Logic for "For Delivery"
+            if (statusToCheck === "For Delivery") {
+                return dStatus === "For Delivery" || 
+                       dStatus === "Rider Booked For Delivery" || 
+                       dStatus === "Outgoing Rider Booked";
+            }
+
+            // Grouping Logic for "To Pick-up"
+            if (statusToCheck === "To Pick-up") {
+                return dStatus === "To Pick-up" || 
+                       dStatus === "Rider Booked To Pick-up" || 
+                       dStatus === "Rider Booked"; // Generic booked status usually implies incoming
+            }
+
+            return dStatus === statusToCheck;
+        }
         return o.laundryStatus === statusToCheck;
     }).length;
   };
@@ -85,6 +100,7 @@ export default function HomeScreen() {
       }
     });
   };
+
 
   return (
     <SafeAreaView style={styles.container}>

@@ -6,59 +6,55 @@ import { fetchOrderDetails, CustomerOrderDetails, fetchRawStatuses, RawStatuses 
 
 // --- STATIC CORE DEFINITIONS ---
 const ALL_PROCESS_STEPS = [
-    // ----------------------------------------------------
-    // INCOMING LOGISTICS (Pickup from Customer) - Group 1
-    // ----------------------------------------------------
+    // --- INCOMING ---
     { status: "To Pick-up", title: "Awaiting Rider Pickup", icon: "car-outline", key: "DELIVERY_IN_START" },
-    { status: "Rider Booked", title: "Rider Booked / En Route", icon: "clipboard-outline", key: "DELIVERY_IN_BOOKED" },
+    { status: "Rider Booked To Pick-up", title: "Rider Booked (Pickup)", icon: "clipboard-outline", key: "DELIVERY_IN_BOOKED" }, 
     { status: "Arrived at Customer", title: "Rider at Customer Location", icon: "person-circle-outline", key: "DELIVERY_IN_OWN_ARRIVED" },
     { status: "Delivered In Shop", title: "Laundry Arrived at Shop", icon: "storefront-outline", key: "DELIVERY_IN_END" },
 
-    // ----------------------------------------------------
-    // INITIAL ORDER & WEIGHING - Group 2 (REQUIRED)
-    // ----------------------------------------------------
+    // --- PRE-PROCESS ---
     { status: "To Weigh", title: "Awaiting Weigh-in", icon: "scale-outline", key: "ORDER_WEIGH" },
     
-    // ----------------------------------------------------
-    // LAUNDRY PROCESSING - Group 3
-    // ----------------------------------------------------
-    { status: "Processing", title: "In Laundry Queue", icon: "time-outline", key: "PROCESS_START" }, // Order Status
+    // --- PROCESSING (Dynamic Section) ---
+    { status: "Processing", title: "In Laundry Queue", icon: "time-outline", key: "PROCESS_START" }, 
     { status: "Washing", title: "Washing In Progress", icon: "water-outline", key: "PROCESS_WASH" },
     { status: "Drying", title: "Drying In Progress", icon: "sunny-outline", key: "PROCESS_DRY" },
-    { status: "Steam Pressing", title: "Steam Pressing", icon: "shirt-outline", key: "PROCESS_PRESS" },
+    { status: "Pressing", title: "Steam Pressing", icon: "shirt-outline", key: "PROCESS_PRESS" },
     { status: "Folding", title: "Folding", icon: "layers-outline", key: "PROCESS_FOLD" },
 
-    // ----------------------------------------------------
-    // OUTGOING LOGISTICS (Delivery to Customer) - Group 4
-    // ----------------------------------------------------
+    // --- OUTGOING ---
     { status: "For Delivery", title: "Ready for Delivery", icon: "archive-outline", key: "DELIVERY_OUT_START" },
-    { status: "Out for Delivery", title: "Out for Delivery", icon: "bicycle-outline", key: "DELIVERY_OUT_ENROUTE" },
+    { status: "Rider Booked For Delivery", title: "Rider Booked (Delivery)", icon: "clipboard-outline", key: "DELIVERY_OUT_BOOKED" },
+    { status: "Delivered To Customer", title: "Delivered To Customer", icon: "bicycle-outline", key: "DELIVERY_OUT_ENROUTE" },
     
-    // ----------------------------------------------------
-    // FINAL - Group 5
-    // ----------------------------------------------------
+    // --- FINAL ---
     { status: "Completed", title: "Order Complete", icon: "checkmark-done-outline", key: "FINAL_COMPLETE" },
     { status: "Cancelled", title: "Order Cancelled", icon: "close-circle-outline", key: "FINAL_CANCELLED" },
 ];
 
-// Helper to check for conditional service steps
+// 🟢 UPDATED: Service Flag Logic
 const getServiceFlags = (serviceName: string) => {
-    serviceName = serviceName.toLowerCase();
+    const name = serviceName.toLowerCase();
+    
+    // Check for Full Service (Has everything)
+    const isFullService = name.includes('full service');
+    
     return {
-        isPress: serviceName.includes('press'),
-        isFold: serviceName.includes('fold'),
+        // Pressing is needed if name has "press" OR it is "full service"
+        hasPressing: isFullService || name.includes('press'),
+        
+        // Folding is needed if name has "fold" OR it is "full service"
+        hasFolding: isFullService || name.includes('fold')
     };
 };
 
-// Helper to check for delivery types
+// Helper to detect Delivery Mode
 const getDeliveryFlags = (deliveryType: string) => {
-    deliveryType = deliveryType.toLowerCase();
+    const type = deliveryType.toLowerCase();
     return {
-        isDropOff: deliveryType.includes('drop-off'),
-        isPickup: deliveryType.includes('pick-up'),
-        isDelivery: deliveryType.includes('delivery'),
-        isOwnService: deliveryType.includes('own service'), // Assuming this is part of your order details payload
-        isThirdParty: !deliveryType.includes('own service'), // Default assumption
+        isDropOff: type.includes('drop-off'),
+        isPickup: type.includes('pick-up'),
+        isDelivery: type.includes('delivery'),
     };
 };
 
@@ -72,13 +68,6 @@ interface TimelineStep {
     isActive: boolean;
 }
 
-// Helper to map DB status to PROCESS_SEQUENCE index
-const getStepIndex = (status: string) => {
-    const step = ALL_PROCESS_STEPS.find(s => s.status === status);
-    return step ? ALL_PROCESS_STEPS.indexOf(step) : -1;
-};
-
-// Helper to format times for display
 const formatTime = (time: string | undefined): string => {
     if (!time) return '';
     try {
@@ -92,7 +81,6 @@ const buildTimeline = (details: CustomerOrderDetails, rawStatuses: RawStatuses):
     const service = getServiceFlags(details.serviceName || '');
     const delivery = getDeliveryFlags(details.deliveryType || '');
     
-    // Merge process history (Washing, Drying) with core status history
     const allStatuses = {
         ...rawStatuses.orderStatus,
         ...rawStatuses.deliveryStatus,
@@ -101,41 +89,61 @@ const buildTimeline = (details: CustomerOrderDetails, rawStatuses: RawStatuses):
 
     const finalTimelineSteps: string[] = [];
 
-    // Group 1: INCOMING LOGISTICS (Pick-up only)
+    // 1. INCOMING LOGISTICS
     if (delivery.isPickup) {
-        if (delivery.isOwnService) {
-            finalTimelineSteps.push("To Pick-up", "Arrived at Customer");
-        } else { // 3rd Party
-            finalTimelineSteps.push("To Pick-up", "Rider Booked", "Delivered In Shop");
+        finalTimelineSteps.push("To Pick-up");
+        if (details.isOwnService) {
+            finalTimelineSteps.push("Arrived at Customer"); 
+        } else { 
+            finalTimelineSteps.push("Rider Booked To Pick-up"); 
         }
-    } else { // Drop-off / For Delivery (Start with Placed)
-        finalTimelineSteps.push("Pending");
+        finalTimelineSteps.push("Delivered In Shop");
+    } else { 
+        finalTimelineSteps.push("Pending"); 
     }
 
-    // Group 2: INITIAL ORDER & WEIGHING
+    // 2. WEIGHING
     finalTimelineSteps.push("To Weigh");
     
-    // Group 3: LAUNDRY PROCESSING
-    finalTimelineSteps.push("Processing", "Washing", "Drying");
-    if (service.isPress) finalTimelineSteps.push("Steam Pressing");
-    if (service.isFold) finalTimelineSteps.push("Folding");
+    // 🟢 3. LAUNDRY PROCESSING (Dynamic based on Service Name)
+    // Universal Steps (Since 'Press Only' was removed)
+    finalTimelineSteps.push("Processing"); // Queue Status
+    finalTimelineSteps.push("Washing");
+    finalTimelineSteps.push("Drying");
 
-    // Group 4: OUTGOING LOGISTICS (Delivery only)
-    if (delivery.isDelivery) {
-        finalTimelineSteps.push("For Delivery", "Out for Delivery");
+    // Conditional Steps
+    if (service.hasPressing) {
+        finalTimelineSteps.push("Pressing");
+    }
+    
+    if (service.hasFolding) {
+        finalTimelineSteps.push("Folding");
     }
 
-    // Group 5: FINAL
-    finalTimelineSteps.push("Completed", "Cancelled");
+    // 4. OUTGOING LOGISTICS
+    if (delivery.isDelivery) {
+        finalTimelineSteps.push("For Delivery");
+        if (!details.isOwnService) {
+             finalTimelineSteps.push("Rider Booked For Delivery");
+        }
+        finalTimelineSteps.push("Delivered To Customer");
+    }
 
-    // Filter and map the unique steps to the final structure
+    // 5. FINAL
+    finalTimelineSteps.push("Completed");
+    if (allStatuses["Cancelled"]) {
+        finalTimelineSteps.push("Cancelled");
+    }
+
+    // Filter & Map
     const uniqueSteps = Array.from(new Set(finalTimelineSteps)).map(status => {
         return ALL_PROCESS_STEPS.find(step => step.status === status)!;
     }).filter(Boolean);
 
 
-    // Determine Completion Index and Map Final Timeline
+    // Completion & Active Logic
     let maxCompletedIndex = -1;
+    
     const mappedTimeline = uniqueSteps.map((step, index) => {
         const historyTime = allStatuses[step.status]?.time;
         const isCompleted = !!historyTime;
@@ -150,19 +158,24 @@ const buildTimeline = (details: CustomerOrderDetails, rawStatuses: RawStatuses):
             icon: step.icon,
             time: historyTime ? formatTime(historyTime) : undefined,
             isCompleted: isCompleted,
-            isActive: false, // Will be set after loop
+            isActive: false, 
         };
     });
 
-    // Mark the last completed step as Active
-    if (maxCompletedIndex !== -1 && mappedTimeline[maxCompletedIndex]) {
-        mappedTimeline[maxCompletedIndex].isActive = true;
+    if (maxCompletedIndex !== -1) {
+        if (mappedTimeline[maxCompletedIndex].status === 'Completed' || mappedTimeline[maxCompletedIndex].status === 'Cancelled') {
+            mappedTimeline[maxCompletedIndex].isActive = true;
+        } else if (maxCompletedIndex + 1 < mappedTimeline.length) {
+            mappedTimeline[maxCompletedIndex].isActive = true;
+        } else {
+            mappedTimeline[maxCompletedIndex].isActive = true;
+        }
+    } else {
+        if (mappedTimeline.length > 0) mappedTimeline[0].isActive = true;
     }
 
     return mappedTimeline;
 };
-// --- END CORE TIMELINE BUILDER ---
-
 
 export default function TrackOrder() {
     const router = useRouter();
@@ -173,16 +186,13 @@ export default function TrackOrder() {
     const [orderDetails, setOrderDetails] = useState<CustomerOrderDetails | null>(null);
     const [loading, setLoading] = useState(true);
 
-    // --- CORE FETCHING LOGIC ---
     useEffect(() => {
         if (!orderId) return;
 
         const loadTimeline = async () => {
             setLoading(true);
             try {
-                // Fetch consolidated status history
                 const statuses = await fetchRawStatuses(orderId); 
-                // Fetch order details (to get service and delivery type)
                 const details = await fetchOrderDetails(orderId); 
 
                 if (details && statuses) {
@@ -200,7 +210,6 @@ export default function TrackOrder() {
         };
         loadTimeline();
     }, [orderId]);
-
 
     useLayoutEffect(() => {
         navigation.setOptions({
@@ -227,16 +236,14 @@ export default function TrackOrder() {
         );
     }
     
-    // BUILD THE FINAL TIMELINE based on retrieved data
     const finalTimeline = buildTimeline(orderDetails, rawStatuses);
-    const currentStatusStep = finalTimeline.find(step => step.isActive);
-
+    const currentStatusStep = finalTimeline.find(step => step.isActive) || finalTimeline[finalTimeline.length - 1];
+    const providerIcon = orderDetails.isOwnService ? "bicycle" : "cube";
 
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           
-          {/* Status Card */}
           <View style={styles.pickupCard}>
             <Ionicons name="alert-circle-outline" size={26} color="#004aad" style={{ marginRight: 10 }} />
             <View style={{ flex: 1 }}>
@@ -244,10 +251,18 @@ export default function TrackOrder() {
               <Text style={styles.pickupNote}>
                 {currentStatusStep?.title || orderDetails.orderStatus}
               </Text>
+
+              {/* 🟢 NEW: Display Delivery Provider */}
+              <View style={styles.providerContainer}>
+                  <Ionicons name={providerIcon} size={14} color="#666" />
+                  <Text style={styles.providerText}>
+                      Via: <Text style={{fontWeight:'700', color:'#004aad'}}>{orderDetails.deliveryProvider}</Text>
+                  </Text>
+              </View>
+
             </View>
           </View>
 
-          {/* Timeline */}
           <View style={styles.timeline}>
             {finalTimeline.map((step, index) => {
                 const isCompleted = step.isCompleted;
@@ -255,35 +270,14 @@ export default function TrackOrder() {
                 
                 return (
                     <View key={index} style={styles.step}>
-                      {/* Connector line */}
                       {index !== finalTimeline.length - 1 && (
-                        <View
-                          style={[
-                            styles.connector,
-                            isCompleted ? styles.connectorActive : {},
-                          ]}
-                        />
+                        <View style={[styles.connector, isCompleted ? styles.connectorActive : {}]} />
                       )}
-
-                      {/* Step Icon */}
-                      <View
-                        style={[
-                          styles.stepIconWrapper,
-                          isActive ? styles.activeStep : isCompleted ? styles.completedStep : {},
-                        ]}
-                      >
-                        <Ionicons
-                          name={step.icon as any} 
-                          size={22}
-                          color={isActive || isCompleted ? "#fff" : "#888"}
-                        />
+                      <View style={[styles.stepIconWrapper, isActive ? styles.activeStep : isCompleted ? styles.completedStep : {}]}>
+                        <Ionicons name={step.icon as any} size={22} color={isActive || isCompleted ? "#fff" : "#888"} />
                       </View>
-
-                      {/* Step Content */}
                       <View style={styles.stepContent}>
-                        <Text style={[styles.stepTitle, isActive && styles.stepTitleActive]}>
-                            {step.title}
-                        </Text>
+                        <Text style={[styles.stepTitle, isActive && styles.stepTitleActive]}>{step.title}</Text>
                         <Text style={styles.stepTime}>{step.time || 'Awaiting...'}</Text>
                       </View>
                     </View>
@@ -292,11 +286,10 @@ export default function TrackOrder() {
           </View>
         </ScrollView>
 
-        {/* Fixed Button */}
         <View style={styles.footer}>
           <TouchableOpacity
             style={styles.button}
-            onPress={() => router.push({ pathname: "/activity/order_details", params: { orderId: orderDetails.orderId } })} // Navigate to order_details
+            onPress={() => router.push({ pathname: "/activity/order_details", params: { orderId: orderDetails.orderId } })} 
           >
             <Text style={styles.buttonText}>View Order Details</Text>
           </TouchableOpacity>
@@ -307,88 +300,38 @@ export default function TrackOrder() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f6faff" },
-  scrollContent: { paddingBottom: 100 }, // Added padding to clear footer
-
-  // Header
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#000000ff",
-  },
-
-  // Pickup Card
-  pickupCard: {
-    flexDirection: "row",
-    backgroundColor: "#fff",
-    margin: 15,
-    padding: 15,
-    borderRadius: 12,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 5,
-    elevation: 2,
-  },
+  scrollContent: { paddingBottom: 100 }, 
+  headerTitle: { fontSize: 18, fontWeight: "600", color: "#000000ff" },
+  pickupCard: { flexDirection: "row", backgroundColor: "#fff", margin: 15, padding: 15, borderRadius: 12, alignItems: "center", shadowColor: "#000", shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }, shadowRadius: 5, elevation: 2 },
   pickupTime: { fontSize: 16, fontWeight: "bold", color: "#004aad" },
   pickupNote: { fontSize: 13, color: "#555", marginTop: 4 },
-
-  // Timeline
+  providerContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 8,
+      backgroundColor: '#f0f4f8',
+      paddingVertical: 4,
+      paddingHorizontal: 8,
+      borderRadius: 6,
+      alignSelf: 'flex-start'
+  },
+  providerText: {
+      fontSize: 12,
+      color: '#555',
+      marginLeft: 6
+  },
   timeline: { marginVertical: 20, marginLeft: 30, paddingRight: 20 },
   step: { flexDirection: "row", alignItems: "flex-start", marginBottom: 35, position: "relative" },
-
-  connector: {
-    position: "absolute",
-    left: 15,
-    top: 28,
-    width: 2,
-    height: "100%",
-    backgroundColor: "#ccc",
-  },
-  connectorActive: {
-    backgroundColor: "#004aad",
-  },
-
-  stepIconWrapper: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#eee",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 15,
-    zIndex: 10,
-  },
+  connector: { position: "absolute", left: 15, top: 28, width: 2, height: "100%", backgroundColor: "#ccc" },
+  connectorActive: { backgroundColor: "#004aad" },
+  stepIconWrapper: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#eee", justifyContent: "center", alignItems: "center", marginRight: 15, zIndex: 10 },
   activeStep: { backgroundColor: "#004aad" },
   completedStep: { backgroundColor: "#5EC1EF" },
-
   stepContent: { flex: 1 },
   stepTitle: { fontSize: 15, fontWeight: "500", color: "#444" },
   stepTitleActive: { color: "#004aad", fontWeight: "700" },
   stepTime: { fontSize: 12, color: "#777", marginTop: 3 },
-
-  // Footer Button
-  footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    borderColor: "#e0e0e0",
-    backgroundColor: "#fff",
-    borderTopWidth: 1,
-  },
-
-  button: {
-    margin: 20,
-    backgroundColor: "#004aad",
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 6,
-    elevation: 3,
-  },
+  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, borderColor: "#e0e0e0", backgroundColor: "#fff", borderTopWidth: 1 },
+  button: { margin: 20, backgroundColor: "#004aad", paddingVertical: 16, borderRadius: 12, alignItems: "center", shadowColor: "#000", shadowOpacity: 0.15, shadowOffset: { width: 0, height: 3 }, shadowRadius: 6, elevation: 3 },
   buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
 });

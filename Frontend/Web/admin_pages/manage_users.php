@@ -7,12 +7,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         /* --- BASE STYLES --- */
-        body, .manage-users-container, .modal-content {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f9fbfd;
-            margin: 0;
-            padding: 0;
-        }
+        body, .manage-users-container, .modal-content { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f9fbfd; margin: 0; padding: 0; }
         .manage-users-container { padding: 20px; }
         .page-title { font-size: 26px; color: #023e8a; margin-bottom: 10px; }
         .subtitle { color: #6c757d; margin-bottom: 25px; }
@@ -75,6 +70,12 @@
         /* Responsive */
         @media (min-width: 768px) { .card-container { flex-direction: row; } .role-card { flex: 1; } }
         @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); justify-content: center; align-items: center; }
+        .modal-content { background: #fff; padding: 25px 30px; border-radius: 10px; width: 400px; max-width: 90%; box-shadow: 0 6px 20px rgba(0,0,0,0.2); position: relative; animation: fadeIn 0.2s ease-in-out; max-height: 90vh; overflow-y: auto; }
+
+        #deactivationReason { width: 100%; height: 80px; padding: 10px; border-radius: 6px; border: 1px solid #ddd; resize: vertical; margin-top: 5px; }
+        .warning-text { color: #d9534f; font-size: 13px; margin-bottom: 10px; }
     </style>
 </head>
 <body>
@@ -203,6 +204,27 @@
     </div>
 </div>
 
+    <div id="deactivateModal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal deactivate-close">&times;</span>
+            <h3>Deactivate User</h3>
+            <p class="warning-text">You are about to deactivate <strong><span id="deactUserIdDisplay"></span></strong>. Please provide a reason.</p>
+            
+            <form id="deactivateForm">
+                <input type="hidden" id="deactUserId">
+                <label>Reason for Deactivation:</label>
+                <textarea id="deactivationReason" required placeholder="e.g. Violation of terms, Request by user..."></textarea>
+                
+                <div class="popup-buttons">
+                    <button type="button" class="btn-cancel" id="deactCancelBtn">Cancel</button>
+                    <button type="submit" class="submit-btn" style="background-color: #d9534f;">Deactivate</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
+
 <script type="module">
 import { API_BASE_URL } from '../api.js'; 
 
@@ -228,6 +250,10 @@ const searchInput = document.getElementById('searchInput');
 const prevPageBtn = document.getElementById('prevPageBtn');
 const nextPageBtn = document.getElementById('nextPageBtn');
 const pageInfoSpan = document.getElementById('pageInfo');
+const deactivateModal = document.getElementById('deactivateModal');
+const deactivateForm = document.getElementById('deactivateForm');
+const deactUserIdDisplay = document.getElementById('deactUserIdDisplay');
+const deactUserIdInput = document.getElementById('deactUserId');
 
 // --- NAVIGATION LOGIC ---
 roleCards.forEach(card => {
@@ -500,14 +526,7 @@ document.getElementById('createShopForm').addEventListener('submit', async (e) =
     }
 });
 
-// --- CLOSE MODALS ---
-document.querySelectorAll('.close-modal').forEach(btn => {
-    btn.addEventListener('click', () => {
-        createModal.style.display = 'none';
-        createShopModal.style.display = 'none';
-        updateModal.style.display = 'none';
-    });
-});
+
 
 // --- TABLE LISTENERS (UPDATE / STATUS) ---
 searchInput.addEventListener('input', () => { currentPage = 1; applyFiltersAndPagination(); });
@@ -572,41 +591,79 @@ function attachRowListeners() {
 
     // Status Toggle Logic (Fixed)
     document.querySelectorAll('.status-btn').forEach(button => {
-        button.addEventListener('click', async (e) => {
-            const btn = e.target.closest('.status-btn'); // Ensure getting button
-            const row = btn.closest('tr');
-            const userId = row.dataset.userId;
-            const rawAction = btn.getAttribute('data-action');
-            const action = parseInt(rawAction, 10);
-            
-            if (isNaN(action)) {
-                alert(`Error: Invalid status. (Value: ${rawAction})`);
-                return;
-            }
+                button.addEventListener('click', async (e) => {
+                    const btn = e.target.closest('.status-btn');
+                    const row = btn.closest('tr');
+                    const userId = row.dataset.userId;
+                    const rawAction = btn.getAttribute('data-action');
+                    const action = parseInt(rawAction, 10); // 1=Reactivate, 0=Deactivate
 
-            const actionText = action === 1 ? 'Reactivate' : 'Deactivate';
-            
-            if (confirm(`Are you sure you want to ${actionText} user ${userId}?`)) {
-                try {
-                    const response = await fetch(`${API_BASE_URL}/users/${userId}/status`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ IsActive: action })
-                    });
-                    const result = await response.json();
-                    if (response.ok && result.success) {
-                        window.alert(result.message);
-                        await fetchUsers(currentRole); 
+                    if (action === 1) {
+                        // --- REACTIVATE (Direct Confirm) ---
+                        if (confirm(`Are you sure you want to REACTIVATE user ${userId}?`)) {
+                            performStatusUpdate(userId, 1, null);
+                        }
                     } else {
-                        window.alert(`Error: ${result.message}`);
+                        // --- DEACTIVATE (Open Reason Modal) ---
+                        deactUserIdInput.value = userId;
+                        deactUserIdDisplay.textContent = userId;
+                        document.getElementById('deactivationReason').value = ''; // Clear previous
+                        deactivateModal.style.display = 'flex';
                     }
-                } catch (error) {
-                    window.alert(`Network error: Failed to ${actionText} user.`);
-                }
-            }
-        });
-    });
+                });
+            });
 }
+
+// 🟢 NEW: Handle Deactivation Submit
+        deactivateForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const userId = deactUserIdInput.value;
+            const reason = document.getElementById('deactivationReason').value;
+            
+            const submitBtn = deactivateForm.querySelector('.submit-btn');
+            submitBtn.textContent = "Deactivating...";
+            submitBtn.disabled = true;
+
+            await performStatusUpdate(userId, 0, reason);
+            
+            deactivateModal.style.display = 'none';
+            submitBtn.textContent = "Deactivate";
+            submitBtn.disabled = false;
+        });
+
+        // 🟢 NEW: Centralized Status Update Function
+        async function performStatusUpdate(userId, action, reason) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/users/${userId}/status`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        IsActive: action,
+                        Reason: reason // Send reason to backend
+                    })
+                });
+                const result = await response.json();
+                
+                if (response.ok && result.success) {
+                    alert(result.message);
+                    fetchUsers(currentRole); 
+                } else {
+                    alert(`Error: ${result.message}`);
+                }
+            } catch (error) {
+                alert(`Network error: Failed to update status.`);
+            }
+        }
+
+        // --- CLOSE MODALS ---
+        document.querySelectorAll('.close-modal', deactCancelBtn).forEach(btn => {
+            btn.addEventListener('click', () => {
+                createModal.style.display = 'none';
+                createShopModal.style.display = 'none';
+                updateModal.style.display = 'none';
+                deactivateModal.style.display = 'none';
+            });
+        });
 
 let currentUpdatingUserId = null;
 let currentUpdatingUserRole = null;

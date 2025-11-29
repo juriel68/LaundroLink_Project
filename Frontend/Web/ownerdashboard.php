@@ -171,7 +171,7 @@
             <div>
                 <a href="#" class="active" data-page="dashboard">Dashboard</a>
                 <a href="#" data-page="view_orders">Order</a>
-                <a href="#" data-page="manage_employees">Employee</a>
+                <a href="#" data-page="view_employees">Employee</a>
                 <a href="#" data-page="shop_details">Shop</a>
                 <a href="#" data-page="view_sales">Sales</a>
                 <a href="#" data-page="data_analytics">Data Analytics</a>
@@ -376,7 +376,7 @@
                 return;
             }
             
-            const iframePages = ['data_analytics', 'view_orders', 'manage_employees', 'shop_details', 'view_sales', 'reports'];
+            const iframePages = ['data_analytics', 'view_orders', 'view_employees', 'shop_details', 'view_sales', 'reports'];
             if(iframePages.includes(page)) {
                 contentArea.innerHTML = `<iframe src="owner_pages/${page}.php" style="width: 100%; height: 90vh; border: none;"></iframe>`;
                 return;

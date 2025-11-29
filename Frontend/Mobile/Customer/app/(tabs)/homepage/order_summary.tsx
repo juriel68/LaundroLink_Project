@@ -230,16 +230,6 @@ export default function OrderSummaryScreen() {
     const selectedAddonNames = availableAddOns.filter(addon => addons.map(String).includes(addon.id.toString())).map(addon => addon.name);
     const selectedFabricNames = getFabricNames(fabrics, availableFabricTypes); 
     const isButtonDisabled = isLoading || !customerId;
-
-    const getInfoMessage = () => {
-        if (isPostWeighPaymentFlow) {
-            return "⚠️ Payment for the laundry service and delivery fee will be processed in one transaction after staff weighs your items.";
-        } else if (isDeliveryFeeUpfrontFlow && summary.finalDeliveryFee > 0) {
-            const action = isPickupFlow ? "Rider will pick up the laundry for weigh-in at the shop." : "Rider will pick up the laundry.";
-            return `⚠️ **Action Required:** You must pay the delivery fee of ₱${summary.finalDeliveryFee.toFixed(2)} first. ${action} The service fee will be required after weighing.`;
-        }
-        return "";
-    };
     
     const getButtonText = () => {
         if (submitSuccess) return 'Order Confirmed';
@@ -278,12 +268,6 @@ export default function OrderSummaryScreen() {
                         <Text style={styles.date}>{formattedDate}</Text>
                     </View>
                 </View>
-                
-                {getInfoMessage() ? (
-                    <View style={[styles.card, { backgroundColor: '#FFFBEA', borderColor: '#FFD700' }]}>
-                        <Text style={{ fontSize: 13, color: '#8A6D3B' }}>{getInfoMessage()}</Text>
-                    </View>
-                ) : null}
 
                 <View style={styles.card}>
                     <Text style={styles.sectionTitle}>🧺 Selected Service</Text>
@@ -343,12 +327,12 @@ export default function OrderSummaryScreen() {
                             <Text style={styles.summaryValue}>₱ {summary.addonTotal.toFixed(2)}</Text> 
                         </View>
                         <View style={styles.rowBetween}>
-                            <Text style={styles.summaryItem}>Delivery Fee {isPostWeighPaymentFlow ? "(Paid Later)" : "(Paid Now)"}</Text>
+                            <Text style={styles.summaryItem}>Delivery Fee</Text>
                             <Text style={styles.summaryValue}>₱ {summary.finalDeliveryFee.toFixed(2)}</Text>
                         </View>
                         
                         <View style={[styles.rowBetween, styles.totalRow]}>
-                            <Text style={styles.totalText}>ESTIMATED TOTAL DUE NOW</Text>
+                            <Text style={styles.totalText}>ESTIMATED TOTAL</Text>
                             <Text style={styles.totalValue}>₱ {summary.grandTotal.toFixed(2)}</Text>
                         </View>
                     </View>

@@ -11,11 +11,11 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-// 🔑 Import updateDeliveryWorkflow for simultaneous status update
+
 import { updateProcessStatus, updateOrderStatus, updateDeliveryWorkflow, fetchOrderDetails } from "@/lib/orders"; 
 import Header from "@/components/Header";
 
-// 🔑 DEFINITIVE Configuration Map based on new database inserts (IDs 1-5)
+
 const SERVICE_STEPS_MAP: { [key: string]: string[] } = {
     // 1: Wash & Dry
     "1": ["Washing", "Drying"], 
@@ -26,11 +26,8 @@ const SERVICE_STEPS_MAP: { [key: string]: string[] } = {
     // 3: Wash, Dry, & Pressing
     "3": ["Washing", "Drying", "Pressing"], 
     
-    // 4: Press only
-    "4": ["Pressing"], 
-    
-    // 5: Full Service (W, D, P, F)
-    "5": ["Washing", "Drying", "Pressing", "Folding"], 
+    // 4: Full Service (W, D, P, F)
+    "4": ["Washing", "Drying", "Pressing", "Folding"], 
 };
 
 export default function UpdateProcess() {
@@ -85,17 +82,27 @@ export default function UpdateProcess() {
     const handleSave = async () => {
         if (!selectedStatus) return Alert.alert("Selection Required", "Please select the next status.");
         
-        const currentIndex = dynamicOptions.indexOf(currentStatus || "Washing"); 
+        // Determine current progress index
+        // If status is "Processing" or "Pending", we treat it as index -1 (start at 0)
+        let currentIndex = dynamicOptions.indexOf(currentStatus || ""); 
+        if (currentIndex === -1 && (currentStatus === 'Processing' || currentStatus === 'Pending')) {
+            currentIndex = -1;
+        }
+
         const targetIndex = dynamicOptions.indexOf(selectedStatus);
 
-        // --- Basic Validation ---
-        if (targetIndex <= currentIndex && currentIndex !== -1) {
-            return Alert.alert("Step Already Completed", `The order is already past "${selectedStatus}".`);
+        // --- 🟢 STRICT SEQUENTIAL VALIDATION ---
+        // 1. Prevent going backwards or staying same
+        if (targetIndex <= currentIndex) {
+             return Alert.alert("Step Already Completed", `The order is already at or past "${selectedStatus}".`);
         }
         
-        if (targetIndex > currentIndex + 1 && targetIndex !== dynamicOptions.length - 1) {
-            const requiredPrev = dynamicOptions[targetIndex - 1];
-            return Alert.alert("Invalid Workflow", `Please complete "${requiredPrev}" first.`);
+        // 2. Prevent skipping steps (Must be exactly +1)
+        // Example: If current is Washing (0), target must be Drying (1). Can't jump to Folding (2).
+        if (targetIndex !== currentIndex + 1) {
+            // Find what should have been next
+            const nextStepName = dynamicOptions[currentIndex + 1];
+            return Alert.alert("Invalid Workflow", `You cannot skip steps.\nThe next required step is "${nextStepName}".`);
         }
 
         // --- API Execution ---

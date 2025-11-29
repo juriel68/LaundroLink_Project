@@ -201,21 +201,29 @@ router.get("/:shopId/full-details-owner", async (req, res) => {
     try {
         const [
             [[shopDetails]],
-            allRatings,
+            rawRatings, // 🟢 UPDATED: Fetches raw customer ratings
             [[shopDistance]] 
         ] = await Promise.all([
+            // 1. Fetch Shop Basic Details
             connection.query(
                 `SELECT 
                     LS.ShopID, LS.ShopName, LS.ShopDescrp, LS.ShopAddress, 
-                    LS.ShopPhone, LS.ShopOpeningHours, LS.ShopStatus, LS.ShopImage_url,
-                    COALESCE(AVG(SR.ShopRating), 0.0) AS averageRating
+                    LS.ShopPhone, LS.ShopOpeningHours, LS.ShopStatus, LS.ShopImage_url
                 FROM Laundry_Shops AS LS
-                LEFT JOIN Shop_Rates AS SR ON LS.ShopID = SR.ShopID
-                WHERE LS.ShopID = ?
-                GROUP BY LS.ShopID`,
+                WHERE LS.ShopID = ?`,
                 [shopId]
             ),
-            connection.query(`SELECT ShopRating FROM Shop_Rates WHERE ShopID = ?`, [shopId]),
+            
+            // 2. 🟢 UPDATED: Fetch Ratings from Customer_Ratings via Orders
+            connection.query(
+                `SELECT cr.CustRating 
+                 FROM Customer_Ratings cr
+                 JOIN Orders o ON cr.OrderID = o.OrderID
+                 WHERE o.ShopID = ?`, 
+                [shopId]
+            ),
+
+            // 3. Fetch Location
             connection.query(`SELECT ShopLatitude, ShopLongitude FROM Shop_Distance WHERE ShopID = ?`, [shopId])
         ]);
         
@@ -223,10 +231,16 @@ router.get("/:shopId/full-details-owner", async (req, res) => {
             return res.status(404).json({ error: "Shop not found." });
         }
         
-        const ratingsArray = allRatings[0].map(r => r.ShopRating);
+        // 🟢 3. Calculate Stats in JavaScript
+        const ratingsArray = rawRatings[0].map(r => parseFloat(r.CustRating));
         const ratingCount = ratingsArray.length;
-        const breakdown = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
         
+        // Calculate Average
+        const sum = ratingsArray.reduce((a, b) => a + b, 0);
+        const averageRating = ratingCount > 0 ? (sum / ratingCount).toFixed(1) : 0.0;
+
+        // Calculate Breakdown (1-5 Stars)
+        const breakdown = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
         ratingsArray.forEach(rating => {
             const roundedRating = Math.round(rating);
             if (breakdown[roundedRating] !== undefined) breakdown[roundedRating]++;
@@ -236,17 +250,20 @@ router.get("/:shopId/full-details-owner", async (req, res) => {
             success: true,
             details: {
                 ...shopDetails,
+                // Pass the calculated average here
+                averageRating: averageRating, 
                 ShopLatitude: shopDistance ? shopDistance.ShopLatitude : null,
                 ShopLongitude: shopDistance ? shopDistance.ShopLongitude : null,
             },
             rating: {
-                averageRating: shopDetails.averageRating,
+                averageRating: averageRating,
                 ratingCount: ratingCount,
                 breakdown: breakdown 
             }
         });
 
     } catch (error) {
+        console.error("Error fetching shop details:", error);
         res.status(500).json({ success: false, error: "Failed to fetch shop details." });
     } finally {
         connection.release();

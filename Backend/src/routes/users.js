@@ -61,10 +61,11 @@ router.put("/:id", async (req, res) => {
     }
 });
 
+
 // PUT /api/users/:id/status - Update user Active/Deactive status
 router.put("/:id/status", async (req, res) => {
     const userId = req.params.id;
-    const { IsActive } = req.body; 
+    const { IsActive, Reason } = req.body; 
     let connection;
 
     if (IsActive === undefined || (IsActive !== 0 && IsActive !== 1)) {
@@ -84,14 +85,23 @@ router.put("/:id/status", async (req, res) => {
         const UserRole = userCheck[0].UserRole; 
         const statusAction = IsActive === 1 ? 'Reactivated' : 'Deactivated';
 
-        const [result] = await connection.query(
+        // 1. Update Users Table
+        await connection.query(
             "UPDATE Users SET IsActive = ? WHERE UserID = ?",
             [IsActive, userId]
         );
 
-        if (result.affectedRows === 0) {
-            await connection.rollback();
-            return res.status(404).json({ success: false, message: "User not found or status already set." });
+        // 2. Handle Deactivation Reason
+        if (IsActive === 0 && Reason) {
+            // Insert or Update Reason
+            await connection.query(
+                `INSERT INTO Deactivated_Account (UserID, Reason) VALUES (?, ?) 
+                 ON DUPLICATE KEY UPDATE Reason = VALUES(Reason)`,
+                [userId, Reason]
+            );
+        } else if (IsActive === 1) {
+            // If reactivating, remove from Deactivated_Account (Optional cleanup)
+            await connection.query("DELETE FROM Deactivated_Account WHERE UserID = ?", [userId]);
         }
 
         await connection.commit();

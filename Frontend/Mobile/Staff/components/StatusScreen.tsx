@@ -37,13 +37,25 @@ export default function StatusScreen() {
           const allOrders = await fetchOrders(user.ShopID);
           
           const filtered = allOrders.filter((o) => {
-             // Filter based on the category selected in Home (Delivery vs Laundry)
-             if (type === 'delivery') {
-                 // Match strict status or allow intermediate states like 'Rider Booked' if checking To Pick-up/For Delivery
-                 // For simplicity based on your Home links, we filter by the passed status.
-                 return o.deliveryStatus === status;
-             }
-             return o.laundryStatus === status;
+              // 🔑 FIXED: Filtering logic matches Home Screen (No Mutation)
+              if (type === 'delivery') {
+                  const dStatus = o.deliveryStatus || '';
+
+                  // Group: For Delivery
+                  if (status === "For Delivery") {
+                      return dStatus === "For Delivery" || 
+                             dStatus === "Rider Booked For Delivery";
+                  }
+
+                  // Group: To Pick-up
+                  if (status === "To Pick-up") {
+                      return dStatus === "To Pick-up" || 
+                             dStatus === "Rider Booked To Pick-up"; 
+                  }
+                  
+                  return dStatus === status;
+              }
+              return o.laundryStatus === status;
           });
 
           setOrders(filtered);
@@ -172,7 +184,7 @@ export default function StatusScreen() {
                       {/* 3. Manage Delivery Button (Delivery Flows) */}
                       {/* Checks if the current status allows for delivery updates */}
                       {type === 'delivery' && 
-                        ['To Pick-up', 'Rider Booked', 'For Delivery', 'Outgoing Rider Booked'].includes(order.deliveryStatus || '') && (
+                        ['To Pick-up', 'Rider Booked To Pick-up', 'For Delivery', 'Rider Booked For Delivery', 'Outgoing Rider Booked'].includes(order.deliveryStatus || '') && (
                         <TouchableOpacity
                           style={[styles.updateBtn, { backgroundColor: '#ff9800', marginTop: 8 }]}
                           onPress={() =>
