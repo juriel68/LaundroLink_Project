@@ -4,16 +4,20 @@
 
 import mysql.connector
 import pandas as pd
+import os # 🟢 Added os
 from datetime import datetime, timedelta
 
 # ========================
 # 1️⃣ Database Connection
 # ========================
+# 🟢 MODIFIED: Use Environment Variables
 db_config = {
-    "host": "localhost",
-    "user": "root",
-    "password": "",
-    "database": "laundrolink_db"
+    "host": os.getenv("DB_HOST"),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+    "database": os.getenv("DB_NAME", "laundrolink_db"),
+    "port": int(os.getenv("DB_PORT", 3306)),
+    "ssl_disabled": True # or False depending on TiDB requirement, usually True is fine for basic connector
 }
 
 try:
