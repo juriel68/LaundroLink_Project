@@ -317,20 +317,18 @@ export const submitDeliveryPayment = async (
     }
 };
 
-/**
- * Marks an existing order as 'Cancelled' via the status update route.
- */
+
+// 🟢 NEW: Cancel Order Function
 export async function cancelCustomerOrder(
     orderId: string,
     userId: string
 ): Promise<boolean> {
     try {
-        const response = await fetch(`${API_URL}/orders/status`, {
+        const response = await fetch(`${API_URL}/orders/cancel`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 orderId, 
-                newStatus: 'Cancelled',
                 userId, 
                 userRole: 'Customer' 
             }), 

@@ -18,7 +18,6 @@ import Animated, {
 } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 
-// Using @ aliases to match your project structure
 import Header from "@/components/Header";
 import { fetchOrders, Order } from "@/lib/orders";
 import { getCurrentUser, logout } from "@/lib/auth";
@@ -57,50 +56,46 @@ export default function HomeScreen() {
     router.replace("/");
   };
 
-  /**
-   * 🔑 FIXED: Non-destructive Counting Logic
-   * We check the status against a list of valid aliases instead of modifying the object.
-   */
+  // --- HELPER: GET COUNT ---
   const getCount = (statusToCheck: string, type: 'delivery' | 'order') => {
     return orders.filter((o) => {
         if (type === 'delivery') {
             const dStatus = o.deliveryStatus || '';
-
-            // Grouping Logic for "For Delivery"
             if (statusToCheck === "For Delivery") {
-                return dStatus === "For Delivery" || 
-                       dStatus === "Rider Booked For Delivery" || 
-                       dStatus === "Outgoing Rider Booked";
+                return dStatus === "For Delivery" || dStatus === "Rider Booked For Delivery" || dStatus === "Outgoing Rider Booked";
             }
-
-            // Grouping Logic for "To Pick-up"
             if (statusToCheck === "To Pick-up") {
-                return dStatus === "To Pick-up" || 
-                       dStatus === "Rider Booked To Pick-up" || 
-                       dStatus === "Rider Booked"; // Generic booked status usually implies incoming
+                return dStatus === "To Pick-up" || dStatus === "Rider Booked To Pick-up" || dStatus === "Rider Booked";
             }
-
             return dStatus === statusToCheck;
         }
         return o.laundryStatus === statusToCheck;
     }).length;
   };
 
-  /**
-   * 🔑 UPDATED: Efficient Navigation Helper
-   * Directs to the single StatusScreen with parameters
-   */
+  // --- HELPER: NAVIGATION ---
   const handlePress = (status: string, label: string, type: 'delivery' | 'order') => {
     router.push({
       pathname: "/home/status",
-      params: { 
-        status: status, 
-        title: label, 
-        type: type 
-      }
+      params: { status, title: label, type }
     });
   };
 
+  // 🟢 NEW: Navigation to Order Detail
+  const handleOrderClick = (orderId: string) => {
+    router.push({
+        pathname: "/home/orderDetail",
+        params: { orderId }
+    });
+  };
+
+  // 🟢 NEW: Filter for "Pending" List
+  // We define "Pending" as orders that are 'To Weigh' or 'Pending' (New)
+  const pendingList = orders.filter(o => 
+      o.laundryStatus === 'To Weigh' || 
+      o.laundryStatus === 'Pending' || 
+      o.deliveryStatus === 'To Pick-up'
+  ).slice(0, 5); // Limit to top 5 for dashboard view
 
   return (
     <SafeAreaView style={styles.container}>
@@ -120,91 +115,93 @@ export default function HomeScreen() {
           <RefreshControl refreshing={loading} onRefresh={loadOrders} />
         }
       >
-        {/* Title */}
         <Text style={styles.sectionTitle}>Dashboard Overview</Text>
         
         <View style={styles.statusGrid}>
-          
-          {/* 1. TO PICK-UP (Delivery Logic) */}
+          {/* (Status Cards remain unchanged) */}
           <StatusCardLink
             icon="bicycle-outline" 
             label="To Pick-up"
             count={getCount("To Pick-up", "delivery")}
-            colors={["#FF7043", "#E64A19"]} // Deep Orange
+            colors={["#FF7043", "#E64A19"]}
             onPress={() => handlePress("To Pick-up", "To Pick-up", "delivery")}
           />
-
-          {/* 2. TO WEIGH (Laundry Logic) */}
           <StatusCardLink
             icon="scale-outline" 
             label="To Weigh"
             count={getCount("To Weigh", "order")}
-            colors={["#5C6BC0", "#3949AB"]} // Indigo
+            colors={["#5C6BC0", "#3949AB"]}
             onPress={() => handlePress("To Weigh", "To Weigh", "order")}
           />
-
-          {/* 3. PROCESSING (Laundry Logic) */}
           <StatusCardLink
             icon="sync-circle-outline"
             label="Processing"
             count={getCount("Processing", "order")}
-            colors={["#42A5F5", "#1976D2"]} // Blue
+            colors={["#42A5F5", "#1976D2"]}
             onPress={() => handlePress("Processing", "Processing", "order")}
           />
-
-          {/* 4. FOR DELIVERY (Delivery Logic) */}
           <StatusCardLink
             icon="car-outline"
             label="For Delivery"
             count={getCount("For Delivery", "delivery")}
-            colors={["#FFCA28", "#FFA000"]} // Amber
+            colors={["#FFCA28", "#FFA000"]}
             onPress={() => handlePress("For Delivery", "For Delivery", "delivery")}
           />
-
-          {/* 5. COMPLETED (Laundry Logic) */}
           <StatusCardLink
             icon="checkmark-circle-outline"
             label="Completed"
             count={getCount("Completed", "order")}
-            colors={["#66BB6A", "#388E3C"]} // Green
+            colors={["#66BB6A", "#388E3C"]}
             onPress={() => handlePress("Completed", "Completed", "order")}
           />
-
-          {/* 6. CANCELLED (Laundry Logic) */}
           <StatusCardLink
             icon="close-circle-outline"
             label="Cancelled"
             count={getCount("Cancelled", "order")}
-            colors={["#EF5350", "#C62828"]} // Red
+            colors={["#EF5350", "#C62828"]}
             onPress={() => handlePress("Cancelled", "Cancelled", "order")}
           />
-          
         </View>
+
+        {/* 🟢 NEW SECTION: Pending Orders List */}
+        <View style={styles.listSection}>
+            <Text style={styles.sectionTitle}>Recent Pending Orders</Text>
+            
+            {pendingList.length > 0 ? (
+                pendingList.map((item) => (
+                    <TouchableOpacity 
+                        key={item.orderId} 
+                        style={styles.orderCard}
+                        onPress={() => handleOrderClick(item.orderId)}
+                    >
+                        <View style={styles.orderRow}>
+                            <Text style={styles.orderId}>#{item.orderId}</Text>
+                            <Text style={styles.orderDate}>{new Date(item.createdAt).toLocaleDateString()}</Text>
+                        </View>
+                        <View style={styles.orderRow}>
+                            <Text style={styles.customerName}>{item.customerName}</Text>
+                            <View style={styles.statusBadge}>
+                                <Text style={styles.statusText}>
+                                    {item.laundryStatus === 'Pending' ? 'New' : item.laundryStatus}
+                                </Text>
+                            </View>
+                        </View>
+                    </TouchableOpacity>
+                ))
+            ) : (
+                <Text style={styles.emptyText}>No new pending orders.</Text>
+            )}
+        </View>
+
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const StatusCardLink = ({
-  icon,
-  label,
-  count,
-  colors,
-  onPress,
-}: {
-  icon: any; 
-  label: string;
-  count: number;
-  colors: [string, string];
-  onPress: () => void;
-}) => {
+// (StatusCardLink Component remains unchanged)
+const StatusCardLink = ({ icon, label, count, colors, onPress }: any) => {
   const scale = useSharedValue(1);
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const iconName = icon; 
-
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
   return (
     <Pressable
       onPressIn={() => (scale.value = withTiming(0.95, { duration: 100 }))}
@@ -215,7 +212,7 @@ const StatusCardLink = ({
       <Animated.View style={animatedStyle}>
         <LinearGradient colors={colors} style={styles.statusCard}>
           <View style={styles.statusCardHeader}>
-            <Ionicons name={iconName} size={32} color="#fff" />
+            <Ionicons name={icon} size={32} color="#fff" />
             <Text style={styles.statusCardCount}>{count}</Text>
           </View>
           <Text style={styles.statusCardLabel}>{label}</Text>
@@ -225,71 +222,49 @@ const StatusCardLink = ({
   );
 };
 
-// --- ORIGINAL STYLES PRESERVED ---
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: "#eef4f9" 
+  container: { flex: 1, backgroundColor: "#eef4f9" },
+  logoutButton: { padding: 8, backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 8 },
+  scrollContainer: { paddingHorizontal: 18, paddingTop: 28, paddingBottom: 40 },
+  sectionTitle: { fontSize: 20, fontWeight: "700", color: "#1c3d63", marginTop: 18, marginBottom: 14, letterSpacing: 0.3 },
+  
+  // Grid Styles
+  statusGrid: { flexDirection: "row", flexWrap: "wrap", marginHorizontal: -8 },
+  statusCardWrapper: { width: "50%", padding: 8 },
+  statusCard: { borderRadius: 18, padding: 18, justifyContent: "space-between", minHeight: 130, shadowColor: "#000", shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.18, shadowRadius: 8, elevation: 8 },
+  statusCardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", width: "100%" },
+  statusCardLabel: { fontSize: 16, color: "rgba(255,255,255,0.92)", fontWeight: "600" },
+  statusCardCount: { fontSize: 38, fontWeight: "900", color: "#fff" },
+
+  // 🟢 NEW LIST STYLES
+  listSection: { marginTop: 20 },
+  orderCard: {
+      backgroundColor: '#fff',
+      padding: 16,
+      borderRadius: 12,
+      marginBottom: 12,
+      shadowColor: "#000",
+      shadowOpacity: 0.05,
+      shadowRadius: 5,
+      elevation: 2,
+      borderLeftWidth: 4,
+      borderLeftColor: '#3498db'
   },
-  logoutButton: { 
-    padding: 8, 
-    backgroundColor: "rgba(255,255,255,0.15)", 
-    borderRadius: 8 
+  orderRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 6
   },
-  scrollContainer: { 
-    paddingHorizontal: 18, 
-    paddingTop: 28,   
-    paddingBottom: 40 
+  orderId: { fontWeight: 'bold', fontSize: 16, color: '#333' },
+  orderDate: { fontSize: 12, color: '#888' },
+  customerName: { fontSize: 14, color: '#555' },
+  statusBadge: {
+      backgroundColor: '#eaf5ff',
+      paddingVertical: 4,
+      paddingHorizontal: 10,
+      borderRadius: 12
   },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#1c3d63",
-    marginTop: 18,
-    marginBottom: 14,
-    letterSpacing: 0.3,
-  },
-  statusGrid: { 
-    flexDirection: "row", 
-    flexWrap: "wrap", 
-    marginHorizontal: -8,
-  },
-  statusCardWrapper: { 
-    width: "50%", 
-    padding: 8 
-  },
-  statusCard: {
-    borderRadius: 18,
-    padding: 18,
-    justifyContent: "space-between",
-    minHeight: 130,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
-  },
-  statusCardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    width: "100%",
-  },
-  statusCardLabel: {
-    fontSize: 16,
-    color: "rgba(255,255,255,0.92)",
-    fontWeight: "600",
-    letterSpacing: 0.3,
-  },
-  statusCardCount: {
-    fontSize: 38,
-    fontWeight: "900",
-    color: "#fff",
-    opacity: 0.95,
-    textShadowColor: "rgba(0,0,0,0.2)",
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 3,
-  },
+  statusText: { color: '#004aad', fontSize: 12, fontWeight: '700' },
+  emptyText: { textAlign: 'center', color: '#999', marginTop: 10, fontStyle: 'italic' }
 });

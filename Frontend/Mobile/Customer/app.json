@@ -2,7 +2,6 @@
   "expo": {
     "name": "CustomerApp",
     "slug": "CustomerApp",
-    "owner": "eijiakaso",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -25,7 +24,9 @@
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION"
+        "ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "web": {
@@ -59,7 +60,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "5caca313-fc51-4fce-b841-272fc0b3d926"
+        "projectId": "6cf438e3-31e2-4903-9d90-2a0616c5b066"
       }
     }
   }

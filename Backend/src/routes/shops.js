@@ -75,8 +75,6 @@ router.get("/nearby", async (req, res) => {
                 Shop_Rates AS SR ON LS.ShopID = SR.ShopID 
             WHERE
                 SD.ShopLatitude IS NOT NULL AND SD.ShopLongitude IS NOT NULL
-            GROUP BY
-                LS.ShopID
             HAVING distance < ?
             ORDER BY distance
             LIMIT 20;
@@ -85,6 +83,7 @@ router.get("/nearby", async (req, res) => {
         
         res.json({ success: true, shops });
     } catch (error) {
+        console.error("Nearby Fetch Error:", error);
         res.status(500).json({ success: false, message: "Failed to fetch nearby shops." });
     } finally {
         connection.release();

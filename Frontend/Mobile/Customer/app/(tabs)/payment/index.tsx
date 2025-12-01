@@ -56,7 +56,7 @@ export default function Payment() {
   
   // Filter History (Paid or Completed items)
   // You might want to refine this logic based on what exactly constitutes "history" for you
-  const historyData = orders.filter(o => o.invoiceStatus === 'Paid' || o.status === 'Cancelled');
+  const historyData = orders.filter(o => o.invoiceStatus === 'Paid' || o.status === 'Cancelled' || o.invoiceStatus === 'Voided');
 
   const getStatusStyle = (status: string) => {
     switch (status) {
@@ -168,13 +168,13 @@ export default function Payment() {
                   <Text style={styles.historyAmount}>₱ {item.totalAmount ? Number(item.totalAmount).toFixed(2) : '0.00'}</Text>
                   <View style={[
                     styles.statusBadge,
-                    { backgroundColor: getStatusStyle(item.invoiceStatus || 'Paid').backgroundColor }
+                    { backgroundColor: getStatusStyle(item.invoiceStatus || item.status || 'Paid').backgroundColor }
                   ]}>
                     <Text style={[
                       styles.statusText,
-                      { color: getStatusStyle(item.invoiceStatus || 'Paid').color }
+                      { color: getStatusStyle(item.invoiceStatus || item.status || 'Paid').color }
                     ]}>
-                      {item.invoiceStatus || 'Paid'}
+                      {item.invoiceStatus || item.status}
                     </Text>
                   </View>
                 </View>
