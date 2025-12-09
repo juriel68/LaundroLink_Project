@@ -205,7 +205,6 @@
     </div>
 
     <script type="module">
-        // Adjust path if necessary (e.g., '../api.js' if this file is in /admin_pages/)
         import { API_BASE_URL } from '../api.js'; 
 
         let allShops = [];
@@ -226,6 +225,8 @@
                 if (!response.ok) throw new Error("Failed to fetch shops");
                 
                 const data = await response.json();
+
+                console.log("Fetched Shops Data:", data);
                 allShops = data.shops || [];
                 filteredShops = [...allShops];
                 
@@ -236,23 +237,27 @@
             }
         }
 
-        // --- 2. RENDER TABLE ---
         function renderTable() {
+            // 1. Calculate Pagination
             const start = (currentPage - 1) * itemsPerPage;
             const end = start + itemsPerPage;
             const paginatedItems = filteredShops.slice(start, end);
 
+            // 2. Update UI Counters
             totalCountEl.textContent = filteredShops.length;
             tableBody.innerHTML = '';
 
+            // 3. Handle Empty State
             if (paginatedItems.length === 0) {
                 tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 20px;">No shops found matching your search.</td></tr>`;
                 paginationEl.innerHTML = '';
                 return;
             }
 
+            // 4. Generate Rows (The 'shop' variable is valid ONLY inside this loop)
             paginatedItems.forEach(shop => {
-                // Ensure OwnerID is displayed properly (Handle nulls/undefined)
+                
+                // Check if OwnerID exists
                 const ownerIdDisplay = shop.OwnerID 
                     ? `<span style="font-family:monospace; color:#004aad;">${shop.OwnerID}</span>` 
                     : '<span style="color:#aaa; font-style:italic;">Unassigned</span>';
@@ -281,6 +286,7 @@
                 tableBody.appendChild(row);
             });
 
+            // 5. Update Pagination Buttons
             renderPagination();
         }
 

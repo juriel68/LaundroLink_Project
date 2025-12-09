@@ -29,11 +29,11 @@ router.get("/", async (req, res) => {
                 NULL AS distance
             FROM Laundry_Shops AS LS
             LEFT JOIN Shop_Rates AS SR ON LS.ShopID = SR.ShopID
-            GROUP BY LS.ShopID
             ORDER BY LS.ShopName;
         `);
         res.json({ shops });
     } catch (error) {
+        console.error("Fetch Shops Error:", error);
         res.status(500).json({ error: "Failed to fetch shop list." });
     } finally {
         connection.release();
@@ -51,7 +51,7 @@ router.get("/nearby", async (req, res) => {
         
         const latitude = parseFloat(lat);
         const longitude = parseFloat(lon);
-        const maxDistanceKm = 300; // Testing radius
+        const maxDistanceKm = 4; // Testing radius
 
         const query = `
             SELECT 
